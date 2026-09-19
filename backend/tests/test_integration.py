@@ -319,3 +319,64 @@ def test_metadata_completeness_is_queryable(db, owner):
     )
     assert complete.metadata_complete is True
     assert complete.metadata_missing is None
+
+
+# ------------------------------------------------------------- Phase 3: generation
+
+
+def test_generation_e2e_grounded_answer(db, owner):
+    from app.generation.service import ask
+
+    ingest(
+        db,
+        owner,
+        "product_faq.md",
+        b"# Product Specs\nOrbitCloud supports multi-region failover and 99.99% availability SLA.\n",
+        vendor="Internal",
+        approval_state="approved",
+    )
+
+    answer = ask(
+        db,
+        principal=owner,
+        question="What SLA does OrbitCloud offer?",
+    )
+    assert not answer.refused
+    assert len(answer.citations) >= 1
+    assert answer.citations[0].vendor == "Internal"
+    assert answer.usage is not None
+    assert answer.usage.total_tokens > 0
+
+
+def test_generation_e2e_refusal_when_no_context(db, owner):
+    from app.generation.service import ask
+
+    answer = ask(
+        db,
+        principal=owner,
+        question="What is the non-existent feature XYZ-999?",
+        filters={"products": ["NonExistentProduct"]},
+    )
+    assert answer.refused is True
+    assert "insufficient" in answer.text.lower()
+
+
+def test_generation_e2e_conversation_flow(db, owner):
+    from app.db.models import Conversation, Message
+    from app.generation.conversations import create_conversation
+    from app.generation.service import ask
+
+    conv = create_conversation(db, workspace_id=owner.workspace_id or owner.org_id)
+    answer = ask(
+        db,
+        principal=owner,
+        question="What is OrbitCloud?",
+        conversation_id=str(conv.id),
+    )
+    assert answer.text
+
+    messages = list(db.query(Message).filter(Message.conversation_id == conv.id).all())
+    assert len(messages) == 2
+    assert messages[0].role == "user"
+    assert messages[1].role == "assistant"
+    assert messages[1].prompt_version is not None

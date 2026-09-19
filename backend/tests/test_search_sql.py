@@ -24,6 +24,10 @@ from app.security.principal import owner_principal, restricted_principal  # noqa
 ORG = uuid.uuid4()
 
 
+# In SQLAlchemy 2.0+, REGCONFIG doesn't have a built-in literal_processor for literal_binds.
+postgresql.REGCONFIG.literal_processor = lambda self, dialect: lambda value: f"'{value}'"
+
+
 def literal(clause) -> str:
     return str(
         clause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})

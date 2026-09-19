@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,16 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/pka"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        if isinstance(v, str):
+            if v.startswith("postgres://"):
+                return "postgresql+psycopg://" + v[len("postgres://"):]
+            if v.startswith("postgresql://") and not v.startswith("postgresql+"):
+                return "postgresql+psycopg://" + v[len("postgresql://"):]
+        return v
 
     # Object storage (Cloudflare R2)
     storage_backend: str = "r2"  # r2 | local
@@ -30,6 +41,15 @@ class Settings(BaseSettings):
     gemini_embedding_model: str = "gemini-embedding-001"
     gemini_embedding_dimensions: int = 768
     gemini_generation_model: str = "gemini-2.5-flash"
+
+    # ----------------------------------------------------------- LLM generation
+    llm_provider: str = "gemini"  # gemini | fake
+    generation_rate_limit_rpm: int = 20  # per-user requests per minute
+    generation_rate_limit_tpd: int = 100_000  # per-org tokens per day (0 = unlimited)
+    generation_max_context_chunks: int = 12
+    generation_max_history_turns: int = 10
+    generation_stream_enabled: bool = True
+    generation_max_output_tokens: int = 4096
 
     # Retrieval / ingestion knobs
     top_k: int = 8

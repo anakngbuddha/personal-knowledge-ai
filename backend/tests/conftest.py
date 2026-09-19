@@ -14,6 +14,7 @@ import os
 import uuid
 
 os.environ.setdefault("EMBEDDING_PROVIDER", "fake")
+os.environ.setdefault("LLM_PROVIDER", "fake")
 os.environ.setdefault("STORAGE_BACKEND", "local")
 os.environ.setdefault("LOCAL_STORAGE_DIR", "./.test-storage")
 os.environ.setdefault("MALWARE_SCANNER", "heuristic")

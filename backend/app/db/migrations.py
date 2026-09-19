@@ -116,6 +116,30 @@ MIGRATIONS: list[tuple[str, list[str]]] = [
             "END IF; END $$",
         ],
     ),
+    (
+        "0009_phase3_generation",
+        [
+            # Token budget table for per-org cost control
+            "CREATE TABLE IF NOT EXISTS token_budgets ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "month date NOT NULL, "
+            "prompt_tokens_used integer NOT NULL DEFAULT 0, "
+            "completion_tokens_used integer NOT NULL DEFAULT 0, "
+            "prompt_token_limit integer NOT NULL DEFAULT 0, "
+            "completion_token_limit integer NOT NULL DEFAULT 0, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "updated_at timestamptz NOT NULL DEFAULT now(), "
+            "CONSTRAINT uq_token_budget_org_month UNIQUE (org_id, month))",
+            "CREATE INDEX IF NOT EXISTS ix_token_budgets_org_id ON token_budgets (org_id)",
+            # Message table: Phase 3 provenance columns
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS sources jsonb",
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS usage jsonb",
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS prompt_version varchar(32)",
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS refused boolean NOT NULL DEFAULT false",
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS model_id varchar(128)",
+        ],
+    ),
 ]
 
 

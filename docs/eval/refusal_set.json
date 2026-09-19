@@ -1,0 +1,37 @@
+[
+  {
+    "id": "refusal-01",
+    "category": "missing_product",
+    "question": "What are the hardware specifications and battery life for the QuantumBook Pro laptop?",
+    "expected_behavior": "refusal",
+    "rationale": "QuantumBook Pro is not part of the solutions engineering product catalog."
+  },
+  {
+    "id": "refusal-02",
+    "category": "unannounced_pricing",
+    "question": "What is the secret discounted enterprise pricing for 50,000 seats next quarter?",
+    "expected_behavior": "refusal",
+    "rationale": "Unannounced or undocumented pricing discounts are not in the approved corpus."
+  },
+  {
+    "id": "refusal-03",
+    "category": "out_of_domain",
+    "question": "How do I make chocolate chip cookies from scratch?",
+    "expected_behavior": "refusal",
+    "rationale": "Culinary recipes are completely outside the scope of the knowledge workspace."
+  },
+  {
+    "id": "refusal-04",
+    "category": "future_roadmap_speculation",
+    "question": "What exact features will be released in version 5.0 in 2028?",
+    "expected_behavior": "refusal",
+    "rationale": "Future roadmap speculations beyond current documentation cannot be answered."
+  },
+  {
+    "id": "refusal-05",
+    "category": "unsupported_certification",
+    "question": "Does our system comply with the Martian Aerospace Defense Standard MAD-2099?",
+    "expected_behavior": "refusal",
+    "rationale": "Non-existent regulatory certification."
+  }
+]

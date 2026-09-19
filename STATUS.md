@@ -16,7 +16,7 @@ Full write-up, including every deviation and every remaining gap: **`docs/PHASE1
 | 0 | Foundation and security baseline | **Partial.** Data model + enforcement seam only. No authN, no RLS, no audit log |
 | 1 | Ingestion | **Done**, with the metadata deviation argued in `docs/PHASE1-2.md` §3 |
 | 2 | Hybrid retrieval | **Done**, except the labeled question set is a template and the baseline has not been run |
-| 3 | Grounded answers | Not started |
+| 3 | Grounded answers | **Done.** Fully implemented and tested. Full write-up in `docs/PHASE3.md` |
 | 4 | Product catalog and typed graph | Not started |
 | 5 | Solution composer | Not started |
 | 6-10 | Workflows, freshness, hardening | Not started |
@@ -68,6 +68,13 @@ has to change; retrieval is already permission-aware.
 | GET | `/documents/{id}/chunks` | Chunks with their citation anchors |
 | **POST** | **`/search`** | Hybrid retrieval, with predicates, branch ranks and timings exposed |
 | GET | `/jobs`, `/jobs/stats` | Per-job status; every failure explainable and retryable |
+| **POST** | **`/ask`** | Grounded answer generation (sync or SSE streaming) with structured citations |
+| POST | `/conversations` | Create a new conversation thread |
+| GET | `/conversations` | List conversation threads (paginated) |
+| GET | `/conversations/{id}` | Read conversation thread with message history and sources |
+| DELETE | `/conversations/{id}` | Delete conversation thread and cascading messages |
+| POST | `/conversations/{id}/ask` | Continue multi-turn conversation with grounded answer |
+| GET | `/conversations/{id}/sources` | Inspect retrieved sources and toggle status |
 
 ---
 

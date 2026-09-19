@@ -298,6 +298,12 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     citations: Mapped[dict | None] = mapped_column(JSONB)
+    # Phase 3: per-answer provenance
+    sources: Mapped[list | None] = mapped_column(JSONB)  # structured SourceMetadata list
+    usage: Mapped[dict | None] = mapped_column(JSONB)  # token counts
+    prompt_version: Mapped[str | None] = mapped_column(String(32))
+    refused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    model_id: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
@@ -328,3 +334,31 @@ class SchemaMigration(Base):
 
     name: Mapped[str] = mapped_column(String(128), primary_key=True)
     applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TokenBudget(Base):
+    """Per-org, per-month token budget for cost control.
+
+    Project_Plan.md L195: per-org token budgets. Checked before generation
+    and incremented after. A limit of 0 means unlimited.
+    """
+
+    __tablename__ = "token_budgets"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    month: Mapped[date] = mapped_column(Date, nullable=False)
+    prompt_tokens_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    prompt_token_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_token_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "month", name="uq_token_budget_org_month"),
+    )

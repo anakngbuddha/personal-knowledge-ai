@@ -1,0 +1,25 @@
+{
+  "graphify-auto-update": {
+    "PostToolUse": [
+      {
+        "matcher": "replace_file_content|multi_replace_file_content|write_to_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import sys, subprocess, os; script = 'scripts/graphify_update.py' if os.path.exists('scripts/graphify_update.py') else '../scripts/graphify_update.py'; sys.exit(subprocess.call([sys.executable, script, '--hook']))\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "graphify-prompt-trigger": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python -c \"import sys, subprocess, os; script = 'scripts/graphify_preinvocation.py' if os.path.exists('scripts/graphify_preinvocation.py') else '../scripts/graphify_preinvocation.py'; sys.exit(subprocess.call([sys.executable, script]))\"",
+        "timeout": 15
+      }
+    ]
+  }
+}

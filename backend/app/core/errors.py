@@ -62,3 +62,19 @@ class PermissionFilterMissing(AppError):
     This is a programming error, not a user error. It exists so that deleting the
     permission filter fails loudly instead of silently widening every search.
     """
+
+
+class TokenBudgetExhausted(AppError):
+    """The organization's token budget for this period has been reached."""
+
+
+class GenerationRateLimited(AppError):
+    """The user has exceeded their per-minute generation rate limit."""
+
+
+class GenerationRefused(AppError):
+    """The model refused to answer because context was insufficient.
+
+    This is not an error per se — it is the correct behavior when the corpus
+    does not contain the answer. Tracked separately from provider errors.
+    """
