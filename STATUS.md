@@ -1,7 +1,8 @@
 # Build Status
 
 Roadmap source: *Personal Knowledge AI Workspace - Product Plan & Roadmap*.
-Last updated: 2026-09-18. Scope of this commit: **Phase 0 + Phase 1 of V1**.
+Forward plan (Phases 6-10, notes + linking + studio + differentiators): **[docs/ROADMAP.md](docs/ROADMAP.md)**.
+Last updated: 2026-09-19. Scope of the last build commit: **Phase 0 + Phase 1 of V1**.
 
 ---
 
@@ -101,14 +102,24 @@ Last updated: 2026-09-18. Scope of this commit: **Phase 0 + Phase 1 of V1**.
 - [ ] Citation display (clickable source)
 - **Exit:** someone else can use it without instructions.
 
+### Phases 6-10 - Notes, linking, studio, differentiators, platform
+
+Planned in **[docs/ROADMAP.md](docs/ROADMAP.md)**: notes core (6), wikilinks/backlinks/graph (7),
+notebook studio (8), niche differentiators (9), platform and ecosystem (10).
+Nothing in these phases starts until V1 (Phases 0-5) meets its exit criteria.
+
 ---
 
-## Still deliberately not built
+## Scope change (2026-09-19)
 
-Notes editor, folders and tags, backlinks, knowledge graph, AI relationships, reranker,
-multi-user accounts, collaboration, multimodal ingestion, OCR, Redis, Pinecone.
+The earlier "deliberately not built" list (notes editor, folders and tags, backlinks, knowledge
+graph, AI relationships, multimodal ingestion, OCR, multi-user accounts, collaboration) is now
+**scheduled** in `docs/ROADMAP.md` rather than excluded. The sequencing rule is unchanged: none
+of it gets pulled ahead of V1 because it looked easy.
 
-Nothing here gets pulled forward because it looked easy. Phase 2 is next.
+Still deliberately not built until measurement justifies it: reranker, Redis, dedicated vector DB.
+
+Phase 2 is next.
 
 ---
 
