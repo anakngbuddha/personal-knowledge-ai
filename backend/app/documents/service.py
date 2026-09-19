@@ -1,0 +1,304 @@
+"""Phase 1 ingestion pipeline.
+
+    upload -> sniff -> scan -> hash -> dedup / version -> object storage
+           -> document row -> queued job
+           -> extract -> chunk -> injection flags -> embed -> persist (+ FTS)
+
+A document is only `ready` when the source file is in object storage and its chunks,
+embeddings, and full-text data all exist in PostgreSQL.
+
+Changes from the previous build, all of them Phase 1 requirements:
+
+* content sniffing and malware scanning happen **before** anything is stored
+* deduplication by content hash, and versioning when a document is re-uploaded
+* ingestion is queued in a durable table rather than an in-process task list
+* the source file is never written to local disk, not even a temp file
+* instruction-like passages are flagged per chunk and counted on the document
+"""
+
+from __future__ import annotations
+
+import hashlib
+import uuid
+from contextlib import suppress
+from datetime import datetime, timezone
+from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.errors import AppError, DuplicateDocument
+from app.core.logging import get_logger
+from app.db.models import Document, DocumentChunk, DocumentStatus, Workspace
+from app.db.session import SessionLocal
+from app.documents import extraction, injection
+from app.documents.chunking import chunk_blocks
+from app.documents.metadata import DocumentMetadataIn
+from app.documents.scanning import scan_or_raise
+from app.documents.sniffing import decide_file_type
+from app.embeddings.factory import get_embedding_provider
+from app.jobs import queue
+from app.security.labels import ApprovalState
+from app.security.principal import Principal
+from app.storage.factory import get_storage
+
+logger = get_logger(__name__)
+
+DEFAULT_WORKSPACE_NAME = "My Knowledge"
+
+
+def content_hash(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def get_or_create_default_workspace(db: Session, org_id: uuid.UUID | None = None) -> Workspace:
+    statement = select(Workspace).order_by(Workspace.created_at)
+    if org_id is not None:
+        statement = statement.where(Workspace.org_id == org_id)
+    workspace = db.scalars(statement).first()
+    if workspace is None:
+        workspace = Workspace(name=DEFAULT_WORKSPACE_NAME, org_id=org_id)
+        db.add(workspace)
+        db.commit()
+        db.refresh(workspace)
+    elif workspace.org_id is None and org_id is not None:
+        workspace.org_id = org_id
+        db.commit()
+    return workspace
+
+
+def find_duplicate(db: Session, workspace_id: uuid.UUID, digest: str) -> Document | None:
+    return db.scalars(
+        select(Document).where(
+            Document.workspace_id == workspace_id,
+            Document.content_hash == digest,
+            Document.is_current.is_(True),
+        )
+    ).first()
+
+
+def find_previous_version(
+    db: Session, workspace_id: uuid.UUID, original_filename: str
+) -> Document | None:
+    return db.scalars(
+        select(Document)
+        .where(
+            Document.workspace_id == workspace_id,
+            Document.original_filename == original_filename,
+            Document.is_current.is_(True),
+        )
+        .order_by(Document.version.desc())
+    ).first()
+
+
+def create_document(
+    db: Session,
+    *,
+    principal: Principal,
+    original_filename: str,
+    data: bytes,
+    mime_type: str | None = None,
+    metadata: DocumentMetadataIn | None = None,
+    allow_duplicate: bool = False,
+) -> Document:
+    """Validate, scan, store and register one document. Does not extract."""
+    meta = metadata or DocumentMetadataIn()
+    promotion_error = meta.promotion_error()
+    if promotion_error:
+        raise AppError(promotion_error)
+
+    decision = decide_file_type(original_filename, data, mime_type)
+    # Scanning happens on the bytes we were actually given, before any parser,
+    # before object storage, and before a row exists to be forgotten about.
+    scan = scan_or_raise(data, decision.file_type)
+
+    workspace = get_or_create_default_workspace(db, principal.org_id)
+    digest = content_hash(data)
+
+    duplicate = find_duplicate(db, workspace.id, digest)
+    if duplicate is not None and not allow_duplicate:
+        raise DuplicateDocument(
+            f"identical content already ingested as {duplicate.original_filename!r}",
+            existing_id=duplicate.id,
+        )
+
+    previous = find_previous_version(db, workspace.id, original_filename)
+    version = (previous.version + 1) if previous else 1
+
+    document_id = uuid.uuid4()
+    safe_name = Path(original_filename).name
+    storage_key = f"workspaces/{workspace.id}/documents/{document_id}/{safe_name}"
+    get_storage().put(storage_key, data, content_type=mime_type)
+
+    missing = meta.missing_fields()
+    document = Document(
+        id=document_id,
+        org_id=principal.org_id,
+        workspace_id=workspace.id,
+        filename=safe_name,
+        original_filename=original_filename,
+        file_type=decision.file_type,
+        mime_type=decision.sniffed.detail,
+        declared_mime_type=mime_type,
+        storage_key=storage_key,
+        file_size=len(data),
+        content_hash=digest,
+        title=meta.title or Path(original_filename).stem,
+        source_type=meta.source_type,
+        source_url=meta.source_url,
+        source_of_truth_url=meta.source_of_truth_url,
+        vendor=meta.vendor,
+        ownership=meta.ownership,
+        products_referenced=meta.products_referenced or None,
+        account_ref=meta.account_ref,
+        approval_state=meta.approval_state,
+        sensitivity=meta.sensitivity,
+        valid_until=meta.valid_until,
+        metadata_complete=not missing,
+        metadata_missing=missing or None,
+        version=version,
+        supersedes_id=previous.id if previous else None,
+        status=DocumentStatus.UPLOADED,
+        scan_result={**scan.as_dict(), "type_decision": decision.as_dict()},
+    )
+    db.add(document)
+
+    if previous is not None:
+        # The old version stays queryable for provenance but leaves the retrieval
+        # corpus, so an answer can never cite a superseded datasheet.
+        previous.is_current = False
+
+    db.commit()
+    db.refresh(document)
+    logger.info(
+        "stored document %s v%s (%s bytes, %s) at %s",
+        document.id,
+        document.version,
+        len(data),
+        document.file_type,
+        storage_key,
+    )
+    return document
+
+
+def enqueue_ingestion(db: Session, document: Document) -> None:
+    queue.enqueue(db, document_id=document.id, org_id=document.org_id)
+
+
+def process_document(document_id: uuid.UUID) -> None:
+    """Run extraction through persistence. Owns its own session: the worker calls it."""
+    db = SessionLocal()
+    try:
+        document = db.get(Document, document_id)
+        if document is None:
+            logger.warning("process_document: %s not found", document_id)
+            return
+
+        document.status = DocumentStatus.PROCESSING
+        document.error_message = None
+        db.commit()
+
+        data = get_storage().get(document.storage_key)
+        try:
+            result = extraction.extract(data, document.file_type)
+            chunks = chunk_blocks(result.blocks)
+        finally:
+            del data
+
+        if not chunks:
+            raise AppError("chunking produced no chunks")
+
+        provider = get_embedding_provider()
+        db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete()
+        db.commit()
+
+        batch_size = max(1, settings.embedding_batch_size)
+        stored = 0
+        flagged = 0
+        for start in range(0, len(chunks), batch_size):
+            batch = chunks[start : start + batch_size]
+            # Fences are neutralised at ingest so the stored text and the prompted
+            # text are identical. A chunk can never close its own fence later.
+            texts = [injection.neutralize_fences(chunk.text) for chunk in batch]
+            vectors = provider.embed_documents(texts)
+            for chunk, text, vector in zip(batch, texts, vectors, strict=True):
+                findings = injection.scan_for_injection(text)
+                flagged += bool(findings)
+                db.add(
+                    DocumentChunk(
+                        document_id=document.id,
+                        org_id=document.org_id,
+                        chunk_index=chunk.chunk_index,
+                        text=text,
+                        page_number=chunk.page_number,
+                        slide_number=chunk.slide_number,
+                        sheet_name=chunk.sheet_name,
+                        cell_range=chunk.cell_range,
+                        section_title=chunk.section_title,
+                        heading_path=list(chunk.heading_path) or None,
+                        start_offset=chunk.start_offset,
+                        end_offset=chunk.end_offset,
+                        embedding=vector,
+                        injection_flags=[f.as_dict() for f in findings] or None,
+                        chunk_metadata={
+                            "source_filename": document.original_filename,
+                            "citation": chunk.anchor.label(),
+                            "embedding_model": provider.model_id,
+                            "embedding_dimensions": provider.dimensions,
+                            **result.metadata,
+                        },
+                    )
+                )
+            db.commit()
+            stored += len(batch)
+            logger.info("document %s: embedded %s/%s chunks", document.id, stored, len(chunks))
+
+        document.chunk_count = stored
+        document.page_count = result.page_count
+        document.ocr_applied = result.ocr_applied
+        document.injection_flag_count = flagged
+        document.doc_metadata = {**(result.metadata or {}), "warnings": result.warnings} or None
+        document.status = DocumentStatus.READY
+        document.processed_at = datetime.now(timezone.utc)
+        db.commit()
+        if flagged:
+            # Flagged is not blocked: a vendor PDF may legitimately contain the word
+            # "ignore". It is surfaced so a human can look.
+            logger.warning(
+                "document %s ready with %s chunk(s) containing instruction-like text",
+                document.id,
+                flagged,
+            )
+        logger.info("document %s ready with %s chunks", document.id, stored)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("ingestion failed for %s", document_id)
+        document = db.get(Document, document_id)
+        if document is not None:
+            document.status = DocumentStatus.FAILED
+            document.error_message = f"{type(exc).__name__}: {exc}"[:2000]
+            db.commit()
+        raise
+    finally:
+        db.close()
+
+
+def set_approval_state(db: Session, document: Document, state: str) -> Document:
+    """Promotion gate: incomplete metadata cannot become `approved`."""
+    if state == ApprovalState.APPROVED and not document.metadata_complete:
+        raise AppError(
+            "cannot approve a document with incomplete metadata; missing: "
+            + ", ".join(document.metadata_missing or [])
+        )
+    document.approval_state = state
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+def delete_document(db: Session, document: Document) -> None:
+    with suppress(Exception):
+        get_storage().delete(document.storage_key)
+    db.delete(document)
+    db.commit()

@@ -1,0 +1,60 @@
+{
+  "_comment": [
+    "The labeled retrieval set for Phase 2. Project_Plan.md asks for 50+ real SE",
+    "questions with the correct passage marked; at ~50 documents that is meaningful",
+    "coverage rather than a token sample.",
+    "",
+    "This file ships as a template with the question *shapes* that matter, because the",
+    "real questions have to be written against real collateral and inventing plausible",
+    "ones would produce a baseline that measures nothing. Replace every entry below.",
+    "",
+    "Each entry: question, document_filename (must match an ingested filename),",
+    "text_contains (a verbatim substring of the correct passage - the durable label),",
+    "page_number (optional), tags, notes (why this passage is the right evidence)."
+  ],
+  "questions": [
+    {
+      "question": "Which of our products support site-to-site VPN?",
+      "document_filename": "REPLACE-orbitcloud-datasheet.pdf",
+      "text_contains": "site-to-site VPN",
+      "page_number": 2,
+      "tags": ["capability-lookup", "own"],
+      "notes": "Capability lookup against a single datasheet. The easy case; if this misses, retrieval is broken, not merely imperfect."
+    },
+    {
+      "question": "What are the prerequisites for deploying VaultStore on premise?",
+      "document_filename": "REPLACE-vaultstore-deployment-guide.docx",
+      "text_contains": "10GbE",
+      "tags": ["prerequisites", "resold"],
+      "notes": "Prerequisite question against resold collateral; checks the vendor filter does not hide it."
+    },
+    {
+      "question": "Who owns escalation for VaultStore incidents?",
+      "document_filename": "REPLACE-northwind-partner-terms.pdf",
+      "text_contains": "escalation",
+      "tags": ["support-path", "resold", "vendor_restricted"],
+      "notes": "Must only surface for a principal allowed to read vendor-restricted material."
+    },
+    {
+      "question": "What is the partner price for OrbitCloud Enterprise?",
+      "document_filename": "REPLACE-pricing.xlsx",
+      "text_contains": "Partner",
+      "tags": ["pricing", "spreadsheet-anchor"],
+      "notes": "Exercises the sheet+cell citation anchor. Pricing goes stale, so this question is also a freshness canary."
+    },
+    {
+      "question": "Which products conflict with LegacyEdge?",
+      "document_filename": "REPLACE-compatibility-deck.pptx",
+      "text_contains": "conflicts with LegacyEdge",
+      "tags": ["compatibility", "slide-anchor"],
+      "notes": "Exercises the slide citation anchor and the keyword branch: 'conflicts with' is an exact phrase, which is where vector-only retrieval tends to lose."
+    },
+    {
+      "question": "What did we propose for the hybrid cloud plus video conferencing deal?",
+      "document_filename": "REPLACE-acme-discovery-notes.md",
+      "text_contains": "video conferencing",
+      "tags": ["account-scoped", "customer_data"],
+      "notes": "Account-scoped material. Must be invisible to a principal without a grant for this account: this is the permission-filtering case in the labeled set."
+    }
+  ]
+}
