@@ -60,6 +60,11 @@ def compile_predicate(predicate: Predicate) -> ColumnElement:
             # `1=1` would be a silent widening, so it is spelled explicitly.
             return column.is_(None) & column.isnot(None)
         return column.in_(values)
+    if predicate.op is Op.NOT_IN:
+        values = [_coerce(predicate.field, item) for item in sorted(map(str, value or ()))]
+        if not values:
+            return column.isnot(None) | column.is_(None)
+        return ~column.in_(values)
     if predicate.op is Op.IS_NULL:
         return column.is_(None)
     if predicate.op is Op.NOT_NULL:

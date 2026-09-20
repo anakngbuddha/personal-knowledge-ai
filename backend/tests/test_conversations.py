@@ -17,6 +17,8 @@ from app.generation.conversations import (
     get_history,
     list_conversations,
 )
+from app.api.routes.ask import get_conversation_sources_endpoint
+from app.security.principal import owner_principal
 
 # Teach SQLite how to render JSONB for test execution
 @compiles(JSONB, "sqlite")
@@ -160,3 +162,82 @@ def test_auto_title(sqlite_session: Session):
     auto_title(sqlite_session, conversation_id=conv.id, question="Another question")
     refreshed = get_conversation(sqlite_session, conversation_id=conv.id, workspace_id=ws1)
     assert refreshed.title == "What are the SLA tiers?"
+
+
+def test_conversation_sources_aggregation(sqlite_session: Session):
+    ws1 = sqlite_session.ws1_id
+    conv = create_conversation(sqlite_session, workspace_id=ws1)
+
+    # Turn 1
+    add_message(
+        sqlite_session,
+        conversation_id=conv.id,
+        role="assistant",
+        content="Answer 1",
+        sources=[
+            {"chunk_id": "c1", "document_id": "d1", "citation": "Doc 1 p. 1"},
+            {"chunk_id": "c2", "document_id": "d1", "citation": "Doc 1 p. 2"},
+        ],
+    )
+    # Turn 2 - has c2 again and new c3
+    add_message(
+        sqlite_session,
+        conversation_id=conv.id,
+        role="assistant",
+        content="Answer 2",
+        sources=[
+            {"chunk_id": "c2", "document_id": "d1", "citation": "Doc 1 p. 2"},
+            {"chunk_id": "c3", "document_id": "d2", "citation": "Doc 2 slide 5"},
+        ],
+    )
+
+    conv_fetched = get_conversation(
+        sqlite_session, conversation_id=conv.id, workspace_id=ws1
+    )
+    assert conv_fetched is not None
+    seen_chunks = set()
+    aggregated = []
+    for msg in conv_fetched.messages:
+        for s in (msg.sources or []):
+            cid = s.get("chunk_id")
+            if cid and cid not in seen_chunks:
+                seen_chunks.add(cid)
+                aggregated.append(s)
+
+    assert len(aggregated) == 3
+    assert {s["chunk_id"] for s in aggregated} == {"c1", "c2", "c3"}
+
+
+def test_get_conversation_sources_endpoint_route(sqlite_session: Session):
+    ws1 = sqlite_session.ws1_id
+    conv = create_conversation(sqlite_session, workspace_id=ws1)
+    principal = owner_principal(sqlite_session.org_id)
+
+    add_message(
+        sqlite_session,
+        conversation_id=conv.id,
+        role="assistant",
+        content="Answer with source",
+        sources=[
+            {
+                "chunk_id": "c10",
+                "document_id": "d10",
+                "document_title": "Datasheet",
+                "citation": "Datasheet p. 4",
+                "vendor": "Acme",
+                "approval_state": "approved",
+                "sensitivity": "internal",
+                "is_stale": False,
+            }
+        ],
+    )
+
+    sources = get_conversation_sources_endpoint(
+        conversation_id=str(conv.id),
+        db=sqlite_session,
+        principal=principal,
+    )
+    assert len(sources) == 1
+    assert sources[0].chunk_id == "c10"
+    assert sources[0].citation == "Datasheet p. 4"
+    assert sources[0].vendor == "Acme"

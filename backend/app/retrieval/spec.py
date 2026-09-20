@@ -34,6 +34,7 @@ class Op(StrEnum):
     CONTAINS_ANY = "contains_any"  # JSONB array overlap
     GTE_OR_NULL = "gte_or_null"  # freshness: valid_until >= date OR unset
     IN_OR_NULL = "in_or_null"  # account scope: mine OR unscoped
+    NOT_IN = "not_in"
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,7 @@ class RetrievalFilters:
     sensitivities: list[str] = field(default_factory=list)
     file_types: list[str] = field(default_factory=list)
     document_ids: list[str] = field(default_factory=list)
+    exclude_document_ids: list[str] = field(default_factory=list)
     fresh_as_of: date | None = None  # drop collateral whose valid_until has passed
     approved_only: bool = False
     exclude_injection_flagged: bool = False
@@ -172,6 +174,16 @@ class RetrievalFilters:
                     0,
                     Origin.FILTER,
                     "exclude documents with instruction-like passages",
+                )
+            )
+        if self.exclude_document_ids:
+            out.append(
+                Predicate(
+                    "id",
+                    Op.NOT_IN,
+                    set(self.exclude_document_ids),
+                    Origin.FILTER,
+                    "exclude document ids filter",
                 )
             )
         return out

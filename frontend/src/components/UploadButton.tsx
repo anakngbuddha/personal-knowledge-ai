@@ -16,10 +16,16 @@ export function UploadButton({ onUploaded, onError }: Props) {
     if (!file) return;
     setUploading(true);
     try {
-      await api.uploadDocument(file);
+      const res = await api.uploadDocument(file);
+      if (res.rejected > 0) {
+        const firstRejection = res.results.find((r) => r.status === "rejected");
+        onError(firstRejection?.detail || "Document upload rejected");
+      } else if (res.duplicates > 0) {
+        onError("An identical document has already been ingested.");
+      }
       onUploaded();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "upload failed");
+      onError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -29,12 +35,12 @@ export function UploadButton({ onUploaded, onError }: Props) {
   return (
     <>
       <button className="primary" disabled={uploading} onClick={() => inputRef.current?.click()}>
-        {uploading ? "Uploading..." : "+ Upload"}
+        {uploading ? "Uploading..." : "+ Upload File"}
       </button>
       <input
         ref={inputRef}
         type="file"
-        accept=".pdf,.txt,.docx"
+        accept=".pdf,.docx,.pptx,.xlsx,.txt,.md,.html"
         hidden
         onChange={handleChange}
       />

@@ -58,6 +58,7 @@ def _build_retrieval_filters(
     """Convert the generation request filters to retrieval filters."""
     if filters is None:
         filters = {}
+    excluded = list(exclude_document_ids or filters.get("exclude_document_ids", []))
     return RetrievalFilters(
         products=filters.get("products", []),
         vendor=filters.get("vendor"),
@@ -66,6 +67,7 @@ def _build_retrieval_filters(
         approved_only=filters.get("approved_only", True),
         exclude_injection_flagged=filters.get("exclude_injection_flagged", True),
         document_ids=filters.get("document_ids", []),
+        exclude_document_ids=excluded,
     )
 
 
@@ -226,7 +228,7 @@ def ask(
     # Persist messages
     if conv_uuid:
         add_message(db, conversation_id=conv_uuid, role="user", content=question)
-        add_message(
+        assistant_msg = add_message(
             db,
             conversation_id=conv_uuid,
             role="assistant",
@@ -239,6 +241,8 @@ def ask(
             model_id=answer.model_id,
         )
         auto_title(db, conversation_id=conv_uuid, question=question)
+        answer.conversation_id = str(conv_uuid)
+        answer.message_id = str(assistant_msg.id)
 
     logger.info(
         "ask model=%s refused=%s citations=%d prompt_v=%s conv=%s",
@@ -322,7 +326,7 @@ def ask_stream(
             # Persist messages
             if conv_uuid:
                 add_message(db, conversation_id=conv_uuid, role="user", content=question)
-                add_message(
+                assistant_msg = add_message(
                     db,
                     conversation_id=conv_uuid,
                     role="assistant",
@@ -335,6 +339,8 @@ def ask_stream(
                     model_id=provider.model_id,
                 )
                 auto_title(db, conversation_id=conv_uuid, question=question)
+                chunk.conversation_id = str(conv_uuid)
+                chunk.message_id = str(assistant_msg.id)
 
             logger.info(
                 "ask_stream done model=%s refused=%s citations=%d conv=%s",

@@ -110,3 +110,14 @@ def test_exclude_injection_flagged_is_available_but_off_by_default():
 def test_unknown_filter_arguments_are_a_type_error_not_silently_ignored():
     with pytest.raises(TypeError):
         RetrievalFilters(nonexistent_filter=True)  # type: ignore[call-arg]
+
+
+def test_exclude_document_ids_produces_not_in_predicate():
+    filters = RetrievalFilters(exclude_document_ids=["doc-1", "doc-2"])
+    predicates = filters.to_predicates()
+    assert len(predicates) == 1
+    p = predicates[0]
+    assert p.field == "id"
+    assert p.op is Op.NOT_IN
+    assert p.value == {"doc-1", "doc-2"}
+    assert p.origin == Origin.FILTER

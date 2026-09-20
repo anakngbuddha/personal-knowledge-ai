@@ -124,7 +124,8 @@ def ask_endpoint(
             if answer.usage
             else None
         ),
-        conversation_id=payload.conversation_id,
+        conversation_id=answer.conversation_id or payload.conversation_id,
+        message_id=answer.message_id,
     )
 
 
@@ -159,6 +160,8 @@ def _stream_response(
                         event_data["usage"] = chunk.usage.as_dict()
                     event_data["refused"] = chunk.refused
                     event_data["refusal_reason"] = chunk.refusal_reason
+                    event_data["conversation_id"] = chunk.conversation_id
+                    event_data["message_id"] = chunk.message_id
 
                 yield f"data: {json.dumps(event_data)}\n\n"
 
@@ -316,8 +319,45 @@ def ask_in_conversation_endpoint(
             if answer.usage
             else None
         ),
-        conversation_id=conversation_id,
+        conversation_id=answer.conversation_id or conversation_id,
+        message_id=answer.message_id,
     )
+
+
+@router.get(
+    "/conversations/{conversation_id}/sources",
+    response_model=list[schemas.SourceMetadataOut],
+)
+def get_conversation_sources_endpoint(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(resolve_principal),
+) -> list[schemas.SourceMetadataOut]:
+    """Inspect source collateral for a conversation across all turns."""
+    workspace_id = _workspace_id_from_principal(db, principal)
+    try:
+        conv_uuid = uuid.UUID(conversation_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid conversation ID") from None
+
+    conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    seen_chunks: set[str] = set()
+    aggregated_sources: list[schemas.SourceMetadataOut] = []
+
+    for msg in conv.messages:
+        sources_raw = msg.sources or []
+        for s in sources_raw:
+            chunk_id = s.get("chunk_id")
+            if chunk_id and chunk_id not in seen_chunks:
+                seen_chunks.add(chunk_id)
+                aggregated_sources.append(schemas.SourceMetadataOut(**s))
+            elif not chunk_id:
+                aggregated_sources.append(schemas.SourceMetadataOut(**s))
+
+    return aggregated_sources
 
 
 # ── helpers ─────────────────────────────────────────────────────────────

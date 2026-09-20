@@ -140,6 +140,117 @@ MIGRATIONS: list[tuple[str, list[str]]] = [
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS model_id varchar(128)",
         ],
     ),
+    (
+        "0010_phase4_product_graph",
+        [
+            # products table
+            "CREATE TABLE IF NOT EXISTS products ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, "
+            "name varchar(512) NOT NULL, "
+            "slug varchar(128) NOT NULL, "
+            "vendor varchar(255) NOT NULL, "
+            "ownership varchar(16) NOT NULL DEFAULT 'own', "
+            "category varchar(128) NOT NULL, "
+            "tier varchar(64) NOT NULL DEFAULT 'Core', "
+            "deployment_model varchar(32) NOT NULL DEFAULT 'cloud', "
+            "licensing_model varchar(64) NOT NULL DEFAULT 'subscription', "
+            "target_segment varchar(64) NOT NULL DEFAULT 'Enterprise', "
+            "lifecycle_status varchar(32) NOT NULL DEFAULT 'GA', "
+            "prerequisites text, "
+            "support_path text, "
+            "description text, "
+            "collateral_document_ids jsonb, "
+            "partner_tier varchar(128), "
+            "margin_band varchar(64), "
+            "support_owner varchar(64), "
+            "contract_constraints text, "
+            "source_of_truth_url text, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "updated_at timestamptz NOT NULL DEFAULT now(), "
+            "CONSTRAINT uq_products_workspace_slug UNIQUE (workspace_id, slug), "
+            "CONSTRAINT ck_products_lifecycle_status CHECK (lifecycle_status IN ('GA', 'EOL', 'roadmap')), "
+            "CONSTRAINT ck_products_deployment_model CHECK (deployment_model IN ('cloud', 'on-prem', 'hybrid')))",
+            "CREATE INDEX IF NOT EXISTS ix_products_org_id ON products (org_id)",
+            "CREATE INDEX IF NOT EXISTS ix_products_workspace_id ON products (workspace_id)",
+            "CREATE INDEX IF NOT EXISTS ix_products_vendor ON products (vendor)",
+            "CREATE INDEX IF NOT EXISTS ix_products_category ON products (category)",
+            "CREATE INDEX IF NOT EXISTS ix_products_ownership ON products (ownership)",
+            # capabilities table
+            "CREATE TABLE IF NOT EXISTS capabilities ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "name varchar(255) NOT NULL, "
+            "slug varchar(128) NOT NULL, "
+            "category varchar(128) NOT NULL, "
+            "description text, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "CONSTRAINT uq_capabilities_org_slug UNIQUE (org_id, slug))",
+            "CREATE INDEX IF NOT EXISTS ix_capabilities_org_id ON capabilities (org_id)",
+            "CREATE INDEX IF NOT EXISTS ix_capabilities_category ON capabilities (category)",
+            # product_capabilities association table
+            "CREATE TABLE IF NOT EXISTS product_capabilities ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "product_id uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE, "
+            "capability_id uuid NOT NULL REFERENCES capabilities(id) ON DELETE CASCADE, "
+            "proficiency varchar(32) NOT NULL DEFAULT 'native', "
+            "notes text, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "CONSTRAINT uq_product_capability UNIQUE (product_id, capability_id))",
+            "CREATE INDEX IF NOT EXISTS ix_product_capabilities_product_id ON product_capabilities (product_id)",
+            "CREATE INDEX IF NOT EXISTS ix_product_capabilities_capability_id ON product_capabilities (capability_id)",
+            # product_edges table
+            "CREATE TABLE IF NOT EXISTS product_edges ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, "
+            "source_product_id uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE, "
+            "target_product_id uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE, "
+            "relation_type varchar(32) NOT NULL, "
+            "evidence text NOT NULL, "
+            "confidence float NOT NULL DEFAULT 1.0, "
+            "document_id uuid REFERENCES documents(id) ON DELETE SET NULL, "
+            "is_ai_suggested boolean NOT NULL DEFAULT false, "
+            "status varchar(32) NOT NULL DEFAULT 'approved', "
+            "rejection_reason text, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "updated_at timestamptz NOT NULL DEFAULT now(), "
+            "CONSTRAINT uq_product_edge_source_target_type UNIQUE (source_product_id, target_product_id, relation_type), "
+            "CONSTRAINT ck_product_edges_relation_type CHECK (relation_type IN ('integrates_with', 'requires', 'conflicts_with', 'replaces', 'bundles_with', 'alternative_to', 'migrates_to')), "
+            "CONSTRAINT ck_product_edges_status CHECK (status IN ('approved', 'pending_review', 'rejected')), "
+            "CONSTRAINT ck_product_edges_evidence_required CHECK (length(trim(evidence)) > 0))",
+            "CREATE INDEX IF NOT EXISTS ix_product_edges_source ON product_edges (source_product_id)",
+            "CREATE INDEX IF NOT EXISTS ix_product_edges_target ON product_edges (target_product_id)",
+            "CREATE INDEX IF NOT EXISTS ix_product_edges_relation ON product_edges (relation_type)",
+            "CREATE INDEX IF NOT EXISTS ix_product_edges_status ON product_edges (status)",
+            # reference_architectures table
+            "CREATE TABLE IF NOT EXISTS reference_architectures ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, "
+            "name varchar(255) NOT NULL, "
+            "slug varchar(128) NOT NULL, "
+            "description text, "
+            "architecture_overview text, "
+            "target_segment varchar(64), "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "updated_at timestamptz NOT NULL DEFAULT now(), "
+            "CONSTRAINT uq_ref_arch_workspace_slug UNIQUE (workspace_id, slug))",
+            "CREATE INDEX IF NOT EXISTS ix_ref_arch_org_id ON reference_architectures (org_id)",
+            "CREATE INDEX IF NOT EXISTS ix_ref_arch_workspace_id ON reference_architectures (workspace_id)",
+            # reference_architecture_products association table
+            "CREATE TABLE IF NOT EXISTS reference_architecture_products ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "architecture_id uuid NOT NULL REFERENCES reference_architectures(id) ON DELETE CASCADE, "
+            "product_id uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE, "
+            "role varchar(128) NOT NULL DEFAULT 'Component', "
+            "notes text, "
+            "CONSTRAINT uq_ref_arch_product UNIQUE (architecture_id, product_id))",
+            "CREATE INDEX IF NOT EXISTS ix_ref_arch_prod_arch ON reference_architecture_products (architecture_id)",
+            "CREATE INDEX IF NOT EXISTS ix_ref_arch_prod_prod ON reference_architecture_products (product_id)",
+        ],
+    ),
 ]
 
 

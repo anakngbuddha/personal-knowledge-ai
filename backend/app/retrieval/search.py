@@ -20,6 +20,7 @@ vs hybrid) is one parameter, not three code paths that can drift apart.
 from __future__ import annotations
 
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -213,10 +214,11 @@ def _hydrate(db: Session, fused, *, include_text: bool) -> list[SearchHit]:
     from datetime import date
 
     by_id = {hit.id: hit for hit in fused}
+    uuid_ids = [uuid.UUID(k) if isinstance(k, str) else k for k in by_id]
     rows = db.execute(
         select(DocumentChunk, Document)
         .join(Document, Document.id == DocumentChunk.document_id)
-        .where(DocumentChunk.id.in_(list(by_id)))
+        .where(DocumentChunk.id.in_(uuid_ids))
     ).all()
 
     today = date.today()

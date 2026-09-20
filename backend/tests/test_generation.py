@@ -170,6 +170,7 @@ def test_build_retrieval_filters():
             "approved_only": True,
             "exclude_injection_flagged": True,
             "document_ids": ["doc-1"],
+            "exclude_document_ids": ["doc-2"],
         }
     )
     assert rf.products == ["Widget"]
@@ -179,3 +180,18 @@ def test_build_retrieval_filters():
     assert rf.approved_only is True
     assert rf.exclude_injection_flagged is True
     assert rf.document_ids == ["doc-1"]
+    assert rf.exclude_document_ids == ["doc-2"]
+
+
+def test_grounded_answer_includes_conversation_and_message_ids():
+    answer = GroundedAnswer(
+        text="Answer text",
+        citations=[],
+        model_id="fake-llm-v1",
+        prompt_version=PROMPT_VERSION,
+        conversation_id="conv-123",
+        message_id="msg-456",
+    )
+    d = answer.as_dict()
+    assert d["conversation_id"] == "conv-123"
+    assert d["message_id"] == "msg-456"

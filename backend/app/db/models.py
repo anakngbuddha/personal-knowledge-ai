@@ -362,3 +362,277 @@ class TokenBudget(Base):
     __table_args__ = (
         UniqueConstraint("org_id", "month", name="uq_token_budget_org_month"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Product Catalog & Typed Graph Models
+# ---------------------------------------------------------------------------
+
+
+class RelationType:
+    INTEGRATES_WITH = "integrates_with"
+    REQUIRES = "requires"
+    CONFLICTS_WITH = "conflicts_with"
+    REPLACES = "replaces"
+    BUNDLES_WITH = "bundles_with"
+    ALTERNATIVE_TO = "alternative_to"
+    MIGRATES_TO = "migrates_to"
+
+    ALL = {
+        INTEGRATES_WITH,
+        REQUIRES,
+        CONFLICTS_WITH,
+        REPLACES,
+        BUNDLES_WITH,
+        ALTERNATIVE_TO,
+        MIGRATES_TO,
+    }
+
+
+class EdgeStatus:
+    APPROVED = "approved"
+    PENDING_REVIEW = "pending_review"
+    REJECTED = "rejected"
+
+    ALL = {APPROVED, PENDING_REVIEW, REJECTED}
+
+
+class LifecycleStatus:
+    GA = "GA"
+    EOL = "EOL"
+    ROADMAP = "roadmap"
+
+    ALL = {GA, EOL, ROADMAP}
+
+
+class DeploymentModel:
+    CLOUD = "cloud"
+    ON_PREM = "on-prem"
+    HYBRID = "hybrid"
+
+    ALL = {CLOUD, ON_PREM, HYBRID}
+
+
+class Product(Base):
+    __tablename__ = "products"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    # Core entity attributes
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    vendor: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    ownership: Mapped[str] = mapped_column(String(16), nullable=False, default=Ownership.OWN)
+    category: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    tier: Mapped[str] = mapped_column(String(64), nullable=False, default="Core")
+    deployment_model: Mapped[str] = mapped_column(String(32), nullable=False, default="cloud")
+    licensing_model: Mapped[str] = mapped_column(String(64), nullable=False, default="subscription")
+    target_segment: Mapped[str] = mapped_column(String(64), nullable=False, default="Enterprise")
+    lifecycle_status: Mapped[str] = mapped_column(String(32), nullable=False, default="GA")
+    prerequisites: Mapped[str | None] = mapped_column(Text)
+    support_path: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    collateral_document_ids: Mapped[list | None] = mapped_column(JSONB)
+
+    # Resold-specific governance fields
+    partner_tier: Mapped[str | None] = mapped_column(String(128))
+    margin_band: Mapped[str | None] = mapped_column(String(64))
+    support_owner: Mapped[str | None] = mapped_column(String(64))  # vendor | reseller | joint
+    contract_constraints: Mapped[str | None] = mapped_column(Text)
+    source_of_truth_url: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    capabilities: Mapped[list["ProductCapability"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan", passive_deletes=True
+    )
+    outgoing_edges: Mapped[list["ProductEdge"]] = relationship(
+        "ProductEdge",
+        foreign_keys="ProductEdge.source_product_id",
+        back_populates="source_product",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    incoming_edges: Mapped[list["ProductEdge"]] = relationship(
+        "ProductEdge",
+        foreign_keys="ProductEdge.target_product_id",
+        back_populates="target_product",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    reference_architectures: Mapped[list["ReferenceArchitectureProduct"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug", name="uq_products_workspace_slug"),
+        CheckConstraint(
+            "lifecycle_status in ('GA', 'EOL', 'roadmap')",
+            name="ck_products_lifecycle_status",
+        ),
+        CheckConstraint(
+            "deployment_model in ('cloud', 'on-prem', 'hybrid')",
+            name="ck_products_deployment_model",
+        ),
+    )
+
+
+class Capability(Base):
+    __tablename__ = "capabilities"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    products: Mapped[list["ProductCapability"]] = relationship(
+        back_populates="capability", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "slug", name="uq_capabilities_org_slug"),
+    )
+
+
+class ProductCapability(Base):
+    __tablename__ = "product_capabilities"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    capability_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("capabilities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    proficiency: Mapped[str] = mapped_column(String(32), nullable=False, default="native")
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    product: Mapped[Product] = relationship(back_populates="capabilities")
+    capability: Mapped[Capability] = relationship(back_populates="products")
+
+    __table_args__ = (
+        UniqueConstraint("product_id", "capability_id", name="uq_product_capability"),
+    )
+
+
+class ProductEdge(Base):
+    __tablename__ = "product_edges"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    target_product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    relation_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    evidence: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), index=True
+    )
+    is_ai_suggested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=EdgeStatus.APPROVED, index=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    source_product: Mapped[Product] = relationship(
+        "Product", foreign_keys=[source_product_id], back_populates="outgoing_edges"
+    )
+    target_product: Mapped[Product] = relationship(
+        "Product", foreign_keys=[target_product_id], back_populates="incoming_edges"
+    )
+    document: Mapped[Document | None] = relationship("Document")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_product_id", "target_product_id", "relation_type", name="uq_product_edge_source_target_type"
+        ),
+        CheckConstraint(
+            "relation_type in ('integrates_with', 'requires', 'conflicts_with', 'replaces', 'bundles_with', 'alternative_to', 'migrates_to')",
+            name="ck_product_edges_relation_type",
+        ),
+        CheckConstraint(
+            "status in ('approved', 'pending_review', 'rejected')",
+            name="ck_product_edges_status",
+        ),
+        CheckConstraint("length(trim(evidence)) > 0", name="ck_product_edges_evidence_required"),
+    )
+
+
+class ReferenceArchitecture(Base):
+    __tablename__ = "reference_architectures"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    architecture_overview: Mapped[str | None] = mapped_column(Text)
+    target_segment: Mapped[str | None] = mapped_column(String(64))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    products: Mapped[list["ReferenceArchitectureProduct"]] = relationship(
+        back_populates="architecture", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug", name="uq_ref_arch_workspace_slug"),
+    )
+
+
+class ReferenceArchitectureProduct(Base):
+    __tablename__ = "reference_architecture_products"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    architecture_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("reference_architectures.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String(128), nullable=False, default="Component")
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    architecture: Mapped[ReferenceArchitecture] = relationship(back_populates="products")
+    product: Mapped[Product] = relationship(back_populates="reference_architectures")
+
+    __table_args__ = (
+        UniqueConstraint("architecture_id", "product_id", name="uq_ref_arch_product"),
+    )
+

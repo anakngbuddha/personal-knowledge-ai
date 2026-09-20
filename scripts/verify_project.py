@@ -112,8 +112,8 @@ def verify_graphify(workspace: Path) -> bool:
         import json
         data = json.loads(graph_file.read_text(encoding="utf-8"))
         nodes = len(data.get("nodes", []))
-        edges = len(data.get("edges", []))
-        communities = len(data.get("communities", [])) if "communities" in data else 0
+        edges = len(data.get("links", data.get("edges", [])))
+        communities = len({n.get("community") for n in data.get("nodes", []) if "community" in n})
         print(f"[PASS] Graphify knowledge graph valid: {nodes} nodes, {edges} edges, {communities} communities.")
         return True
     except Exception as e:

@@ -223,8 +223,20 @@ class GeminiLLMProvider(LLMProvider):
 
         parts = candidates[0].get("content", {}).get("parts", [])
         text = "".join(part.get("text", "") for part in parts)
-
         usage = self._extract_usage(data)
+
+        if not text:
+            finish_reason = candidates[0].get("finishReason")
+            return GroundedAnswer(
+                text="The model returned no response.",
+                citations=[],
+                model_id=self._model,
+                prompt_version=PROMPT_VERSION,
+                refused=True,
+                refusal_reason=f"empty_response_{finish_reason}" if finish_reason else "empty_response",
+                usage=usage,
+            )
+
         refused, refusal_reason = _detect_refusal(text)
         cited_indices = _extract_cited_indices(text)
         citations = _map_citations(cited_indices, context_chunks)

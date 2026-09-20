@@ -143,3 +143,11 @@ def test_compiling_an_empty_set_is_not_silently_permissive():
     upstream. This test documents the boundary rather than pretending it is safe."""
     sql = literal(compile_predicate_set(PredicateSet()))
     assert "true" in sql.lower()
+
+
+def test_exclude_document_ids_compiles_to_not_in():
+    doc_id = uuid.uuid4()
+    filters = RetrievalFilters(exclude_document_ids=[str(doc_id)])
+    clause = compile_predicate(filters.to_predicates()[0])
+    sql = literal(clause)
+    assert f"documents.id NOT IN ('{doc_id}')" in sql

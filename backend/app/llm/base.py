@@ -84,6 +84,8 @@ class GroundedAnswer:
     refused: bool = False
     refusal_reason: str | None = None
     usage: TokenUsage | None = None
+    conversation_id: str | None = None
+    message_id: str | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -94,6 +96,8 @@ class GroundedAnswer:
             "refused": self.refused,
             "refusal_reason": self.refusal_reason,
             "usage": self.usage.as_dict() if self.usage else None,
+            "conversation_id": self.conversation_id,
+            "message_id": self.message_id,
         }
 
 
@@ -108,6 +112,8 @@ class GroundedAnswerChunk:
     usage: TokenUsage | None = None
     refused: bool = False
     refusal_reason: str | None = None
+    conversation_id: str | None = None
+    message_id: str | None = None
 
 
 class LLMProvider(ABC):
