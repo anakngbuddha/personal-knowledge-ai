@@ -1,0 +1,22 @@
+slug: rfp-response
+name: RFP Responder
+version: "1.0"
+tasks:
+  - slug: parse_rfp
+    handler: rfp.parse
+  - slug: evaluate_capabilities
+    handler: rfp.evaluate
+    depends_on: [parse_rfp]
+  - slug: retrieve_evidence
+    handler: rfp.retrieve
+    depends_on: [evaluate_capabilities]
+  - slug: draft_responses
+    handler: rfp.draft
+    depends_on: [retrieve_evidence]
+  - slug: human_gate
+    handler: rfp.gate
+    depends_on: [draft_responses]
+    gate: human_approval
+  - slug: export_deliverable
+    handler: rfp.export
+    depends_on: [human_gate]

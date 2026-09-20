@@ -20,6 +20,7 @@ os.environ.setdefault("LOCAL_STORAGE_DIR", "./.test-storage")
 os.environ.setdefault("MALWARE_SCANNER", "heuristic")
 os.environ.setdefault("OCR_PROVIDER", "none")
 os.environ.setdefault("WORKER_ENABLED", "false")
+os.environ.setdefault("WORKFLOW_WORKER_ENABLED", "false")
 os.environ.setdefault("AUTH_MODE", "owner_dev")
 
 import pytest  # noqa: E402

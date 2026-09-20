@@ -42,6 +42,26 @@ class Principal:
         return self.role in (Role.OWNER, Role.ADMIN)
 
     @property
+    def is_admin(self) -> bool:
+        from app.security.labels import role_has_access
+        return role_has_access(self.role, Role.ADMIN)
+
+    @property
+    def can_write_catalog(self) -> bool:
+        from app.security.labels import role_has_access
+        return role_has_access(self.role, Role.SOLUTIONS_ENGINEER)
+
+    @property
+    def can_manage_users(self) -> bool:
+        from app.security.labels import role_has_access
+        return role_has_access(self.role, Role.ADMIN)
+
+    @property
+    def can_export_restricted(self) -> bool:
+        from app.security.labels import role_has_access
+        return self.allow_vendor_restricted or role_has_access(self.role, Role.ADMIN)
+
+    @property
     def sees_all_accounts(self) -> bool:
         return self.account_refs is None
 

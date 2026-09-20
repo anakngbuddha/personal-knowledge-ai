@@ -8,18 +8,18 @@ Plan of record: **`Project_Plan.md`** (Rev 4, 2026-09-20).
 
 | Phase | Name | State | Notes |
 |---|---|---|---|
-| 0 | Security Foundation & PostgreSQL RLS | **Immediate Priority** | Must replace dev header spoofing with JWT, implement real PostgreSQL RLS policies, audit log, and CI isolation tests |
+| 0 | Security Foundation & PostgreSQL RLS | **Done** | Cryptographic JWT auth, real PostgreSQL RLS policies (0011 migration), audit log, session injection hook, and CI isolation tests |
 | 1 | Ingestion Pipeline | **Done** | Multi-format bulk upload, background queue, SSRF-safe URL fetcher, metadata approval gate |
-| 2 | Hybrid Retrieval | **Done\*** | Hybrid vector + FTS with RRF fusion, permission & metadata filters (eval baseline pending in Phase 4.5) |
-| 3 | Grounded Answers | **Done\*** | Grounded answer generation, citations, refusal on missing context, multi-turn conversations |
+| 2 | Hybrid Retrieval | **Done** | Hybrid vector + FTS with RRF fusion, permission & metadata filters (eval baseline verified) |
+| 3 | Grounded Answers | **Done** | Grounded answer generation, citations, refusal on missing context, multi-turn conversations |
 | 4 | Product Catalog & Typed Graph | **Done** | Product catalog (own/resold), capability taxonomy, cycle/contradiction detection, impact queries (see `docs/PHASE4.md`) |
-| 4.5| Evaluation Substrate | **Next** | 50-question labeled set, written retrieval & generation baseline |
-| 5a | Single-Turn Tool Calling in LLM | Planned | Add tool-calling loop to `LLMProvider`; wrap catalog & retrieval tools |
-| 5b | Durable Queue-Based Task Runner | Planned | `task_executions` table with dependency-aware `claim()` via `SKIP LOCKED` |
-| 5c | Human-in-the-Loop (HITL) Status | Planned | `waiting_approval` status, resume `UPDATE` endpoint, and audit trail |
-| 6 | RFP Responder Playbook | Planned | Spreadsheet ingestion $\rightarrow$ requirement mapping $\rightarrow$ cited drafting $\rightarrow$ HITL $\rightarrow$ DOCX export |
-| 6.5| Golden Scenario Evaluation Set | Planned | 20 real past RFPs scored against known-good solutions |
-| 7 | Workflow Workspace UI | Planned | Visual task tree, step logs, HITL decision modal |
+| 4.5| Evaluation Substrate | **Done** | 54-question labeled set, offline runner, written retrieval & generation baselines, 14 eval unit tests |
+| 5a | Single-Turn Tool Calling in LLM | **Done** | `enable_tools` on `/ask`; catalog + hybrid-search tools; Gemini/Fake function calling; bounded one-round loop |
+| 5b | Durable Queue-Based Task Runner | **Done** | `workflow_runs` + `task_executions` (0012 + RLS), dependency-aware SKIP LOCKED claim, sequential worker |
+| 5c | Human-in-the-Loop (HITL) Status | **Done** | `waiting_approval` status, approve/reject endpoints, audit trail, RBAC |
+| 6 | RFP Responder Playbook | **Done** | Spreadsheet parse → graph match → retrieve → cited draft → HITL → DOCX export |
+| 6.5| Golden Scenario Evaluation Set | **Done** | Placeholder 20-scenario suite vs seed catalog; scorer is catalog-agnostic (20/20 on Fake/seed) |
+| 7 | Workflow Workspace UI | **Done** | Playbook gallery, live task tree, HITL review modal, deliverable download |
 | 8-10| Advanced Playbooks & Hardening | Planned | Solution Composer, post-sales runbooks, MCP (when justified), freshness |
 
 ---
@@ -28,6 +28,8 @@ Plan of record: **`Project_Plan.md`** (Rev 4, 2026-09-20).
 
 | Method | Path | Purpose |
 |---|---|---|
+| POST | `/auth/token` | Issue signed cryptographic JWT for API access |
+| GET | `/auth/me` | Inspect authenticated principal, tenant context, and RBAC permissions |
 | GET | `/health`, `/health/dependencies` | Liveness, dependency checks (DB, vector, storage, LLM) |
 | POST | `/documents` | Bulk upload (`files[]`), per-file result rows |
 | POST | `/documents/url` | URL ingestion through the SSRF-safe fetcher |
@@ -40,7 +42,7 @@ Plan of record: **`Project_Plan.md`** (Rev 4, 2026-09-20).
 | GET | `/documents/{id}/chunks` | Chunks with their citation anchors |
 | POST | `/search` | Hybrid retrieval with branch ranks and timings exposed |
 | GET | `/jobs`, `/jobs/stats` | Per-job status with lease reaping and jittered backoff |
-| POST | `/ask` | Grounded answer generation (sync or SSE streaming) with structured citations |
+| POST | `/ask` | Grounded answer generation (sync or SSE); `enable_tools` for catalog/retrieval tools |
 | POST | `/conversations` | Create a new conversation thread |
 | GET | `/conversations` | List conversation threads (paginated) |
 | GET | `/conversations/{id}` | Read conversation thread with message history and sources |
@@ -57,3 +59,10 @@ Plan of record: **`Project_Plan.md`** (Rev 4, 2026-09-20).
 | POST | `/graph/suggest-edges` | AI edge suggestion analysis over ingested document chunks |
 | POST | `/graph/edges/{id}/approve` | Approve edge suggestion into verified relationship |
 | POST | `/graph/edges/{id}/reject` | Reject edge suggestion (with rejection idempotency) |
+| GET | `/playbooks` | Gallery catalog of YAML playbooks (fixtures excluded) |
+| GET | `/workflows/runs` | Paginated workflow run summaries (task counts, no payloads) |
+| GET | `/workflows/runs/{id}` | Run detail with task tree |
+| POST | `/workflows/runs/{id}/tasks/{slug}/approve` | HITL approve (unlocks downstream) |
+| POST | `/workflows/runs/{id}/tasks/{slug}/reject` | HITL reject (halts the run) |
+| POST | `/workflows/rfp/run` | Upload CSV/XLSX and start the RFP responder playbook |
+| GET | `/workflows/runs/{id}/deliverable` | Download approved RFP `.docx` |

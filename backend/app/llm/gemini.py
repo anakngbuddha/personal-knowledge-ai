@@ -30,6 +30,7 @@ from app.llm.base import (
     TokenUsage,
 )
 from app.llm.prompts import PROMPT_VERSION
+from app.tools.schema import ToolCall, ToolDefinition, ToolResult
 
 logger = get_logger(__name__)
 
@@ -68,11 +69,22 @@ class GeminiLLMProvider(LLMProvider):
         *,
         system_prompt: str,
         history: list[dict] | None = None,
+        tools: list[ToolDefinition] | None = None,
+        prior_tool_calls: list[ToolCall] | None = None,
+        tool_results: list[ToolResult] | None = None,
     ) -> GroundedAnswer:
         url = (
             f"{settings.gemini_api_base}/models/{self._model}:generateContent"
         )
-        payload = self._build_payload(question, context_chunks, system_prompt, history)
+        payload = self._build_payload(
+            question,
+            context_chunks,
+            system_prompt,
+            history,
+            tools=tools,
+            prior_tool_calls=prior_tool_calls,
+            tool_results=tool_results,
+        )
 
         try:
             response = httpx.post(
@@ -95,11 +107,22 @@ class GeminiLLMProvider(LLMProvider):
         *,
         system_prompt: str,
         history: list[dict] | None = None,
+        tools: list[ToolDefinition] | None = None,
+        prior_tool_calls: list[ToolCall] | None = None,
+        tool_results: list[ToolResult] | None = None,
     ) -> Iterator[GroundedAnswerChunk]:
         url = (
             f"{settings.gemini_api_base}/models/{self._model}:streamGenerateContent"
         )
-        payload = self._build_payload(question, context_chunks, system_prompt, history)
+        payload = self._build_payload(
+            question,
+            context_chunks,
+            system_prompt,
+            history,
+            tools=tools,
+            prior_tool_calls=prior_tool_calls,
+            tool_results=tool_results,
+        )
 
         accumulated_text = ""
         usage: TokenUsage | None = None
@@ -163,6 +186,9 @@ class GeminiLLMProvider(LLMProvider):
         context_chunks: list[dict],
         system_prompt: str,
         history: list[dict] | None,
+        tools: list[ToolDefinition] | None = None,
+        prior_tool_calls: list[ToolCall] | None = None,
+        tool_results: list[ToolResult] | None = None,
     ) -> dict:
         contents: list[dict] = []
 
@@ -174,22 +200,51 @@ class GeminiLLMProvider(LLMProvider):
                     "parts": [{"text": turn["content"]}],
                 })
 
-        # The current user message is the question (context is in the text)
         contents.append({
             "role": "user",
             "parts": [{"text": question}],
         })
 
-        return {
+        if prior_tool_calls:
+            contents.append({
+                "role": "model",
+                "parts": [
+                    {
+                        "functionCall": {
+                            "name": call.name,
+                            "args": call.arguments,
+                        }
+                    }
+                    for call in prior_tool_calls
+                ],
+            })
+        if tool_results:
+            contents.append({
+                "role": "user",
+                "parts": [
+                    {
+                        "functionResponse": {
+                            "name": result.name,
+                            "response": result.content if not result.error else {"error": result.error},
+                        }
+                    }
+                    for result in tool_results
+                ],
+            })
+
+        payload: dict = {
             "system_instruction": {
                 "parts": [{"text": system_prompt}],
             },
             "contents": contents,
             "generationConfig": {
-                "temperature": 0.1,  # Low temperature for grounded answers
+                "temperature": 0.1,
                 "maxOutputTokens": 4096,
             },
         }
+        if tools:
+            payload["tools"] = [_gemini_tools(tools)]
+        return payload
 
     def _check_status(self, response: httpx.Response) -> None:
         self._raise_for_status(response.status_code, response.text)
@@ -224,6 +279,17 @@ class GeminiLLMProvider(LLMProvider):
         parts = candidates[0].get("content", {}).get("parts", [])
         text = "".join(part.get("text", "") for part in parts)
         usage = self._extract_usage(data)
+        tool_calls = _extract_function_calls(parts)
+
+        if tool_calls:
+            return GroundedAnswer(
+                text=text,
+                citations=[],
+                model_id=self._model,
+                prompt_version=PROMPT_VERSION,
+                usage=usage,
+                tool_calls=tool_calls,
+            )
 
         if not text:
             finish_reason = candidates[0].get("finishReason")
@@ -271,6 +337,79 @@ class GeminiLLMProvider(LLMProvider):
             completion_tokens=completion,
             total_tokens=prompt + completion,
         )
+
+
+def _gemini_tools(tools: list[ToolDefinition]) -> dict:
+    return {
+        "functionDeclarations": [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": _json_schema_to_gemini(tool.parameters),
+            }
+            for tool in tools
+        ]
+    }
+
+
+_GEMINI_TYPES = {
+    "object": "OBJECT",
+    "string": "STRING",
+    "number": "NUMBER",
+    "integer": "INTEGER",
+    "boolean": "BOOLEAN",
+    "array": "ARRAY",
+}
+
+
+def _json_schema_to_gemini(schema: dict) -> dict:
+    """Convert a JSON Schema fragment into Gemini's uppercase type names."""
+    if not schema:
+        return {"type": "OBJECT", "properties": {}}
+    out: dict = {}
+    raw_type = schema.get("type")
+    if raw_type:
+        out["type"] = _GEMINI_TYPES.get(str(raw_type).lower(), "OBJECT")
+    if "properties" in schema:
+        out["properties"] = {
+            key: _json_schema_to_gemini(value)
+            for key, value in schema["properties"].items()
+        }
+    if "required" in schema:
+        out["required"] = list(schema["required"])
+    if "description" in schema:
+        out["description"] = schema["description"]
+    if "items" in schema and isinstance(schema["items"], dict):
+        out["items"] = _json_schema_to_gemini(schema["items"])
+    if schema.get("anyOf") or schema.get("oneOf"):
+        # Optional Pydantic fields become anyOf [type, null]; pick the first non-null.
+        variants = schema.get("anyOf") or schema.get("oneOf") or []
+        non_null = [v for v in variants if v.get("type") != "null"]
+        if non_null:
+            return _json_schema_to_gemini(non_null[0])
+    return out or {"type": "OBJECT", "properties": {}}
+
+
+def _extract_function_calls(parts: list[dict]) -> list[ToolCall]:
+    calls: list[ToolCall] = []
+    for part in parts:
+        raw = part.get("functionCall")
+        if not raw:
+            continue
+        name = str(raw.get("name") or "")
+        if not name:
+            continue
+        args = raw.get("args") or raw.get("arguments") or {}
+        if not isinstance(args, dict):
+            args = {}
+        calls.append(
+            ToolCall(
+                id=f"call_{len(calls) + 1}",
+                name=name,
+                arguments=args,
+            )
+        )
+    return calls
 
 
 def _detect_refusal(text: str) -> tuple[bool, str | None]:

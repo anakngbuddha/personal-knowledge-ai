@@ -5,27 +5,15 @@ import type {
   ConversationListResponse,
   DocumentChunk,
   KnowledgeDocument,
+  PlaybookListResponse,
+  PrincipalProfile,
+  RfpAnswerEdit,
   SearchResponse,
   SourceMetadata,
+  WorkflowRun,
+  WorkflowRunListResponse,
 } from "../types";
-
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, init);
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new Error(detail);
-  }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
-}
+import { request, requestBlob } from "./http";
 
 export const api = {
   // ── Phase 1: Documents & Ingestion ──────────────────────────────────────────
@@ -116,4 +104,36 @@ export const api = {
 
   getConversationSources: (id: string) =>
     request<SourceMetadata[]>(`/conversations/${id}/sources`),
+
+  me: () => request<PrincipalProfile>("/auth/me"),
+
+  listPlaybooks: () => request<PlaybookListResponse>("/playbooks"),
+
+  listWorkflowRuns: (limit = 20, offset = 0) =>
+    request<WorkflowRunListResponse>(`/workflows/runs?limit=${limit}&offset=${offset}`),
+
+  getWorkflowRun: (id: string) => request<WorkflowRun>(`/workflows/runs/${id}`),
+
+  startRfpRun: (file: File, accountRef?: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (accountRef) form.append("account_ref", accountRef);
+    return request<WorkflowRun>("/workflows/rfp/run", { method: "POST", body: form });
+  },
+
+  approveTask: (runId: string, slug: string, answers: RfpAnswerEdit[]) =>
+    request<WorkflowRun>(`/workflows/runs/${runId}/tasks/${encodeURIComponent(slug)}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers }),
+    }),
+
+  rejectTask: (runId: string, slug: string, reason: string) =>
+    request<WorkflowRun>(`/workflows/runs/${runId}/tasks/${encodeURIComponent(slug)}/reject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    }),
+
+  downloadDeliverable: (runId: string) => requestBlob(`/workflows/runs/${runId}/deliverable`),
 };

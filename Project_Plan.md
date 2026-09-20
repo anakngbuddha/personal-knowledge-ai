@@ -67,7 +67,7 @@ A high-assurance **Agentic Operating System and Knowledge Workspace** for enterp
 
 | Phase | Name | Status | Depends on | Outcome |
 |---|---|---|---|---|
-| **0** | **Security Foundation & PostgreSQL RLS** | **IMMEDIATE** | — | Cryptographic JWT auth, real PostgreSQL RLS policies, audit log, CI isolation tests |
+| **0** | **Security Foundation & PostgreSQL RLS** | **Done** | — | Cryptographic JWT auth, real PostgreSQL RLS policies, audit log, CI isolation tests |
 | **1** | **Ingestion Pipeline** | **Done** | 0 | Multi-format upload, deterministic chunking, citation anchors, background queue |
 | **2** | **Hybrid Retrieval** | **Done\*** | 1 | Vector (pgvector) + FTS (tsvector) with RRF fusion and metadata filters |
 | **3** | **Grounded Answers** | **Done\*** | 2 | Grounded generation, citation extraction, refusal on missing context |
@@ -95,9 +95,10 @@ The non-negotiable security baseline for a multi-tenant platform.
 - **Authentication & Authorization**:
   - Replace header-spoofing `resolve_principal` with cryptographic JWT validation (Auth0 / OIDC or signed bearer tokens).
   - RBAC matrix: `admin`, `solutions_engineer`, `sales`, `viewer`, plus explicit account-level data grants.
+  - **Role Enum Reconciliation**: Reconcile the RBAC role set with current code (`app/security/labels.py` and `app/security/principal.py`, which use `Role.OWNER`, `Role.ADMIN`, `Role.SOLUTIONS_ENGINEER`, `Role.SALES`, `Role.VIEWER`). Explicitly audit and migrate enum values, test fixtures across `backend/tests/test_permissions.py`, `Principal.is_owner()`, and all `normalize()` call sites.
 - **Real PostgreSQL Row-Level Security (RLS)**:
   - Add `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY` across all tenant-scoped tables (`documents`, `chunks`, `products`, `product_edges`, `reference_architectures`, `conversations`, `jobs`).
-  - Session variable scoping: on every transaction, execute `SET LOCAL app.current_org_id = :org_id`.
+  - **Session RLS Injection Hook (`backend/app/db/session.py` & `backend/app/security/deps.py`)**: Implement a request-scoped session dependency (e.g., `get_tenant_db(principal: Principal = Depends(get_current_principal))`) that executes `SET LOCAL app.current_org_id = :org_id` on the session connection on every single request. This guarantees queries execute within the active tenant's transaction boundary and prevents RLS from silently failing closed (returning empty sets).
   - Database policies: `CREATE POLICY tenant_isolation_policy ON <table> USING (org_id = current_setting('app.current_org_id')::uuid)`.
 - **Append-Only Audit Log**:
   - `audit_logs` table tracking user ID, org ID, action (`view`, `export`, `approve`, `override`), resource type, and timestamp.
@@ -150,6 +151,8 @@ Building the workflow engine on top of our existing, battle-tested queue machine
 **Scope**
 - **Data Model (`task_executions` table)**:
   - Columns: `id`, `workflow_run_id`, `task_slug`, `depends_on_slugs` (array), `status` (`pending`, `running`, `waiting_approval`, `succeeded`, `failed`), `input_payload` (JSONB), `output_payload` (JSONB), `leased_until`, `worker_id`, `retry_count`.
+- **Upfront Task Materialization**:
+  - The workflow loader materializes every task row for a run upfront at start time (`status = 'pending'`), before any claiming begins. This guarantees that the `NOT EXISTS` check accurately evaluates incomplete upstream dependencies rather than prematurely claiming downstream tasks whose prerequisites have not yet been inserted.
 - **Dependency-Aware Claim Mechanism**:
   - Adapt `app/jobs/queue.py::claim()` to enforce:
     ```sql

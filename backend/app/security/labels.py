@@ -80,6 +80,30 @@ class Role(StrEnum):
     VIEWER = "viewer"
 
 
+ROLE_HIERARCHY: dict[Role, int] = {
+    Role.VIEWER: 10,
+    Role.SALES: 20,
+    Role.SOLUTIONS_ENGINEER: 30,
+    Role.ADMIN: 40,
+    Role.OWNER: 50,
+}
+
+
+def role_rank(role: str | Role) -> int:
+    """Numerical privilege level for a role. Owner > Admin > SE > Sales > Viewer."""
+    if isinstance(role, str):
+        try:
+            role = Role(role.strip().lower())
+        except ValueError:
+            return 0
+    return ROLE_HIERARCHY.get(role, 0)
+
+
+def role_has_access(user_role: str | Role, required_role: str | Role) -> bool:
+    """Return True if user_role possesses at least the privileges of required_role."""
+    return role_rank(user_role) >= role_rank(required_role)
+
+
 def normalize(value: str | None, enum: type[StrEnum], default: StrEnum | None = None) -> str:
     """Parse an incoming label, falling back to `default` when one is provided.
 

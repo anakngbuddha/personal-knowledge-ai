@@ -251,6 +251,134 @@ MIGRATIONS: list[tuple[str, list[str]]] = [
             "CREATE INDEX IF NOT EXISTS ix_ref_arch_prod_prod ON reference_architecture_products (product_id)",
         ],
     ),
+    (
+        "0011_phase0_security_baseline_rls",
+        [
+            # Add org_id to conversations if missing
+            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS org_id uuid REFERENCES organizations(id) ON DELETE CASCADE",
+            "CREATE INDEX IF NOT EXISTS ix_conversations_org_id ON conversations (org_id)",
+            # Backfill conversations org_id from workspaces
+            "UPDATE conversations SET org_id = workspaces.org_id FROM workspaces WHERE conversations.workspace_id = workspaces.id AND conversations.org_id IS NULL",
+            # Create audit_logs table
+            "CREATE TABLE IF NOT EXISTS audit_logs ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "user_id uuid, "
+            "action varchar(64) NOT NULL, "
+            "resource_type varchar(64) NOT NULL, "
+            "resource_id varchar(128), "
+            "details jsonb, "
+            "created_at timestamptz NOT NULL DEFAULT now())",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_org_id ON audit_logs (org_id)",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_user_id ON audit_logs (user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_action ON audit_logs (action)",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at ON audit_logs (created_at)",
+            # Row-Level Security policies for all tenant-scoped tables
+            # documents
+            "ALTER TABLE documents ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE documents FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON documents",
+            "CREATE POLICY tenant_isolation_policy ON documents AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            # document_chunks
+            "ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE document_chunks FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON document_chunks",
+            "CREATE POLICY tenant_isolation_policy ON document_chunks AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            # products
+            "ALTER TABLE products ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE products FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON products",
+            "CREATE POLICY tenant_isolation_policy ON products AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            # product_edges
+            "ALTER TABLE product_edges ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE product_edges FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON product_edges",
+            "CREATE POLICY tenant_isolation_policy ON product_edges AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            # reference_architectures
+            "ALTER TABLE reference_architectures ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE reference_architectures FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON reference_architectures",
+            "CREATE POLICY tenant_isolation_policy ON reference_architectures AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            # conversations
+            "ALTER TABLE conversations ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE conversations FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON conversations",
+            "CREATE POLICY tenant_isolation_policy ON conversations AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            # workspaces
+            "ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE workspaces FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON workspaces",
+            "CREATE POLICY tenant_isolation_policy ON workspaces AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            # access_grants
+            "ALTER TABLE access_grants ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE access_grants FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON access_grants",
+            "CREATE POLICY tenant_isolation_policy ON access_grants AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            # ingestion_jobs
+            "ALTER TABLE ingestion_jobs ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE ingestion_jobs FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON ingestion_jobs",
+            "CREATE POLICY tenant_isolation_policy ON ingestion_jobs AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            # token_budgets
+            "ALTER TABLE token_budgets ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE token_budgets FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON token_budgets",
+            "CREATE POLICY tenant_isolation_policy ON token_budgets AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            # audit_logs
+            "ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE audit_logs FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON audit_logs",
+            "CREATE POLICY tenant_isolation_policy ON audit_logs AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+        ],
+    ),
+    (
+        "0012_task_executions",
+        [
+            "CREATE TABLE IF NOT EXISTS workflow_runs ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, "
+            "playbook_slug varchar(128) NOT NULL, "
+            "status varchar(32) NOT NULL DEFAULT 'pending', "
+            "created_by uuid, "
+            "principal_snapshot jsonb, "
+            "input_payload jsonb, "
+            "error_message text, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "updated_at timestamptz NOT NULL DEFAULT now())",
+            "CREATE INDEX IF NOT EXISTS ix_workflow_runs_org_id ON workflow_runs (org_id)",
+            "CREATE INDEX IF NOT EXISTS ix_workflow_runs_workspace_id ON workflow_runs (workspace_id)",
+            "CREATE INDEX IF NOT EXISTS ix_workflow_runs_status ON workflow_runs (status)",
+            "CREATE TABLE IF NOT EXISTS task_executions ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "workflow_run_id uuid NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE, "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "task_slug varchar(128) NOT NULL, "
+            "depends_on_slugs jsonb, "
+            "status varchar(32) NOT NULL DEFAULT 'pending', "
+            "input_payload jsonb, "
+            "output_payload jsonb, "
+            "leased_until timestamptz, "
+            "run_after timestamptz, "
+            "worker_id varchar(128), "
+            "retry_count integer NOT NULL DEFAULT 0, "
+            "max_attempts integer NOT NULL DEFAULT 4, "
+            "error_message text, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "updated_at timestamptz NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_task_exec_run_slug ON task_executions (workflow_run_id, task_slug)",
+            "CREATE INDEX IF NOT EXISTS ix_task_executions_claim ON task_executions (status, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_task_executions_org_id ON task_executions (org_id)",
+            "ALTER TABLE workflow_runs ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE workflow_runs FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON workflow_runs",
+            "CREATE POLICY tenant_isolation_policy ON workflow_runs AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            "ALTER TABLE task_executions ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE task_executions FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON task_executions",
+            "CREATE POLICY tenant_isolation_policy ON task_executions AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+        ],
+    ),
 ]
 
 
@@ -271,12 +399,20 @@ def run_migrations(engine: Engine) -> list[str]:
     """Apply every unapplied step. Returns the names that ran."""
     done = applied_migrations(engine)
     ran: list[str] = []
+    is_postgres = engine.dialect.name == "postgresql"
     for name, statements in MIGRATIONS:
         if name in done:
             continue
         logger.info("applying migration %s", name)
         with engine.begin() as conn:
             for statement in statements:
+                if not is_postgres:
+                    # Skip postgres-only RLS and specific DDL for in-memory SQLite test fixtures
+                    upper = statement.upper()
+                    if "ROW LEVEL SECURITY" in upper or "CREATE POLICY" in upper or "DROP POLICY" in upper:
+                        continue
+                    if "GEN_RANDOM_UUID()" in upper:
+                        statement = statement.replace("gen_random_uuid()", "lower(hex(randomblob(16)))")
                 conn.execute(text(statement))
             conn.execute(
                 text("INSERT INTO schema_migrations (name) VALUES (:name) "

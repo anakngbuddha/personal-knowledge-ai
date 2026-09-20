@@ -50,6 +50,16 @@ class AskFiltersIn(BaseModel):
     document_ids: list[str] = Field(default_factory=list)
 
 
+class ToolCallOut(BaseModel):
+    """One tool invocation the model requested (and the backend executed)."""
+
+    id: str
+    name: str
+    arguments: dict = Field(default_factory=dict)
+    error: str | None = None
+    content: dict | None = None
+
+
 class AskIn(BaseModel):
     """Request body for POST /ask and POST /conversations/{id}/ask."""
 
@@ -61,6 +71,7 @@ class AskIn(BaseModel):
     stream: bool = False
     # Source toggling: exclude specific documents from context
     exclude_document_ids: list[str] = Field(default_factory=list)
+    enable_tools: bool = False
 
 
 class AskOut(BaseModel):
@@ -75,6 +86,7 @@ class AskOut(BaseModel):
     usage: TokenUsageOut | None = None
     conversation_id: str | None = None
     message_id: str | None = None
+    tool_calls: list[ToolCallOut] = Field(default_factory=list)
 
 
 class MessageOut(BaseModel):

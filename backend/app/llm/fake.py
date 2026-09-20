@@ -3,10 +3,16 @@
 Produces deterministic, canned responses that include citations referencing
 whatever context chunks are provided. Used in all unit tests so they run
 without a Gemini API key and without network access.
+
+When tools are offered and the question matches a small keyword table, the
+first call returns a tool request; after ToolResults are fed back it emits a
+deterministic cited sentence that mentions the tool payload.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Iterator
 
 from app.llm.base import (
@@ -17,6 +23,9 @@ from app.llm.base import (
     TokenUsage,
 )
 from app.llm.prompts import PROMPT_VERSION
+from app.tools.schema import ToolCall, ToolDefinition, ToolResult
+
+_TOOL_KEYWORDS = ("prerequisite", "conflict", "deploy", "requires")
 
 
 class FakeLLMProvider(LLMProvider):
@@ -33,7 +42,23 @@ class FakeLLMProvider(LLMProvider):
         *,
         system_prompt: str,
         history: list[dict] | None = None,
+        tools: list[ToolDefinition] | None = None,
+        prior_tool_calls: list[ToolCall] | None = None,
+        tool_results: list[ToolResult] | None = None,
     ) -> GroundedAnswer:
+        if tool_results:
+            return self._synthesize_from_tools(question, context_chunks, tool_results)
+
+        if tools and _wants_tools(question):
+            return GroundedAnswer(
+                text="",
+                citations=[],
+                model_id=self.model_id,
+                prompt_version=PROMPT_VERSION,
+                tool_calls=_fake_tool_calls(question, tools),
+                usage=TokenUsage(prompt_tokens=80, completion_tokens=10, total_tokens=90),
+            )
+
         if not context_chunks:
             return GroundedAnswer(
                 text=(
@@ -48,7 +73,43 @@ class FakeLLMProvider(LLMProvider):
                 usage=TokenUsage(prompt_tokens=100, completion_tokens=30, total_tokens=130),
             )
 
-        # Build a deterministic answer citing each source
+        return self._cited_answer(question, context_chunks)
+
+    def stream_grounded_answer(
+        self,
+        question: str,
+        context_chunks: list[dict],
+        *,
+        system_prompt: str,
+        history: list[dict] | None = None,
+        tools: list[ToolDefinition] | None = None,
+        prior_tool_calls: list[ToolCall] | None = None,
+        tool_results: list[ToolResult] | None = None,
+    ) -> Iterator[GroundedAnswerChunk]:
+        answer = self.generate_grounded_answer(
+            question,
+            context_chunks,
+            system_prompt=system_prompt,
+            history=history,
+            tools=tools,
+            prior_tool_calls=prior_tool_calls,
+            tool_results=tool_results,
+        )
+        words = (answer.text or "").split()
+        for i, word in enumerate(words):
+            delta = word if i == 0 else f" {word}"
+            yield GroundedAnswerChunk(delta=delta)
+
+        yield GroundedAnswerChunk(
+            delta="",
+            done=True,
+            citations=answer.citations,
+            usage=answer.usage,
+            refused=answer.refused,
+            refusal_reason=answer.refusal_reason,
+        )
+
+    def _cited_answer(self, question: str, context_chunks: list[dict]) -> GroundedAnswer:
         parts: list[str] = []
         citations: list[SourceMetadata] = []
         for chunk in context_chunks:
@@ -92,28 +153,84 @@ class FakeLLMProvider(LLMProvider):
             ),
         )
 
-    def stream_grounded_answer(
+    def _synthesize_from_tools(
         self,
         question: str,
         context_chunks: list[dict],
-        *,
-        system_prompt: str,
-        history: list[dict] | None = None,
-    ) -> Iterator[GroundedAnswerChunk]:
-        answer = self.generate_grounded_answer(
-            question, context_chunks, system_prompt=system_prompt, history=history
+        tool_results: list[ToolResult],
+    ) -> GroundedAnswer:
+        payload = [
+            {
+                "name": result.name,
+                "content": result.content,
+                "error": result.error,
+            }
+            for result in tool_results
+        ]
+        text = (
+            "Based on catalog tools: "
+            + json.dumps(payload, default=str)
+            + "."
         )
-        # Simulate streaming by yielding word by word
-        words = answer.text.split()
-        for i, word in enumerate(words):
-            delta = word if i == 0 else f" {word}"
-            yield GroundedAnswerChunk(delta=delta)
+        citations: list[SourceMetadata] = []
+        if context_chunks:
+            text += " See also [source_1]."
+            cited = self._cited_answer(question, context_chunks)
+            citations = cited.citations[:1]
+        return GroundedAnswer(
+            text=text,
+            citations=citations,
+            model_id=self.model_id,
+            prompt_version=PROMPT_VERSION,
+            usage=TokenUsage(prompt_tokens=120, completion_tokens=len(text), total_tokens=120 + len(text)),
+        )
 
-        yield GroundedAnswerChunk(
-            delta="",
-            done=True,
-            citations=answer.citations,
-            usage=answer.usage,
-            refused=answer.refused,
-            refusal_reason=answer.refusal_reason,
+
+def _wants_tools(question: str) -> bool:
+    lowered = question.lower()
+    return any(keyword in lowered for keyword in _TOOL_KEYWORDS)
+
+
+def _extract_product(question: str) -> str:
+    match = re.search(r"deploy\s+(.+?)(?:\?|$)", question, re.IGNORECASE)
+    if match:
+        return match.group(1).strip().rstrip("?.")
+    match = re.search(r"(?:for|of)\s+([A-Z][\w][\w\s-]{1,80})", question)
+    if match:
+        return match.group(1).strip().rstrip("?.")
+    return "unknown"
+
+
+def _fake_tool_calls(question: str, tools: list[ToolDefinition]) -> list[ToolCall]:
+    offered = {tool.name for tool in tools}
+    product = _extract_product(question)
+    lowered = question.lower()
+    calls: list[ToolCall] = []
+    if "conflict" in lowered and "tool_detect_contradictions" in offered:
+        calls.append(
+            ToolCall(
+                id="call_contradictions",
+                name="tool_detect_contradictions",
+                arguments={"product": product} if product != "unknown" else {},
+            )
         )
+    if (
+        any(word in lowered for word in ("prerequisite", "requires", "deploy"))
+        and "tool_catalog_impact" in offered
+    ):
+        calls.append(
+            ToolCall(
+                id="call_impact",
+                name="tool_catalog_impact",
+                arguments={"product": product},
+            )
+        )
+    if not calls and "tool_hybrid_search" in offered:
+        calls.append(
+            ToolCall(
+                id="call_search",
+                name="tool_hybrid_search",
+                arguments={"query": question[:500]},
+            )
+        )
+    return calls[:4]

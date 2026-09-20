@@ -158,3 +158,120 @@ export interface ConversationListResponse {
   limit: number;
   offset: number;
 }
+
+export type TaskStatus =
+  | "pending"
+  | "running"
+  | "waiting_approval"
+  | "succeeded"
+  | "failed";
+
+export type WorkflowRunStatus = TaskStatus;
+
+export interface PrincipalProfile {
+  org_id: string;
+  user_id: string | null;
+  role: string;
+  can_write_catalog: boolean;
+  can_export_restricted?: boolean;
+  is_owner?: boolean;
+  is_admin?: boolean;
+}
+
+export interface Playbook {
+  slug: string;
+  name: string;
+  version: string;
+  task_count: number;
+  runnable: boolean;
+}
+
+export interface PlaybookListResponse {
+  playbooks: Playbook[];
+}
+
+export interface TaskCounts {
+  pending: number;
+  running: number;
+  waiting_approval: number;
+  succeeded: number;
+  failed: number;
+}
+
+export interface WorkflowRunSummary {
+  id: string;
+  playbook_slug: string;
+  status: WorkflowRunStatus;
+  created_at: string;
+  updated_at: string;
+  error_message?: string | null;
+  task_counts: TaskCounts;
+}
+
+export interface WorkflowRunListResponse {
+  runs: WorkflowRunSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ProductImpactHint {
+  all_incompatibilities?: Array<{ conflicted_product_name?: string }>;
+  all_prerequisites?: Array<{ name?: string }>;
+}
+
+export interface CandidateProduct {
+  name?: string;
+  slug?: string;
+  vendor?: string;
+  impact?: ProductImpactHint;
+}
+
+export interface RfpAnswer {
+  id?: string;
+  text?: string;
+  section?: string;
+  must_have?: boolean;
+  status?: string;
+  confidence?: number;
+  response?: string;
+  citations?: string[];
+  products?: string[];
+  unmet_prerequisites?: boolean;
+  needs_review?: boolean;
+  evidence?: Array<{ citation?: string; text?: string }>;
+  candidate_products?: CandidateProduct[];
+}
+
+export interface RfpAnswerEdit {
+  id: string;
+  response?: string;
+  status?: string;
+}
+
+export interface WorkflowTask {
+  id: string;
+  slug: string;
+  status: TaskStatus;
+  depends_on_slugs: string[];
+  output_payload?: Record<string, unknown> | null;
+  error_message?: string | null;
+  retry_count: number;
+  max_attempts?: number;
+  worker_id?: string | null;
+  updated_at?: string | null;
+  log_line?: string | null;
+}
+
+export interface WorkflowRun {
+  id: string;
+  playbook_slug: string;
+  status: WorkflowRunStatus;
+  org_id: string;
+  workspace_id: string;
+  input_payload?: Record<string, unknown> | null;
+  error_message?: string | null;
+  tasks: WorkflowTask[];
+  created_at: string;
+  updated_at: string;
+}

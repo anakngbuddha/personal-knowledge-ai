@@ -1,0 +1,13 @@
+slug: gated-fixture
+name: Linear fixture with HITL gate
+version: "1.0"
+tasks:
+  - slug: alpha
+    handler: fixture.alpha
+  - slug: gate
+    handler: fixture.gate
+    depends_on: [alpha]
+    gate: human_approval
+  - slug: gamma
+    handler: fixture.gamma
+    depends_on: [gate]

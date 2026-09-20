@@ -82,6 +82,12 @@ def ask_endpoint(
     """
     workspace_id = _workspace_id_from_principal(db, principal)
 
+    if payload.enable_tools and payload.stream:
+        raise HTTPException(
+            status_code=400,
+            detail="enable_tools cannot be combined with stream=true",
+        )
+
     if payload.stream:
         return _stream_response(db, principal, payload, workspace_id)
 
@@ -94,6 +100,7 @@ def ask_endpoint(
             filters=payload.filters.model_dump() if payload.filters else None,
             exclude_document_ids=payload.exclude_document_ids,
             workspace_id=workspace_id,
+            enable_tools=payload.enable_tools,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -110,23 +117,7 @@ def ask_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return schemas.AskOut(
-        answer=answer.text,
-        citations=[
-            schemas.SourceMetadataOut(**c.as_dict()) for c in answer.citations
-        ],
-        model_id=answer.model_id,
-        prompt_version=answer.prompt_version,
-        refused=answer.refused,
-        refusal_reason=answer.refusal_reason,
-        usage=(
-            schemas.TokenUsageOut(**answer.usage.as_dict())
-            if answer.usage
-            else None
-        ),
-        conversation_id=answer.conversation_id or payload.conversation_id,
-        message_id=answer.message_id,
-    )
+    return _answer_to_out(answer, fallback_conversation_id=payload.conversation_id)
 
 
 def _stream_response(
@@ -277,6 +268,12 @@ def ask_in_conversation_endpoint(
     # Override conversation_id in the payload
     payload.conversation_id = conversation_id
 
+    if payload.enable_tools and payload.stream:
+        raise HTTPException(
+            status_code=400,
+            detail="enable_tools cannot be combined with stream=true",
+        )
+
     if payload.stream:
         return _stream_response(db, principal, payload, workspace_id)
 
@@ -289,6 +286,7 @@ def ask_in_conversation_endpoint(
             filters=payload.filters.model_dump() if payload.filters else None,
             exclude_document_ids=payload.exclude_document_ids,
             workspace_id=workspace_id,
+            enable_tools=payload.enable_tools,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -305,23 +303,7 @@ def ask_in_conversation_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return schemas.AskOut(
-        answer=answer.text,
-        citations=[
-            schemas.SourceMetadataOut(**c.as_dict()) for c in answer.citations
-        ],
-        model_id=answer.model_id,
-        prompt_version=answer.prompt_version,
-        refused=answer.refused,
-        refusal_reason=answer.refusal_reason,
-        usage=(
-            schemas.TokenUsageOut(**answer.usage.as_dict())
-            if answer.usage
-            else None
-        ),
-        conversation_id=answer.conversation_id or conversation_id,
-        message_id=answer.message_id,
-    )
+    return _answer_to_out(answer, fallback_conversation_id=conversation_id)
 
 
 @router.get(
@@ -361,6 +343,37 @@ def get_conversation_sources_endpoint(
 
 
 # ── helpers ─────────────────────────────────────────────────────────────
+
+
+def _answer_to_out(answer, *, fallback_conversation_id: str | None) -> schemas.AskOut:
+    results_by_id = {r.id: r for r in answer.tool_results}
+    tool_calls = []
+    for call in answer.tool_calls:
+        result = results_by_id.get(call.id)
+        tool_calls.append(
+            schemas.ToolCallOut(
+                id=call.id,
+                name=call.name,
+                arguments=call.arguments,
+                error=result.error if result else None,
+                content=result.content if result else None,
+            )
+        )
+    usage_out = None
+    if answer.usage:
+        usage_out = schemas.TokenUsageOut(**answer.usage.as_dict())
+    return schemas.AskOut(
+        answer=answer.text,
+        citations=[schemas.SourceMetadataOut(**c.as_dict()) for c in answer.citations],
+        model_id=answer.model_id,
+        prompt_version=answer.prompt_version,
+        refused=answer.refused,
+        refusal_reason=answer.refusal_reason,
+        usage=usage_out,
+        conversation_id=answer.conversation_id or fallback_conversation_id,
+        message_id=answer.message_id,
+        tool_calls=tool_calls,
+    )
 
 
 def _conv_to_out(

@@ -16,6 +16,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
+from app.tools.schema import ToolCall, ToolDefinition, ToolResult
+
 
 @dataclass(frozen=True)
 class SourceMetadata:
@@ -86,6 +88,8 @@ class GroundedAnswer:
     usage: TokenUsage | None = None
     conversation_id: str | None = None
     message_id: str | None = None
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_results: list[ToolResult] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -98,6 +102,8 @@ class GroundedAnswer:
             "usage": self.usage.as_dict() if self.usage else None,
             "conversation_id": self.conversation_id,
             "message_id": self.message_id,
+            "tool_calls": [c.as_dict() for c in self.tool_calls],
+            "tool_results": [r.as_dict() for r in self.tool_results],
         }
 
 
@@ -131,6 +137,9 @@ class LLMProvider(ABC):
         *,
         system_prompt: str,
         history: list[dict] | None = None,
+        tools: list[ToolDefinition] | None = None,
+        prior_tool_calls: list[ToolCall] | None = None,
+        tool_results: list[ToolResult] | None = None,
     ) -> GroundedAnswer: ...
 
     @abstractmethod
@@ -141,4 +150,7 @@ class LLMProvider(ABC):
         *,
         system_prompt: str,
         history: list[dict] | None = None,
+        tools: list[ToolDefinition] | None = None,
+        prior_tool_calls: list[ToolCall] | None = None,
+        tool_results: list[ToolResult] | None = None,
     ) -> Iterator[GroundedAnswerChunk]: ...

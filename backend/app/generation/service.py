@@ -9,7 +9,7 @@ This is the heart of Phase 3. The service:
 6. Maps citations back to SourceMetadata with provenance
 7. Records usage for budget tracking
 
-No tool access exists in this path. Document content reaches the LLM only
+Tool access is opt-in via enable_tools. Document content reaches the LLM only
 through wrap_untrusted(), and the system prompt states that document content
 can never issue instructions.
 """
@@ -43,6 +43,7 @@ from app.llm.prompts import (
     SYSTEM_PROMPT,
     build_context_block,
     build_user_message,
+    system_prompt_for,
 )
 from app.retrieval.search import search as run_search
 from app.retrieval.spec import RetrievalFilters
@@ -168,6 +169,7 @@ def ask(
     filters: dict | None = None,
     exclude_document_ids: list[str] | None = None,
     workspace_id: uuid.UUID | None = None,
+    enable_tools: bool = False,
 ) -> GroundedAnswer:
     """Generate a grounded answer (synchronous).
 
@@ -176,7 +178,7 @@ def ask(
     2. Token budget check
     3. Retrieve permission-aware context
     4. Build prompt with injection containment
-    5. Generate answer
+    5. Generate answer (optional single-turn tool loop)
     6. Record usage + persist message
     """
     # Cost controls
@@ -206,15 +208,37 @@ def ask(
     # Build the full prompt
     context_block = build_context_block(context_chunks)
     user_message = build_user_message(question, context_block)
+    prompt = system_prompt_for(enable_tools=enable_tools)
 
     # Generate
     provider = get_llm_provider()
-    answer = provider.generate_grounded_answer(
-        user_message,
-        context_chunks,
-        system_prompt=SYSTEM_PROMPT,
-        history=history,
-    )
+    if enable_tools:
+        if workspace_id is None:
+            raise ValueError("enable_tools requires a workspace")
+        from app.tools.loop import run_tool_loop
+        from app.tools.registry import ToolContext, default_definitions, execute_tool
+
+        ctx = ToolContext(db=db, principal=principal, workspace_id=workspace_id)
+
+        def _execute(call):
+            return execute_tool(call, ctx)
+
+        answer = run_tool_loop(
+            provider,
+            user_message,
+            context_chunks,
+            system_prompt=prompt,
+            history=history,
+            tools=default_definitions(),
+            execute=_execute,
+        )
+    else:
+        answer = provider.generate_grounded_answer(
+            user_message,
+            context_chunks,
+            system_prompt=prompt,
+            history=history,
+        )
 
     # Record token usage
     if answer.usage:
@@ -235,7 +259,7 @@ def ask(
             content=answer.text,
             citations=[c.as_dict() for c in answer.citations],
             sources=[s.as_dict() for s in all_sources],
-            usage=answer.usage.as_dict() if answer.usage else None,
+            usage=_usage_with_tools(answer),
             prompt_version=answer.prompt_version,
             refused=answer.refused,
             model_id=answer.model_id,
@@ -349,3 +373,13 @@ def ask_stream(
                 len(chunk.citations),
                 conv_uuid,
             )
+
+
+def _usage_with_tools(answer: GroundedAnswer) -> dict | None:
+    usage = answer.usage.as_dict() if answer.usage else {}
+    if answer.tool_results or answer.tool_calls:
+        usage["tool_trace"] = {
+            "calls": [c.as_dict() for c in answer.tool_calls],
+            "results": [r.as_dict() for r in answer.tool_results],
+        }
+    return usage or None

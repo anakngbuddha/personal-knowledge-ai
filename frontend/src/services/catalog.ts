@@ -5,23 +5,7 @@
  * graph queries, integrity checks, and edge curation.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, init);
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new Error(detail);
-  }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
-}
+import { request } from "./http";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 

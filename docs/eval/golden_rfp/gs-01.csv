@@ -1,0 +1,2 @@
+requirement,section,must_have
+Support SAML 2.0 and OIDC single sign-on,Identity,yes

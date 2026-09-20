@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     generation_max_history_turns: int = 10
     generation_stream_enabled: bool = True
     generation_max_output_tokens: int = 4096
+    tool_max_rounds: int = 1
+    tool_max_calls_per_round: int = 4
 
     # Retrieval / ingestion knobs
     top_k: int = 8
@@ -61,14 +63,16 @@ class Settings(BaseSettings):
     max_upload_mb: int = 25
     fts_config: str = "english"  # must match the generated column in the DB
 
-    # ---------------------------------------------------------------- tenancy
-    # Phase 0 is not built. `owner_dev` resolves every request to the single
-    # collateral owner described in Project_Plan.md section 0, with full access.
-    # `dev_headers` reads X-Org-Id / X-User-Id / X-User-Role so the authorization
-    # path can be exercised end to end before real authentication lands.
-    auth_mode: str = "owner_dev"  # owner_dev | dev_headers
+    # ---------------------------------------------------------------- tenancy & auth
+    # Phase 0 security baseline:
+    # `jwt`: cryptographic token authentication via Authorization: Bearer <token>.
+    # `owner_dev`: local development bypass resolving to default org owner.
+    auth_mode: str = "owner_dev"  # jwt | owner_dev
     default_org_slug: str = "default"
     default_org_name: str = "Default Organization"
+    jwt_secret_key: str = "dev-insecure-secret-key-change-in-production-2026"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 1440
 
     # ------------------------------------------------------------- ingestion
     # Parse-time safety limits. These are the controls that actually stop zip
@@ -104,6 +108,10 @@ class Settings(BaseSettings):
     job_backoff_base_seconds: float = 15.0
     job_backoff_max_seconds: float = 900.0
     job_stale_seconds: float = 1800.0
+    workflow_worker_enabled: bool = True
+    workflow_worker_concurrency: int = 1
+    workflow_task_stale_seconds: float = 1800.0
+    workflow_task_max_attempts: int = 4
 
     cors_origins: str = "http://localhost:5173"
 

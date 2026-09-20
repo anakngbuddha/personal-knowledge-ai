@@ -6,10 +6,13 @@ import { GraphExplorer } from "./components/GraphExplorer";
 import { GroundedChat } from "./components/GroundedChat";
 import { SearchExplorer } from "./components/SearchExplorer";
 import { UploadButton } from "./components/UploadButton";
+import { WorkflowWorkspace } from "./components/WorkflowWorkspace";
 import { useDocuments } from "./hooks/useDocuments";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"documents" | "search" | "chat" | "graph">("graph");
+  const [activeTab, setActiveTab] = useState<"documents" | "search" | "chat" | "graph" | "workflows">(
+    "workflows"
+  );
   const { documents, loading, error, refresh, setError } = useDocuments();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -18,9 +21,15 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <h1>Solution Engineering Knowledge Workspace</h1>
-          <span className="phase">Phases 1–4 Complete · Ingestion, Hybrid Retrieval, Grounded Chat &amp; Product Graph</span>
+          <span className="phase">Phase 7 · Workflow cockpit, HITL review &amp; deliverable download</span>
         </div>
         <nav className="nav-tabs">
+          <button
+            className={`tab-btn ${activeTab === "workflows" ? "active" : ""}`}
+            onClick={() => setActiveTab("workflows")}
+          >
+            Workflows (P7)
+          </button>
           <button
             className={`tab-btn ${activeTab === "graph" ? "active" : ""}`}
             onClick={() => setActiveTab("graph")}
@@ -48,9 +57,11 @@ export default function App() {
         </nav>
       </header>
 
-      {error && <div className="banner error">{error}</div>}
+      {error && activeTab === "documents" && <div className="banner error">{error}</div>}
 
       <main className="content-container">
+        {activeTab === "workflows" && <WorkflowWorkspace />}
+
         {activeTab === "graph" && <GraphExplorer />}
 
         {activeTab === "chat" && <GroundedChat />}
@@ -86,4 +97,3 @@ export default function App() {
     </div>
   );
 }
-

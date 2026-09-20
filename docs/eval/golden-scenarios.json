@@ -1,0 +1,202 @@
+{
+  "_comment": [
+    "Placeholder golden RFP set derived from backend/app/catalog/seeds.py.",
+    "Path to real Phase 6.5: re-seed the real product line, human-approve edges,",
+    "regenerate this file from the approved graph, re-run the same scorer."
+  ],
+  "scenarios": [
+    {
+      "id": "gs-01",
+      "title": "Apex Identity SSO",
+      "constraints": {},
+      "requirements": [
+        {"text": "Support SAML 2.0 and OIDC single sign-on", "must_have": true}
+      ],
+      "expected": {
+        "required_capabilities": ["Single Sign-On (SSO)"],
+        "forbidden_products": [],
+        "forbidden_relations": ["conflicts_with"],
+        "must_cite": true,
+        "min_coverage": 0.9
+      }
+    },
+    {
+      "id": "gs-02",
+      "title": "Aegis Zero Trust",
+      "constraints": {},
+      "requirements": [
+        {"text": "Provide zero trust network access micro-tunnels", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Zero Trust Network Access (ZTNA)"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-03",
+      "title": "Nova object storage",
+      "constraints": {},
+      "requirements": [
+        {"text": "S3 compatible immutable object storage with lifecycle policies", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Object Storage Service"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-04",
+      "title": "Vanguard SIEM",
+      "constraints": {},
+      "requirements": [
+        {"text": "Centralized SIEM correlation and threat hunting", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Security Event Correlation (SIEM)"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-05",
+      "title": "Krypton HSM",
+      "constraints": {},
+      "requirements": [
+        {"text": "FIPS hardware security module for key lifecycle", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Hardware Security Module (HSM)"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-06",
+      "title": "Nexus mesh on Helios",
+      "constraints": {},
+      "requirements": [
+        {"text": "Service mesh mTLS sidecars on a Kubernetes container engine", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Service Mesh mTLS"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-07",
+      "title": "Prism API gateway",
+      "constraints": {},
+      "requirements": [
+        {"text": "API schema validation and throttling at the edge", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["API Schema Validation & Throttling"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-08",
+      "title": "Strata observability",
+      "constraints": {},
+      "requirements": [
+        {"text": "OpenTelemetry distributed tracing and infrastructure metrics", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Distributed Tracing & APM"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-09",
+      "title": "Secure Hybrid Cloud Foundation",
+      "constraints": {},
+      "requirements": [
+        {"text": "Federated identity for hybrid cloud", "must_have": true},
+        {"text": "Zero trust remote access", "must_have": true},
+        {"text": "Private cloud interconnect", "must_have": true},
+        {"text": "Immutable object storage repository", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Identity Federation"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-10",
+      "title": "Enterprise Zero-Trust SOC",
+      "constraints": {},
+      "requirements": [
+        {"text": "SIEM analytics engine", "must_have": true},
+        {"text": "Next-gen firewall inspection", "must_have": true},
+        {"text": "Telemetry pipeline", "must_have": true},
+        {"text": "HSM key store", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Security Event Correlation (SIEM)"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-11",
+      "title": "On-prem only storage",
+      "constraints": {"on_prem_only": true},
+      "requirements": [
+        {"text": "High-IOPS block storage SAN for the data center", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Block Storage SAN"], "forbidden_products": ["Nova Cloud Storage"], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-12",
+      "title": "Forbidden Palo Alto vendor",
+      "constraints": {"forbidden_vendors": ["Palo Alto Networks"]},
+      "requirements": [
+        {"text": "Next-gen firewall inspection at the perimeter", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Next-Gen Firewall Inspection"], "forbidden_products": ["Palo Alto PA-Series Next-Gen Firewall"], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-13",
+      "title": "Aegis vs Pure Storage conflict",
+      "constraints": {},
+      "requirements": [
+        {"text": "Zero trust network access for users", "must_have": true},
+        {"text": "All-flash block storage array", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Zero Trust Network Access (ZTNA)"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-14",
+      "title": "Resold Okta identity",
+      "constraints": {},
+      "requirements": [
+        {"text": "Workforce identity cloud with SSO", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Single Sign-On (SSO)"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-15",
+      "title": "Snowflake analytics",
+      "constraints": {},
+      "requirements": [
+        {"text": "Cloud data warehousing and SQL analytics", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Data Warehousing & SQL Analytics"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-16",
+      "title": "Datadog monitoring",
+      "constraints": {},
+      "requirements": [
+        {"text": "Cloud monitoring dashboards and alerts", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Infrastructure Metric Monitoring"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-17",
+      "title": "Cisco campus switching",
+      "constraints": {},
+      "requirements": [
+        {"text": "Campus network switching fabric", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Campus Network Switching"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-18",
+      "title": "Zoom collaboration",
+      "constraints": {},
+      "requirements": [
+        {"text": "Cloud VoIP and video conferencing", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Cloud VoIP & Video Conferencing"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-19",
+      "title": "AWS Direct Connect",
+      "constraints": {},
+      "requirements": [
+        {"text": "Direct cloud interconnect from the data center", "must_have": true}
+      ],
+      "expected": {"required_capabilities": ["Direct Cloud Interconnect"], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    },
+    {
+      "id": "gs-20",
+      "title": "Unsupported quantum teleportation",
+      "constraints": {},
+      "requirements": [
+        {"text": "Quantum teleportation fabric for interstellar packet routing", "must_have": true}
+      ],
+      "expected": {"required_capabilities": [], "forbidden_products": [], "forbidden_relations": ["conflicts_with"], "must_cite": true, "min_coverage": 0.9}
+    }
+  ]
+}

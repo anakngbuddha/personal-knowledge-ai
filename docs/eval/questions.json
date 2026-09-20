@@ -1,60 +1,458 @@
 {
   "_comment": [
-    "The labeled retrieval set for Phase 2. Project_Plan.md asks for 50+ real SE",
-    "questions with the correct passage marked; at ~50 documents that is meaningful",
-    "coverage rather than a token sample.",
+    "Phase 4.5 labeled retrieval set: 54 hand-crafted solutions engineering questions.",
+    "Written against the Phase 4 seed catalog (20 products, 18 capabilities, 25+ edges,",
+    "3 reference architectures). Each synthetic document is named <slug>-datasheet.pdf.",
     "",
-    "This file ships as a template with the question *shapes* that matter, because the",
-    "real questions have to be written against real collateral and inventing plausible",
-    "ones would produce a baseline that measures nothing. Replace every entry below.",
+    "Label contract:",
+    "  question           - the SE's natural language query",
+    "  document_filename  - the ingested filename that contains the correct passage",
+    "  text_contains      - a verbatim substring of the correct passage (survives re-chunking)",
+    "  page_number        - optional page anchor",
+    "  tags               - categorization for stratified metrics",
+    "  notes              - why this passage is the right evidence",
     "",
-    "Each entry: question, document_filename (must match an ingested filename),",
-    "text_contains (a verbatim substring of the correct passage - the durable label),",
-    "page_number (optional), tags, notes (why this passage is the right evidence)."
+    "Question shapes:",
+    "  capability-lookup      - does product X support capability Y?",
+    "  multi-product          - compatibility, integration, or bundle questions",
+    "  negative-unsupported   - questions the corpus should refuse or return empty",
+    "  competitive-comparison - own vs resold or vendor vs vendor",
+    "  sizing-prerequisites   - deployment requirements and dependencies",
+    "  account-scoped         - requires permission filtering",
+    "  reference-architecture - questions about named architecture blueprints"
   ],
   "questions": [
     {
-      "question": "Which of our products support site-to-site VPN?",
-      "document_filename": "REPLACE-orbitcloud-datasheet.pdf",
-      "text_contains": "site-to-site VPN",
-      "page_number": 2,
+      "question": "Which of our products support SAML 2.0 identity federation?",
+      "document_filename": "apex-identity-broker-datasheet.pdf",
+      "text_contains": "SAML 2.0",
+      "page_number": 1,
       "tags": ["capability-lookup", "own"],
-      "notes": "Capability lookup against a single datasheet. The easy case; if this misses, retrieval is broken, not merely imperfect."
+      "notes": "Direct capability lookup. Apex Identity Broker's chunk explicitly mentions SAML 2.0."
     },
     {
-      "question": "What are the prerequisites for deploying VaultStore on premise?",
-      "document_filename": "REPLACE-vaultstore-deployment-guide.docx",
-      "text_contains": "10GbE",
-      "tags": ["prerequisites", "resold"],
-      "notes": "Prerequisite question against resold collateral; checks the vendor filter does not hide it."
+      "question": "Does Aegis Zero Trust Gateway provide zero trust network access?",
+      "document_filename": "aegis-zero-trust-gateway-datasheet.pdf",
+      "text_contains": "micro-segmented user-to-app tunnels",
+      "page_number": 1,
+      "tags": ["capability-lookup", "own"],
+      "notes": "Capability confirmation against the ZTNA product. Exact phrase from chunk text."
     },
     {
-      "question": "Who owns escalation for VaultStore incidents?",
-      "document_filename": "REPLACE-northwind-partner-terms.pdf",
-      "text_contains": "escalation",
-      "tags": ["support-path", "resold", "vendor_restricted"],
-      "notes": "Must only surface for a principal allowed to read vendor-restricted material."
+      "question": "What deployment model does Nova Cloud Storage use?",
+      "document_filename": "nova-cloud-storage-datasheet.pdf",
+      "text_contains": "Deployment: cloud",
+      "page_number": 1,
+      "tags": ["capability-lookup", "own"],
+      "notes": "Deployment model lookup from the synthetic chunk text."
     },
     {
-      "question": "What is the partner price for OrbitCloud Enterprise?",
-      "document_filename": "REPLACE-pricing.xlsx",
-      "text_contains": "Partner",
-      "tags": ["pricing", "spreadsheet-anchor"],
-      "notes": "Exercises the sheet+cell citation anchor. Pricing goes stale, so this question is also a freshness canary."
+      "question": "Which product provides distributed tracing and APM capabilities?",
+      "document_filename": "strata-observability-platform-datasheet.pdf",
+      "text_contains": "distributed tracing",
+      "page_number": 1,
+      "tags": ["capability-lookup", "own"],
+      "notes": "Strata Observability Platform has both distributed-tracing-apm and infrastructure-metric-monitoring."
     },
     {
-      "question": "Which products conflict with LegacyEdge?",
-      "document_filename": "REPLACE-compatibility-deck.pptx",
-      "text_contains": "conflicts with LegacyEdge",
-      "tags": ["compatibility", "slide-anchor"],
-      "notes": "Exercises the slide citation anchor and the keyword branch: 'conflicts with' is an exact phrase, which is where vector-only retrieval tends to lose."
+      "question": "Do we have an event streaming product compatible with Kafka protocols?",
+      "document_filename": "aether-messaging-bus-datasheet.pdf",
+      "text_contains": "Kafka-compatible",
+      "page_number": 1,
+      "tags": ["capability-lookup", "own"],
+      "notes": "Aether Messaging Bus description mentions Kafka compatibility."
     },
     {
-      "question": "What did we propose for the hybrid cloud plus video conferencing deal?",
-      "document_filename": "REPLACE-acme-discovery-notes.md",
-      "text_contains": "video conferencing",
-      "tags": ["account-scoped", "customer_data"],
-      "notes": "Account-scoped material. Must be invisible to a principal without a grant for this account: this is the permission-filtering case in the labeled set."
+      "question": "What is Vanguard SIEM's core function?",
+      "document_filename": "vanguard-siem-datasheet.pdf",
+      "text_contains": "security information and event management",
+      "page_number": 1,
+      "tags": ["capability-lookup", "own"],
+      "notes": "SIEM product description mentions its core function."
+    },
+    {
+      "question": "Does Prism API Gateway support rate limiting?",
+      "document_filename": "prism-api-gateway-datasheet.pdf",
+      "text_contains": "rate limiting",
+      "page_number": 1,
+      "tags": ["capability-lookup", "own"],
+      "notes": "Prism API Gateway description explicitly mentions rate limiting."
+    },
+    {
+      "question": "What container runtime does Helios Container Engine provide?",
+      "document_filename": "helios-container-engine-datasheet.pdf",
+      "text_contains": "Kubernetes",
+      "page_number": 1,
+      "tags": ["capability-lookup", "own"],
+      "notes": "Helios Container Engine is a Kubernetes-compliant container runtime."
+    },
+    {
+      "question": "Does Krypton Key Vault support FIPS 140-2 compliance?",
+      "document_filename": "krypton-key-vault-datasheet.pdf",
+      "text_contains": "envelope encryption",
+      "page_number": 1,
+      "tags": ["capability-lookup", "own"],
+      "notes": "Krypton Key Vault handles cryptographic key management with envelope encryption."
+    },
+    {
+      "question": "What mTLS capabilities does Nexus Service Mesh offer?",
+      "document_filename": "nexus-service-mesh-datasheet.pdf",
+      "text_contains": "mTLS encryption",
+      "page_number": 1,
+      "tags": ["capability-lookup", "own"],
+      "notes": "Nexus Service Mesh provides automatic mTLS for microservices."
+    },
+    {
+      "question": "Can Okta Workforce Identity Cloud integrate with our identity platform?",
+      "document_filename": "okta-workforce-identity-cloud-datasheet.pdf",
+      "text_contains": "multi-factor authentication",
+      "page_number": 1,
+      "tags": ["capability-lookup", "resold"],
+      "notes": "Okta is a resold identity platform with MFA."
+    },
+    {
+      "question": "What deep packet inspection features does Palo Alto PA-Series offer?",
+      "document_filename": "palo-alto-pa-series-ngfw-datasheet.pdf",
+      "text_contains": "deep packet inspection",
+      "page_number": 1,
+      "tags": ["capability-lookup", "resold"],
+      "notes": "PA-Series NGFW provides deep packet inspection and WildFire."
+    },
+    {
+      "question": "What are the prerequisites for deploying Aegis Zero Trust Gateway?",
+      "document_filename": "aegis-zero-trust-gateway-datasheet.pdf",
+      "text_contains": "Requires Apex Identity Broker",
+      "page_number": 1,
+      "tags": ["sizing-prerequisites", "own"],
+      "notes": "Aegis requires an IdP (Apex Identity Broker) for token validation."
+    },
+    {
+      "question": "What infrastructure does Nexus Service Mesh require?",
+      "document_filename": "nexus-service-mesh-datasheet.pdf",
+      "text_contains": "Requires Helios Container Engine or Kubernetes 1.28+",
+      "page_number": 1,
+      "tags": ["sizing-prerequisites", "own"],
+      "notes": "Nexus Service Mesh requires Helios or K8s 1.28+."
+    },
+    {
+      "question": "What are the network requirements for Pure Storage FlashArray?",
+      "document_filename": "pure-storage-flasharray-datasheet.pdf",
+      "text_contains": "Fibre Channel or 25GbE",
+      "page_number": 1,
+      "tags": ["sizing-prerequisites", "resold"],
+      "notes": "FlashArray requires FC or 25GbE SAN infrastructure."
+    },
+    {
+      "question": "What does Helios Container Engine require on the host operating system?",
+      "document_filename": "helios-container-engine-datasheet.pdf",
+      "text_contains": "cgroups v2",
+      "page_number": 1,
+      "tags": ["sizing-prerequisites", "own"],
+      "notes": "Helios requires Linux with cgroups v2 enabled."
+    },
+    {
+      "question": "What prerequisites does Krypton Key Vault have?",
+      "document_filename": "krypton-key-vault-datasheet.pdf",
+      "text_contains": "Requires Apex Identity Broker",
+      "page_number": 1,
+      "tags": ["sizing-prerequisites", "own"],
+      "notes": "Krypton needs Apex Identity Broker for RBAC policy enforcement."
+    },
+    {
+      "question": "What connectivity does AWS Direct Connect require?",
+      "document_filename": "aws-direct-connect-datasheet.pdf",
+      "text_contains": "Colocation cross-connect",
+      "page_number": 1,
+      "tags": ["sizing-prerequisites", "resold"],
+      "notes": "AWS Direct Connect requires colocation or partner circuit to DX PoP."
+    },
+    {
+      "question": "What do Cisco Catalyst 9000 switches need for power delivery?",
+      "document_filename": "cisco-catalyst-9000-datasheet.pdf",
+      "text_contains": "PoE+",
+      "page_number": 1,
+      "tags": ["sizing-prerequisites", "resold"],
+      "notes": "Cisco 9000 switches require structured cabling and PoE+/UPOE."
+    },
+    {
+      "question": "What does Aether Messaging Bus require for deployment?",
+      "document_filename": "aether-messaging-bus-datasheet.pdf",
+      "text_contains": "Requires Helios Container Engine",
+      "page_number": 1,
+      "tags": ["sizing-prerequisites", "own"],
+      "notes": "Aether Messaging Bus runs as pods requiring Helios Container Engine."
+    },
+    {
+      "question": "Can Aegis Zero Trust Gateway work alongside Palo Alto firewalls?",
+      "document_filename": "aegis-zero-trust-gateway-datasheet.pdf",
+      "text_contains": "micro-segmented user-to-app tunnels",
+      "page_number": 1,
+      "tags": ["multi-product", "integration"],
+      "notes": "Aegis integrates with PA-Series for perimeter-bound untrusted traffic inspection."
+    },
+    {
+      "question": "How does Apex Identity Broker integrate with Okta?",
+      "document_filename": "apex-identity-broker-datasheet.pdf",
+      "text_contains": "SAML 2.0",
+      "page_number": 1,
+      "tags": ["multi-product", "integration"],
+      "notes": "Apex has a certified SAML/SCIM connector for Okta integration."
+    },
+    {
+      "question": "Which products are needed together for a service mesh deployment?",
+      "document_filename": "nexus-service-mesh-datasheet.pdf",
+      "text_contains": "Requires Helios Container Engine",
+      "page_number": 1,
+      "tags": ["multi-product", "bundle"],
+      "notes": "Nexus requires Helios; together they form the service mesh stack."
+    },
+    {
+      "question": "Can Nova Cloud Storage be used as a staging area for Snowflake?",
+      "document_filename": "snowflake-data-cloud-datasheet.pdf",
+      "text_contains": "Nova Cloud Storage",
+      "page_number": 1,
+      "tags": ["multi-product", "integration"],
+      "notes": "Snowflake prerequisites mention Nova Cloud Storage as an option for staging data."
+    },
+    {
+      "question": "What monitoring options do we have for infrastructure metrics?",
+      "document_filename": "strata-observability-platform-datasheet.pdf",
+      "text_contains": "metric visualization",
+      "page_number": 1,
+      "tags": ["multi-product", "competitive-comparison"],
+      "notes": "Both Strata (own) and Datadog (resold) offer metric monitoring. Strata is the primary hit."
+    },
+    {
+      "question": "Which identity providers can federate with Microsoft Entra ID?",
+      "document_filename": "microsoft-entra-id-datasheet.pdf",
+      "text_contains": "hybrid ecosystems",
+      "page_number": 1,
+      "tags": ["multi-product", "resold"],
+      "notes": "Entra ID handles workforce and customer identities across hybrid ecosystems."
+    },
+    {
+      "question": "What products conflict with Aegis Zero Trust Gateway?",
+      "document_filename": "aegis-zero-trust-gateway-datasheet.pdf",
+      "text_contains": "micro-segmented user-to-app tunnels",
+      "page_number": 1,
+      "tags": ["multi-product", "conflicts"],
+      "notes": "Aegis conflicts with Pure Storage FlashArray at L7/FC layer. Tests graph edge awareness."
+    },
+    {
+      "question": "Can we bundle Fortinet FortiGate with our own firewall product?",
+      "document_filename": "fortinet-fortigate-utm-datasheet.pdf",
+      "text_contains": "SD-WAN",
+      "page_number": 1,
+      "tags": ["multi-product", "bundle"],
+      "notes": "Fortinet is a resold UTM in the same cybersecurity category as Aegis."
+    },
+    {
+      "question": "What is the difference between our own SIEM and a third-party alternative?",
+      "document_filename": "vanguard-siem-datasheet.pdf",
+      "text_contains": "AI-driven correlation",
+      "page_number": 1,
+      "tags": ["competitive-comparison", "own"],
+      "notes": "Vanguard SIEM is our own product. Comparison requires multiple product hits."
+    },
+    {
+      "question": "How does Strata Observability compare to Datadog for monitoring?",
+      "document_filename": "strata-observability-platform-datasheet.pdf",
+      "text_contains": "distributed tracing",
+      "page_number": 1,
+      "tags": ["competitive-comparison", "own-vs-resold"],
+      "notes": "Strata (own) vs Datadog (resold) - both have infrastructure-metric-monitoring capability."
+    },
+    {
+      "question": "Should we recommend our own identity broker or Okta for a new customer?",
+      "document_filename": "apex-identity-broker-datasheet.pdf",
+      "text_contains": "identity federation",
+      "page_number": 1,
+      "tags": ["competitive-comparison", "own-vs-resold"],
+      "notes": "Apex (own) vs Okta (resold) - both map to identity-federation and single-sign-on."
+    },
+    {
+      "question": "What are the margin differences between own and resold firewall products?",
+      "document_filename": "palo-alto-pa-series-ngfw-datasheet.pdf",
+      "text_contains": "deep packet inspection",
+      "page_number": 1,
+      "tags": ["competitive-comparison", "pricing"],
+      "notes": "PA-Series (resold, 22-26% margin) vs Aegis (own, no margin band). Tests commercial awareness."
+    },
+    {
+      "question": "Which campus switching solutions do we resell?",
+      "document_filename": "cisco-catalyst-9000-datasheet.pdf",
+      "text_contains": "campus",
+      "page_number": 1,
+      "tags": ["competitive-comparison", "resold"],
+      "notes": "Cisco Catalyst 9000 is the only campus switching product in the catalog."
+    },
+    {
+      "question": "Do we sell a product for quantum computing workloads?",
+      "document_filename": null,
+      "text_contains": null,
+      "page_number": null,
+      "tags": ["negative-unsupported", "missing-capability"],
+      "notes": "No quantum computing product exists. Retrieval should return empty; generation should refuse."
+    },
+    {
+      "question": "What is our product for autonomous vehicle fleet management?",
+      "document_filename": null,
+      "text_contains": null,
+      "page_number": null,
+      "tags": ["negative-unsupported", "missing-capability"],
+      "notes": "No automotive/fleet product exists. Should refuse with no evidence."
+    },
+    {
+      "question": "Which of our products support 5G network slicing?",
+      "document_filename": null,
+      "text_contains": null,
+      "page_number": null,
+      "tags": ["negative-unsupported", "missing-capability"],
+      "notes": "No 5G product in catalog. Tests refusal on capability that sounds plausible."
+    },
+    {
+      "question": "What is the end-of-life date for LegacyEdge VPN?",
+      "document_filename": null,
+      "text_contains": null,
+      "page_number": null,
+      "tags": ["negative-unsupported", "missing-product"],
+      "notes": "LegacyEdge does not exist in the catalog. Tests refusal on a fictitious product name."
+    },
+    {
+      "question": "Can we offer a managed database-as-a-service product?",
+      "document_filename": null,
+      "text_contains": null,
+      "page_number": null,
+      "tags": ["negative-unsupported", "missing-capability"],
+      "notes": "No managed DB product. Snowflake is a data warehouse, not a managed RDBMS."
+    },
+    {
+      "question": "What is our product for physical access control systems?",
+      "document_filename": null,
+      "text_contains": null,
+      "page_number": null,
+      "tags": ["negative-unsupported", "missing-capability"],
+      "notes": "No physical access control. Identity products are digital only."
+    },
+    {
+      "question": "Do we have a blockchain or Web3 infrastructure product?",
+      "document_filename": null,
+      "text_contains": null,
+      "page_number": null,
+      "tags": ["negative-unsupported", "missing-capability"],
+      "notes": "No blockchain product exists in the catalog."
+    },
+    {
+      "question": "What is the SLA for our satellite communications product?",
+      "document_filename": null,
+      "text_contains": null,
+      "page_number": null,
+      "tags": ["negative-unsupported", "missing-product"],
+      "notes": "No satellite comms product. Tests refusal on non-existent product SLA."
+    },
+    {
+      "question": "What products are in the Secure Hybrid Cloud Foundation architecture?",
+      "document_filename": "apex-identity-broker-datasheet.pdf",
+      "text_contains": "identity federation",
+      "page_number": 1,
+      "tags": ["reference-architecture"],
+      "notes": "Secure Hybrid Cloud Foundation includes Apex, Aegis, AWS Direct Connect, Nova Cloud Storage."
+    },
+    {
+      "question": "What does the Enterprise Zero-Trust SOC architecture include?",
+      "document_filename": "vanguard-siem-datasheet.pdf",
+      "text_contains": "security information and event management",
+      "page_number": 1,
+      "tags": ["reference-architecture"],
+      "notes": "Zero-Trust SOC includes Vanguard SIEM, Palo Alto PA-Series, Strata, Krypton Key Vault."
+    },
+    {
+      "question": "Which products make up the Microservices Production Edge blueprint?",
+      "document_filename": "prism-api-gateway-datasheet.pdf",
+      "text_contains": "rate limiting",
+      "page_number": 1,
+      "tags": ["reference-architecture"],
+      "notes": "Microservices Edge includes Prism API Gateway, Nexus Service Mesh, Helios, Strata."
+    },
+    {
+      "question": "What is the recommended architecture for connecting on-premise to AWS?",
+      "document_filename": "aws-direct-connect-datasheet.pdf",
+      "text_contains": "directly to AWS VPC",
+      "page_number": 1,
+      "tags": ["reference-architecture"],
+      "notes": "Secure Hybrid Cloud Foundation uses AWS Direct Connect for hybrid transport."
+    },
+    {
+      "question": "What support path does Zoom Phone have?",
+      "document_filename": "zoom-phone-meetings-datasheet.pdf",
+      "text_contains": "Cloud phone system",
+      "page_number": 1,
+      "tags": ["support-path", "resold"],
+      "notes": "Zoom Phone has joint support: L1 PBX routing by SEs, carrier escalation to Zoom."
+    },
+    {
+      "question": "Who handles L3 escalation for Microsoft Entra ID issues?",
+      "document_filename": "microsoft-entra-id-datasheet.pdf",
+      "text_contains": "hybrid ecosystems",
+      "page_number": 1,
+      "tags": ["support-path", "resold"],
+      "notes": "Joint support: L1/L2 by SE team, L3 escalated to Microsoft Premier Support."
+    },
+    {
+      "question": "What is the partner margin band for Fortinet FortiGate?",
+      "document_filename": "fortinet-fortigate-utm-datasheet.pdf",
+      "text_contains": "SD-WAN",
+      "page_number": 1,
+      "tags": ["commercial", "resold"],
+      "notes": "Fortinet has 25-30% margin band, reseller-owned support."
+    },
+    {
+      "question": "Which products use a consumption-based licensing model?",
+      "document_filename": "nova-cloud-storage-datasheet.pdf",
+      "text_contains": "Deployment: cloud",
+      "page_number": 1,
+      "tags": ["commercial", "own"],
+      "notes": "Nova Cloud Storage, Strata, Vanguard SIEM, Aether, Snowflake, AWS DC all use consumption."
+    },
+    {
+      "question": "Which of our own products can be deployed on-premises?",
+      "document_filename": "helios-container-engine-datasheet.pdf",
+      "text_contains": "Linux x86_64 or ARM64",
+      "page_number": 1,
+      "tags": ["sizing-prerequisites", "deployment"],
+      "notes": "Helios, Aegis, Nexus, and Krypton support hybrid/on-prem deployment."
+    },
+    {
+      "question": "What OpenTelemetry support does Strata Observability provide?",
+      "document_filename": "strata-observability-platform-datasheet.pdf",
+      "text_contains": "OpenTelemetry",
+      "page_number": 1,
+      "tags": ["capability-lookup", "own"],
+      "notes": "Strata requires OpenTelemetry agent instrumentation."
+    },
+    {
+      "question": "What threat detection capabilities does Fortinet FortiGate offer?",
+      "document_filename": "fortinet-fortigate-utm-datasheet.pdf",
+      "text_contains": "antivirus inspection",
+      "page_number": 1,
+      "tags": ["capability-lookup", "resold"],
+      "notes": "FortiGate UTM integrates firewall, SD-WAN, and antivirus inspection."
+    },
+    {
+      "question": "What is the Datadog Agent requirement for monitoring?",
+      "document_filename": "datadog-cloud-monitoring-datasheet.pdf",
+      "text_contains": "Datadog Agent",
+      "page_number": 1,
+      "tags": ["sizing-prerequisites", "resold"],
+      "notes": "Datadog requires agent installation across cluster nodes."
+    },
+    {
+      "question": "Can Snowflake Data Cloud separate storage and compute resources?",
+      "document_filename": "snowflake-data-cloud-datasheet.pdf",
+      "text_contains": "decoupled compute and storage",
+      "page_number": 1,
+      "tags": ["capability-lookup", "resold"],
+      "notes": "Snowflake's architecture separates storage and compute."
     }
   ]
 }
