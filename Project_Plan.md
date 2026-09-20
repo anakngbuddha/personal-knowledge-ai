@@ -1,333 +1,296 @@
-# Project Plan: Solution Engineering Knowledge Workspace & Agentic Operating System
+# Project Plan: Solution Engineering Knowledge Workspace (Enterprise Multi-Tenant)
 
-Status: **Rev 3 (2026-09-20)**. Supersedes Rev 2 and `docs/ROADMAP.md`.
+Status: **Rev 4 (2026-09-20)**. Supersedes Rev 3, Rev 2, and `docs/ROADMAP.md`.
 
-Rev 3 incorporates the strategic evolution from a passive RAG/Catalog web application into an **Agentic Operating System and Second Brain** for **Pre-Sales, Post-Sales, and Tech Engineering/Architecture**. The knowledge substrate (Phases 1–4: clean chunking, pgvector hybrid retrieval, citation anchors, and the typed product catalog graph) is now exposed as first-class **Agent Tools** coordinated by a **Task-Graph (DAG) Execution Engine** with declarative **Markdown/YAML Playbooks**, **Model Context Protocol (MCP)** tool harnesses, and stateful **Human-in-the-Loop (HITL)** approval gates.
+Rev 4 grounds the architecture directly in the codebase following a comprehensive architectural and code audit. It commits decisively to the **Multi-Tenant Enterprise** path, promotes Phase 0 to an immediate blocking prerequisite, replaces the ungrounded async DAG design with our proven PostgreSQL `SELECT FOR UPDATE SKIP LOCKED` queue substrate from `app/jobs/queue.py`, splits the monolithic Phase 5 into three verifiable milestones (5a, 5b, 5c), defers premature MCP in favor of direct Python tools, and elevates the Golden RFP evaluation set into a dedicated gate (Phase 6.5).
 
 ---
 
-## 0. Decided parameters
+## 0. Decided Parameters
 
 | Question | Decision | Consequence |
 |---|---|---|
-| Deployment model | **Shared multi-tenant** | Row-level security from day one; isolation tests permanent |
-| Catalog scope | **Own products and resold third-party products** | `vendor` and `source_of_truth` on every product; vendor collateral freshness is tracked |
-| Collateral ownership | **Single owner (you), for now** | Governance stays lightweight: review dates and an audit dashboard, no bloated multi-tier review bureaucracy |
-| CRM integration | **Out of scope** | Accounts and opportunities are native records; CSV import/export only |
-| Scale, year one | **~20 products, ~50 documents, ~50 users** | Small, dense, high-accuracy bar. Focus on agent precision, graph integrity, and workflow execution over distributed microservices |
-| Call recording | **Out of scope** | No audio/video ingestion. Discovery input enters as typed or pasted text, uploaded RFP spreadsheets, or SOW drafts |
-| **Agent Execution Model** | **Declarative Task DAG with Human-in-the-Loop (HITL)** | Hierarchical workflows (Workflow $\rightarrow$ Task $\rightarrow$ Subtask) with explicit inputs, outputs, prompts, and tools. Stateful pause at approval gates |
-| **Playbooks & Skills Authoring** | **Pure Markdown (`.md`) and YAML (`workflow.yaml`)** | Domain logic, prompt templates, and architecture rules live in the filesystem (`playbooks/`, `skills/`), decoupled from Python backend code |
-| **Tool & Context Standard** | **Model Context Protocol (MCP) + Internal Knowledge Tools** | Phase 1–4 capabilities wrapped as internal tools. External tool integration standardized on MCP |
-| **Initial MCP Tool Priorities** | **1. Local Filesystem, 2. Web/Fetch, 3. Exporters** | Direct ingestion of customer RFP spreadsheets/Word docs; live vendor doc/release-note retrieval; automated DOCX/Markdown report export |
+| **Platform Identity** | **Multi-tenant Enterprise SE Platform** | Real PostgreSQL RLS policies (`CREATE POLICY`), cryptographic JWT/OIDC authentication, per-org isolation, and audit logging are non-negotiable. |
+| **Authentication & AuthZ** | **Cryptographic JWT / OIDC + RBAC** | Eradicate unverified dev headers (`X-Org-Id`, `X-User-Id`, `X-User-Role`). Enforce signed token validation, role hierarchy (`admin`, `solutions_engineer`, `sales`, `viewer`), and account scoping. |
+| **Catalog Scope** | **Own products and resold third-party products** | Provenance modeled on every entity (`vendor`, `source_of_truth`, `partner_tier`, `support_owner`, `contract_constraints`). |
+| **Collateral Ownership** | **Single owner (initially)** | Lightweight governance: review dates and an audit dashboard, avoiding bloated approval bureaucracy while tracking partner document staleness. |
+| **CRM Integration** | **Out of scope** | Accounts and opportunities are native relational records with CSV import/export only. |
+| **Scale, Year One** | **~20 products, ~50 documents, ~50 users** | Dense, high-accuracy bar. One PostgreSQL instance with pgvector. Focus on graph accuracy and workflow precision rather than distributed cluster engineering. |
+| **Task Execution Engine** | **Durable PostgreSQL Queue Substrate** | Generalize `app/jobs/queue.py` into a dependency-aware `task_executions` table using `SELECT FOR UPDATE SKIP LOCKED`. No in-process async DAG runner; crash and restart survival come free. |
+| **Human-in-the-Loop (HITL)** | **Database Status (`waiting_approval`)** | Pausing at approval gates is a row state, not an in-memory process. Resume is an `UPDATE` endpoint. Runs survive server restarts and multi-day pauses by construction. |
+| **Tool Calling Standard** | **Native Python Tool Functions (Phases 5–8)** | Implement tool calling in `LLMProvider` directly using Python functions (`python-docx`, existing SSRF-safe fetcher, catalog graph queries). Defer MCP JSON-RPC protocol overhead until external 3rd-party servers justify it (Phase 9). |
 
 ---
 
-## 1. What this is
+## 1. What This Is
 
-A comprehensive **Agentic Second Brain** for pre-sales, post-sales, and solution architects. It unifies product catalogs, technical collateral, compatibility rules, and account history into one typed knowledge substrate, driven by an autonomous workflow orchestrator that executes complex engineering playbooks.
+A high-assurance **Agentic Operating System and Knowledge Workspace** for enterprise Pre-Sales Engineers, Post-Sales Consultants, and Solution Architects. It grounds multi-step workflows (RFP answering, solution composition, incident root-cause triage) in an evidence-backed, typed knowledge graph with strict multi-tenant isolation.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                          ORCHESTRATION LAYER                            │
-│  Playbooks & Skills (.md / .yaml)  │  Agent Harness & MCP Integrations │
-│  - RFP Responder Workflow          │  - Local Filesystem MCP           │
-│  - Solution Composer (HLD/BOM)     │  - Upstream Web/Fetch MCP         │
-│  - Incident Triage Runbook         │  - DOCX / Markdown Exporters      │
+│                        PLAYBOOK & WORKFLOW LAYER                        │
+│  Playbooks & Rules (Markdown/YAML)  │  Deliverable Exporters (Native)   │
+│  - RFP Responder Workflow           │  - python-docx (Formatted tables) │
+│  - Solution Composer (HLD/BOM)      │  - Markdown / JSON Deliverables   │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                   GRAPH EXECUTION ENGINE (STATEFUL DAG)                 │
-│   [Task 1: Intake] ──> [Task 2: Evaluate] ──> [Task 3: Graph Audit]     │
-│            │ (Prompts, Tools, State)                  │                 │
-│            ▼                                          ▼                 │
-│   [Human Gate: Sign-off] <──────────────────── [Task 4: Draft SOW]      │
+│                  DURABLE QUEUE-BASED TASK RUNNER                        │
+│  task_executions (SELECT FOR UPDATE SKIP LOCKED with dependency check)  │
+│  [Task 1: Ingest] ──> [Task 2: Evaluate] ──> [Task 3: Graph Audit]     │
+│       │                                             │                   │
+│       ▼                                             ▼                   │
+│  [status = 'waiting_approval'] (HITL Gate) ──> [Task 4: Export DOCX]    │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                KNOWLEDGE SUBSTRATE (Phases 1 - 4 As-Built)              │
-│   Hybrid Vector/FTS Search  │  Typed Product Graph  │  Citation Engine  │
+│                   KNOWLEDGE & TOOL SUBSTRATE (Phases 1 - 4)             │
+│  Hybrid Search (pgvector + FTS)  │ Typed Product Graph │ Citation Engine│
+├─────────────────────────────────────────────────────────────────────────┤
+│                     SECURITY & ISOLATION BASELINE                       │
+│    PostgreSQL Row-Level Security (RLS)  │ Cryptographic JWT Validation  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-The system handles real-world technical scenarios end-to-end:
-
-> **Pre-Sales RFP Scenario**: An SE uploads an 80-question customer RFP spreadsheet. The engine parses requirements, audits internal capabilities, runs contradiction and prerequisite checks against the product graph, retrieves cited evidence chunks, flags low-confidence gaps, halts at a **Human-in-the-Loop approval gate** for architect review, and exports a branded DOCX response package.
->
-> **Architecture & Solution Scenario**: A customer needs cloud infrastructure with on-prem integration and video conferencing. The agent composes compatible product bundles, validates cycle-free prerequisites, verifies that no conflicting products are bundled, produces a bill of materials (BOM), and generates a High-Level Design (HLD) draft.
->
-> **Post-Sales Incident Scenario**: An engineer pastes an escalation log. The agent maps the customer's install base, traverses dependency edges to isolate root-cause candidates, queries approved runbooks, and drafts an actionable remediation procedure.
-
 ---
 
-## 2. Architectural Comparison
+## 2. Core Principles
 
-| Capability | Obsidian / Notes App | Traditional RAG Chatbot | Personal Knowledge AI (Rev 3) |
-|---|---|---|---|
-| **Product Relationships** | Untyped text links | Untyped embeddings | **Typed Directed Graph** (`requires`, `conflicts_with`, `integrates_with`) with evidence |
-| **Evidence & Truth** | Manual copy-paste | Unchecked generation | **Grounded Citations** down to page/slide with strict refusal when context is missing |
-| **Execution Model** | None | Single-turn Q&A | **Multi-step Task DAG** (Tasks $\rightarrow$ Subtasks $\rightarrow$ Prompts, Tools, Data) |
-| **Playbook Customization** | Static text notes | Hardcoded in backend | **Markdown/YAML Playbooks & Skills** in filesystem (`playbooks/`, `skills/`) |
-| **Tooling & Integrations** | Community plugins | Hardcoded API endpoints | **Model Context Protocol (MCP)** + Internal Knowledge Tool harness |
-| **Governance & Safety** | None | Blind LLM answers | **Stateful Human-in-the-Loop (HITL) Approval Gates** before finalizing output |
-
----
-
-## 3. Core Principles
-
-1. **Never invent a capability.** If collateral does not support a claim, refuse and record an actionable gap.
-2. **Every claim carries a citation and a date.** Unsupported claims never enter customer-facing proposals.
-3. **The knowledge graph is typed.** "Related" is useless; `requires`, `conflicts_with`, and `integrates_with` dictate engineering reality.
-4. **AI proposes, the Engineer decides (HITL).** High-stakes architectural decisions, pricing, and conflict overrides require explicit human approval gates.
-5. **Decouple domain knowledge from code.** Playbooks, prompts, sizing heuristics, and skill definitions live in human-editable Markdown and YAML files.
-6. **Tool access is standardized via MCP.** Connect external tools (filesystem, web, issue trackers) via standard JSON-RPC protocol.
-7. **Customer data is confidential by default.** Multi-tenancy and permissions are enforced at the database layer (PostgreSQL RLS).
+1. **Security is structural, not an afterthought.** Real PostgreSQL RLS policies enforce tenant boundaries at the database layer; application-level `.where()` clauses are never trusted as the sole isolation mechanism.
+2. **Never invent a capability.** If collateral does not support a claim, refuse and record an actionable gap.
+3. **Every claim carries a citation and a date.** Unsupported claims never enter customer-facing proposals.
+4. **The knowledge graph is typed.** "Related" is useless; `requires`, `conflicts_with`, and `integrates_with` dictate engineering reality.
+5. **AI proposes, the Engineer decides (HITL).** High-stakes architectural decisions, pricing, and conflict overrides pause statefully for human sign-off.
+6. **Measured, not vibes.** Labeled evaluation sets and written baselines must exist before declaring retrieval or generation "Done."
+7. **Reuse battle-tested primitives.** Rely on PostgreSQL transactional queues (`SKIP LOCKED`) instead of inventing fragile in-process async execution engines.
 8. **Ingested content is untrusted data.** Documents never dictate instructions; prompt-injection boundaries are strictly preserved.
-9. **Measured, not vibes.** Automated regression suites evaluate retrieval hit rates, citation accuracy, and workflow completion.
 
 ---
 
-## 4. Phase Map
+## 3. Restructured Phase Map
 
 | Phase | Name | Status | Depends on | Outcome |
 |---|---|---|---|---|
-| 0 | Foundation & Security Baseline | **Partial** | — | Multi-tenant skeleton, pgvector, storage, safety seams |
-| 1 | Ingestion Pipeline | **Done** | 0 | Bulk upload, chunking with citation anchors, background jobs |
-| 2 | Hybrid Retrieval | **Done** | 1 | Vector (pgvector) + FTS (tsvector) with Reciprocal Rank Fusion |
-| 3 | Grounded Answers | **Done** | 2 | Citation engine, structured refusals, multi-turn conversation |
-| 4 | Product Catalog & Typed Graph | **Done** | 1 | Own/resold catalog, capability taxonomy, cycle/conflict detection |
-| **5** | **Agentic Engine, Task DAG & Tool Harness** | **Next** | 3, 4 | Hierarchical task runner, state machine, HITL gates, MCP client |
-| **6** | **Pre-Sales Playbooks & Solution Composer** | Planned | 5 | RFP response DAG, discovery-to-HLD composer, DOCX export |
-| **7** | **Post-Sales Playbooks & Runbook Engine** | Planned | 5 | Install base graph, incident root-cause triage, QBR generator |
-| **8** | **Workflow Workspace UI & Visual Task Tree** | Planned | 6, 7 | Execution cockpit, DAG visualizer, live step logs, HITL modals |
-| **9** | **Tribal Knowledge & Dynamic Skill Authoring** | Planned | 8 | SE note linking (`[[wikilinks]]`), on-the-fly playbook creation |
-| **10** | **Freshness, Vendor Sync & Hardening** | Planned | 9 | Upstream collateral scraping, staleness alerts, capacity drills |
+| **0** | **Security Foundation & PostgreSQL RLS** | **IMMEDIATE** | — | Cryptographic JWT auth, real PostgreSQL RLS policies, audit log, CI isolation tests |
+| **1** | **Ingestion Pipeline** | **Done** | 0 | Multi-format upload, deterministic chunking, citation anchors, background queue |
+| **2** | **Hybrid Retrieval** | **Done\*** | 1 | Vector (pgvector) + FTS (tsvector) with RRF fusion and metadata filters |
+| **3** | **Grounded Answers** | **Done\*** | 2 | Grounded generation, citation extraction, refusal on missing context |
+| **4** | **Product Catalog & Typed Graph** | **Done** | 1 | Own/resold catalog, capability taxonomy, cycle/conflict detection, impact queries |
+| **4.5**| **Eval Substrate & Written Baseline** | **Next** | 2, 3 | Repay Phase 2/3 debt: 50-question labeled set, retrieval baseline, generation baseline |
+| **5a** | **Single-Turn Tool Calling in LLM** | Planned | 3, 4 | Extend `LLMProvider` with tool schemas and execution loop; wrap catalog & retrieval tools |
+| **5b** | **Durable Queue-Based Task Runner** | Planned | 5a | Generalize `app/jobs/queue.py` into `task_executions` with dependency-aware `claim()` |
+| **5c** | **Human-in-the-Loop (HITL) as a Status** | Planned | 5b | `waiting_approval` status, resume `UPDATE` endpoint, and audit trail |
+| **6** | **RFP Responder Playbook (End-to-End)** | Planned | 5c | Ingest spreadsheet $\rightarrow$ extract requirements $\rightarrow$ tool-grounded answers $\rightarrow$ HITL $\rightarrow$ DOCX export |
+| **6.5**| **Golden Scenario Evaluation Set** | Planned | 6 | 20 real past RFPs scored against known-good solutions (the ultimate trust gate) |
+| **7** | **Workflow Workspace UI & Task Tree** | Planned | 6 | Execution cockpit, task progress visualizer, step logs, HITL decision modal |
+| **8** | **Solution Composer & Post-Sales Playbooks** | Planned | 6.5, 7 | Discovery-to-HLD composer, BOM generator, incident triage runbook |
+| **9** | **Model Context Protocol (MCP) Integration** | Deferred | 8 | Add MCP client when external third-party servers (Jira, ServiceNow, GitHub) justify it |
+| **10**| **Notes, Freshness & Enterprise Hardening** | Planned | 8 | SE tribal notes (`[[wikilinks]]`), upstream vendor doc monitoring, capacity drills |
+
+*\*Note: Phases 2 and 3 code is fully implemented, but formal sign-off requires the empirical baseline in Phase 4.5.*
 
 ---
 
-## Phase 0: Foundation and security baseline (Partial)
-- Tenancy data model and migration baseline in place.
-- Row-Level Security (RLS) enforcement seam implemented in database models.
-- Remaining: AuthN integration (OIDC/JWT), session revocation, and automated cross-tenant isolation tests.
+## Phase 0: Security Foundation & PostgreSQL RLS (IMMEDIATE PRIORITY)
 
-## Phase 1: Ingestion Pipeline (Done)
-- Multi-format ingestion (PDF, DOCX, PPTX, XLSX, TXT, HTML) with SSRF-safe URL fetcher.
-- Deterministic chunking preserving citation anchors (page, slide, section).
-- Background queue with retry, backoff, and error taxonomy.
-
-## Phase 2: Hybrid Retrieval (Done)
-- Dense vector search (pgvector HNSW cosine) combined with sparse BM25/FTS (tsvector GIN) via RRF.
-- Predicate filters (product, vendor, sensitivity, approval state, date).
-- Exposed diagnostic endpoint (`POST /search`) with ranking inspectability.
-
-## Phase 3: Grounded Answers (Done)
-- Grounded generation service enforcing strict citation extraction and missing-context refusal.
-- Streaming SSE and synchronous generation endpoints (`POST /ask`).
-- Conversation thread persistence with per-turn source inspectability.
-
-## Phase 4: Product Catalog & Typed Graph (Done)
-- Data models for Products (own/resold, vendor governance), Capabilities, ProductEdges, Reference Architectures.
-- Graph traversal algorithms: DFS cycle detection on `requires`, multi-hop contradiction detection.
-- Impact query engine (`query_product_impact`), coverage auditor, and AI edge suggestion curation workflow.
-
----
-
-## Phase 5: Agentic Workflow Engine, Task DAG & Tool Harness
-
-The foundational bridge that transforms the passive application into an active execution engine.
+The non-negotiable security baseline for a multi-tenant platform.
 
 **Scope**
-- **Hierarchical Task Graph (DAG) Engine (`backend/app/engine/`)**:
-  - `schema.py`: Pydantic models for `WorkflowDefinition`, `TaskDefinition`, `SubTaskDefinition`, `TaskState`, and `WorkflowRunState`.
-  - `loader.py`: Discovers and parses declarative `workflow.yaml` files alongside associated Markdown prompt templates (`prompts/*.md`) and rule playbooks (`rules.md`).
-  - `runner.py`: Asynchronous DAG executor that tracks dependencies, spawns parallel tasks where independent, injects context memory, and manages state transitions.
-- **Stateful Human-in-the-Loop (HITL) Gates**:
-  - Tasks can declare `gate: human_approval` with conditional triggers (e.g. confidence < 0.85, graph conflict detected, or final deliverable sign-off).
-  - Engine pauses execution, snapshots context to PostgreSQL, emits notification, and resumes on user input/override.
-- **Internal Knowledge Tool Harness (`backend/app/tools/`)**:
-  - Wrap Phase 1–4 capabilities into standardized callable tools:
-    - `catalog_impact_query(product_id, direction)`
-    - `detect_contradictions(product_ids)`
-    - `check_prerequisites(product_ids)`
-    - `hybrid_evidence_search(query, filters, top_k)`
-- **Model Context Protocol (MCP) Client (`backend/app/mcp/`)**:
-  - JSON-RPC client connecting the agent harness to standard external MCP servers:
-    1. **Local Filesystem MCP**: Ingest customer RFP spreadsheets, Word templates, and SOW drafts directly from configured project folders.
-    2. **Web / Fetch MCP**: Retrieve live upstream vendor release notes, datasheets, and security advisories.
-    3. **Document Exporters**: Automated generation of formatted deliverables (DOCX, Markdown, JSON).
-- **Persistence & API Layer**:
-  - Database migration adding `workflow_runs`, `task_executions`, and `task_artifacts` tables.
-  - Endpoints: `GET /workflows`, `POST /workflows/{slug}/run`, `GET /workflows/runs/{id}`, `POST /workflows/runs/{id}/resume`, and SSE real-time event stream (`/events`).
+- **Authentication & Authorization**:
+  - Replace header-spoofing `resolve_principal` with cryptographic JWT validation (Auth0 / OIDC or signed bearer tokens).
+  - RBAC matrix: `admin`, `solutions_engineer`, `sales`, `viewer`, plus explicit account-level data grants.
+- **Real PostgreSQL Row-Level Security (RLS)**:
+  - Add `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY` across all tenant-scoped tables (`documents`, `chunks`, `products`, `product_edges`, `reference_architectures`, `conversations`, `jobs`).
+  - Session variable scoping: on every transaction, execute `SET LOCAL app.current_org_id = :org_id`.
+  - Database policies: `CREATE POLICY tenant_isolation_policy ON <table> USING (org_id = current_setting('app.current_org_id')::uuid)`.
+- **Append-Only Audit Log**:
+  - `audit_logs` table tracking user ID, org ID, action (`view`, `export`, `approve`, `override`), resource type, and timestamp.
+- **CI & Automated Isolation Tests**:
+  - Add GitHub Actions workflow (`.github/workflows/test.yml`).
+  - Permanent cross-tenant isolation test suite: every endpoint verifies that a principal from Org A receives 404 (never 403 or data leaks) when querying Org B resources.
 
-**Testing**
-- Unit tests verifying DAG cycle detection, invalid dependency handling, and schema validation.
-- Mock execution tests verifying topological task sequencing, input/output data flow, and error recovery.
-- State persistence tests: verify paused HITL runs survive server restarts and resume accurately.
-- MCP client communication tests (stdio/SSE transport).
-
-**Exit:** an end-to-end multi-task DAG executes, invokes internal tools and an external MCP tool, halts cleanly at a human approval gate, and resumes upon user confirmation.
+**Exit:** header-based spoofing is impossible, real PostgreSQL RLS is active on all tables, and CI executes cross-tenant isolation tests on every commit.
 
 ---
 
-## Phase 6: Pre-Sales Playbooks & Solution Composer
+## Phase 4.5: Evaluation Substrate & Written Baseline
 
-Delivers the core pre-sales productivity capabilities via declarative playbooks.
+Closing the measurement gap from Phases 2 and 3 before building agentic workflows on top of them.
 
 **Scope**
-- **RFP & Security Questionnaire Answering Playbook (`playbooks/pre-sales/rfp-response/`)**:
-  - Ingestion task: parse multi-question spreadsheets/documents.
-  - Analysis task: map requirements to capabilities and identify relevant products.
-  - Evidence task: retrieve approved chunk citations for each requirement.
-  - Verification task: audit against product graph (check for conflicts or unmet prerequisites).
-  - HITL Gate: architect reviews low-confidence items and approves answers.
-  - Export task: render completed questionnaire in original template format via Exporter tool.
-- **Solution Composer Playbook (`playbooks/pre-sales/solution-composer/`)**:
-  - Discovery task: extract pain points, constraints (budget, timeline, deployment type), and incumbent vendors from meeting notes.
-  - Candidate bundle generation: scored on coverage, zero `conflicts_with` edges, and prerequisite satisfaction.
-  - Gap Analysis: explicitly list requirements that cannot be satisfied with citations explaining why.
-  - Deliverable generation: draft High-Level Design (HLD) document, bill of materials (BOM), and Statement of Work (SOW).
-- **Competitive Battlecard & Objection Handling Playbook**:
-  - Fast comparative lookup pulling verified counter-claims strictly from approved collateral.
+- Populate `docs/eval/questions.json` with 50+ real, hand-crafted solutions engineering questions categorized by shape (direct lookup, multi-product compatibility, negative/unsupported, competitive claims, sizing).
+- Run `scripts/seed_eval_set.py` to index the golden benchmark set.
+- Run `scripts/run_eval.py --out docs/retrieval-baseline.md` to establish written precision, recall, and hit-rate baselines for vector-only, keyword-only, and hybrid search.
+- Run `scripts/run_generation_eval.py --out docs/generation-baseline.md` to benchmark citation accuracy and refusal correctness.
 
-**Testing**
-- Golden scenario regression set: 20+ past RFPs and deal requirements with known-good solutions.
-- Negative tests: unsatisfiable requirements strictly produce gaps, never hallucinated products or fake capabilities.
-- Conflict tests: a known-incompatible pair is never proposed in an HLD bundle.
-
-**Exit:** an 80-question RFP is ingested and processed through the workflow, producing cited answers, flagging gaps, pausing for HITL review, and exporting a clean deliverable.
+**Exit:** written retrieval and generation baselines committed to the repository, proving that retrieval accuracy meets the standard required for automated proposals.
 
 ---
 
-## Phase 7: Post-Sales Playbooks & Runbook Engine
+## Phase 5a: Single-Turn Tool Calling in LLM
 
-Extends the execution engine to post-sales implementation, operations, and account growth.
+Extending the LLM provider to support tool use before attempting complex task graphs.
 
 **Scope**
-- **Account Install Base Graph**:
-  - Model deployed customer configurations as graph instances linked to catalog products and version nodes.
-- **Incident Triage & Root Cause Playbook (`playbooks/post-sales/incident-triage/`)**:
-  - Ingest customer error logs or escalation tickets.
-  - Correlate installed components against known issues, vendor errata, and prerequisite graphs.
-  - Generate ranked diagnostic hypotheses and step-by-step remediation runbooks with citations.
+- **LLMProvider Refactoring (`app/llm/base.py`)**:
+  - Add `tools: list[ToolDefinition] | None = None` parameter to generation methods.
+  - Implement tool-call request/response schema parsing for Gemini/OpenAI providers.
+  - Implement a bounded single-turn tool execution loop: LLM calls tool $\rightarrow$ backend executes function $\rightarrow$ LLM synthesizes cited response.
+- **Internal Tool Registry (`app/tools/`)**:
+  - `tool_catalog_impact`: wraps `app/catalog/graph.py::query_product_impact`.
+  - `tool_detect_contradictions`: wraps `app/catalog/graph.py::detect_contradictions`.
+  - `tool_check_prerequisites`: wraps `app/catalog/graph.py::detect_cycles_in_requires`.
+  - `tool_hybrid_search`: wraps `app/retrieval/hybrid.py`.
+- Expose tool-enabled generation to `POST /ask` via an optional `enable_tools: bool` flag.
+
+**Exit:** `/ask` can answer "What are the prerequisite conflicts if I deploy Product X?" by autonomously querying graph tools and citing the results.
+
+---
+
+## Phase 5b: Durable Queue-Based Task Runner
+
+Building the workflow engine on top of our existing, battle-tested queue machinery.
+
+**Scope**
+- **Data Model (`task_executions` table)**:
+  - Columns: `id`, `workflow_run_id`, `task_slug`, `depends_on_slugs` (array), `status` (`pending`, `running`, `waiting_approval`, `succeeded`, `failed`), `input_payload` (JSONB), `output_payload` (JSONB), `leased_until`, `worker_id`, `retry_count`.
+- **Dependency-Aware Claim Mechanism**:
+  - Adapt `app/jobs/queue.py::claim()` to enforce:
+    ```sql
+    SELECT * FROM task_executions
+    WHERE status = 'pending'
+      AND (
+        depends_on_slugs IS NULL OR
+        NOT EXISTS (
+          SELECT 1 FROM task_executions dep
+          WHERE dep.workflow_run_id = task_executions.workflow_run_id
+            AND dep.task_slug = ANY(task_executions.depends_on_slugs)
+            AND dep.status != 'succeeded'
+        )
+      )
+    ORDER BY created_at ASC
+    FOR UPDATE SKIP LOCKED
+    LIMIT 1;
+    ```
+- **Sequential Execution Pool**:
+  - Worker runs within existing synchronous database session limits without starving the pool (`pool_size=5, max_overflow=5`).
+- Crash and restart survival guaranteed by database transactions.
+
+**Exit:** a 3-task linear DAG executes sequentially, passes data between steps, survives an intentional process crash mid-run, and finishes successfully upon restart.
+
+---
+
+## Phase 5c: Human-in-the-Loop (HITL) as a Status
+
+Implementing human review gates as simple database states rather than complex memory suspensions.
+
+**Scope**
+- **Approval Gate**:
+  - Tasks marked with `gate: human_approval` set `status = 'waiting_approval'` upon completing their draft output.
+  - Because `status != 'pending'`, the queue never claims downstream dependent tasks.
+- **Resume Endpoint**:
+  - `POST /workflows/runs/{run_id}/tasks/{task_slug}/approve`:
+    - Updates task status from `waiting_approval` $\rightarrow$ `succeeded` (with optional payload edits).
+    - Records the user's approval in `audit_logs`.
+    - Automatically unlocks downstream tasks for claiming.
+  - `POST /workflows/runs/{run_id}/tasks/{task_slug}/reject`: sets status to `failed` and halts the workflow run.
+
+**Exit:** a workflow halts at an approval gate, remains paused overnight, and resumes execution cleanly upon an API approval call.
+
+---
+
+## Phase 6: RFP Responder Playbook (End-to-End)
+
+Proving the complete loop on one high-value pre-sales deliverable before building multiple playbooks.
+
+**Scope**
+- **Playbook Definition (`playbooks/pre-sales/rfp-response/workflow.yaml`)**:
+  - Step 1 (`parse_rfp`): Extract questions from uploaded CSV/XLSX.
+  - Step 2 (`evaluate_capabilities`): Match questions to catalog capabilities and product graph.
+  - Step 3 (`retrieve_evidence`): Retrieve cited chunks from approved collateral.
+  - Step 4 (`draft_responses`): Generate cited answers with compliance status (Compliant / Partially / Non-Compliant).
+  - Step 5 (`human_gate`): Pause for SE review on any answer with confidence < 0.85 or unmet prerequisites.
+  - Step 6 (`export_deliverable`): Render completed questionnaire into a formatted Word document (`.docx`) with styled tables and citation appendices using `python-docx`.
+- Dedicated multi-tenant upload and execution endpoint: `POST /workflows/rfp/run`.
+
+**Exit:** an SE uploads a real customer RFP spreadsheet, reviews drafted answers in the approval queue, and downloads a formatted `.docx` deliverable containing zero unapproved or uncited claims.
+
+---
+
+## Phase 6.5: Golden Scenario Evaluation Set
+
+The true trust gate for the solution engineering engine.
+
+**Scope**
+- Curate a golden benchmark suite of **20 real past RFPs and technical solution scenarios** with known-good answers.
+- Automated regression runner: runs the RFP responder across all 20 scenarios.
+- Scored metrics:
+  - Requirement coverage rate ($\ge 90\%$).
+  - Zero hallucinated capabilities or ungrounded claims.
+  - Zero bundles containing conflicting products (`conflicts_with`).
+  - 100% adherence to customer constraints (e.g., on-prem only, vendor restrictions).
+
+**Exit:** regression test suite runs unattended against all 20 scenarios, producing a verified pass rate committed to `docs/eval/golden-scenarios-report.md`.
+
+---
+
+## Phase 7: Workflow Workspace UI & Task Tree
+
+Providing a dedicated cockpit for solutions engineers in React.
+
+**Scope**
+- **Playbook Gallery**: Browse available workflows (RFP Responder, Solution Composer).
+- **Visual Task Tree**: Live status visualizer showing nodes (`pending`, `running`, `waiting_approval`, `succeeded`, `failed`).
+- **HITL Review Modal**:
+  - Side-by-side view of extracted requirement, drafted response, retrieved citations, and graph conflict warnings.
+  - Inline editing and "Approve & Resume" action.
+- **Deliverable Downloader**: Direct download button for generated DOCX and Markdown deliverables.
+
+**Exit:** an engineer can upload an RFP, monitor execution progress, approve review gates, and download the finished proposal entirely within the browser.
+
+---
+
+## Phase 8: Solution Composer & Post-Sales Playbooks
+
+Extending the proven engine to High-Level Design (HLD) generation and post-sales runbooks.
+
+**Scope**
+- **Solution Composer Playbook**:
+  - Ingest customer discovery notes $\rightarrow$ extract constraints $\rightarrow$ compose candidate bundles $\rightarrow$ validate against `ProductEdge` graph $\rightarrow$ generate Bill of Materials (BOM) and HLD draft.
+- **Incident Root-Cause Triage Playbook**:
+  - Ingest customer error logs $\rightarrow$ query customer install base $\rightarrow$ traverse dependency graph $\rightarrow$ output step-by-step troubleshooting runbook with citations.
 - **Upgrade Impact Audit Playbook**:
-  - Given a target version upgrade for Product X, traverse the graph to compute all downstream systems affected, required prerequisite upgrades, and breaking changes.
-- **QBR Pack & Expansion Signal Generator**:
-  - Analyze customer adoption, resolved escalations, and install base.
-  - Identify adjacent portfolio products that satisfy unmet capabilities or replace EOL components.
+  - Compute transitive downstream impacts and breaking changes for proposed product upgrades.
 
-**Testing**
-- Labeled evaluation against past resolved escalation cases.
-- EOL propagation tests: marking a product or version EOL flags all affected customer install bases.
-
-**Exit:** an engineer inputs an escalation scenario and the system generates a validated diagnostic runbook matching historical resolution.
+**Exit:** Solution Composer successfully generates an HLD and BOM matching past manual solutions on the golden scenario set.
 
 ---
 
-## Phase 8: Workflow Workspace UI & Visual Task Tree
+## Phase 9: Model Context Protocol (MCP) Integration
 
-Upgrades the frontend from a chat box to a high-performance **Solutions Engineering Cockpit**.
+Adding external tool protocol support when justified by external systems.
 
 **Scope**
-- **Workflow Gallery**: Browse and launch available pre-sales, post-sales, and architecture playbooks.
-- **Visual Task Tree / DAG Inspector**:
-  - Interactive graph showing task nodes, dependencies, and real-time execution states (Pending, Running, Waiting for Approval, Completed, Failed).
-  - Live execution drawer: inspect tool calls, LLM prompts, input/output data, and log streams.
-- **Human-in-the-Loop (HITL) Decision Modal**:
-  - Clean interface for reviewing flagged architectural contradictions, approving capability mappings, or editing drafted RFP answers before resumption.
-- **Deliverable & Artifact Viewer**:
-  - Dedicated previewer for generated HLDs, SOWs, RFP tables, and runbooks with inline citation popovers and direct download buttons (DOCX, Markdown).
+- Integrate standard JSON-RPC MCP client to connect external servers maintained by third parties (e.g. Jira issue tracking, ServiceNow CMDB, GitHub repo search).
+- Tool sandboxing and tenant-scoped credential management.
 
-**Testing**
-- Component tests for DAG rendering, state transition animations, and HITL form submissions.
-- End-to-end browser walkthrough testing of workflow initiation, live streaming, and export downloads.
-
-**Exit:** user can launch an RFP or Solution Composer workflow, watch real-time task progression, resolve a pause gate, and inspect the final artifact without touching the terminal.
+**Exit:** agent executes a task that queries an external Jira MCP server for open escalation tickets during incident triage.
 
 ---
 
-## Phase 9: Notes, Tribal Knowledge & Dynamic Skill Authoring
+## Phase 10: Notes, Freshness & Enterprise Hardening
 
-Brings engineer-authored knowledge into the active execution loop.
+Finalizing institutional knowledge capture and operational resilience.
 
 **Scope**
-- Markdown editor with live preview, frontmatter metadata, and `[[wikilinks]]` linking notes directly to products, capabilities, and accounts.
-- **Tribal Knowledge Capture**: Prompts the SE after completing a deal or troubleshooting incident to write up undocumented integration quirks or workarounds.
-- **Dynamic Skill & Playbook Authoring**:
-  - UI wizard and template for creating new playbooks and skills by dropping Markdown files into `playbooks/` and `skills/`.
-  - Hot-reloading of playbooks without requiring backend restarts.
+- Markdown authoring with `[[wikilinks]]` linking SE tribal notes directly to products and accounts.
+- Scheduled vendor collateral scraper monitoring upstream URLs for datasheet modifications.
+- SAML / OIDC SSO integration and automated database restore drills.
 
-**Testing**
-- Link integrity tests across entity renames and deletions.
-- Re-indexing validation: freshly saved SE notes are immediately discoverable by retrieval tools.
-
-**Exit:** an SE authors an integration note, and a subsequent RFP workflow immediately cites that note in its answer.
+**Exit:** disaster recovery restore drill executed successfully within SLA; upstream doc modification triggers a staleness alert.
 
 ---
 
-## Phase 10: Freshness, Vendor Sync & Hardening
+## 4. Documentation Hygiene & Repo Synchronization
 
-Guarantees data integrity over time and hardens the platform for production.
-
-**Scope**
-- **Vendor Collateral Monitoring for Resold Products**:
-  - Web fetcher monitors upstream vendor documentation URLs and flags changed datasheets or expired collateral.
-- **Coverage & Staleness Dashboard**:
-  - Flags products with stale review dates, unmapped capabilities, or thin collateral.
-- **Enterprise Hardening**:
-  - SAML/OIDC SSO, session policies, backup and tested restore drills.
-  - Load testing at 10x projected corpus and concurrency limits.
-
-**Testing**
-- Automated upstream scraper detection tests on sample vendor sites.
-- Disaster recovery: end-to-end database and object store backup and restoration verification.
-
-**Exit:** weekly staleness report runs unattended, and restore drills pass under SLA.
-
----
-
-## 5. Testing Strategy Across All Phases
-
-| Layer | Covers | Runs |
-|---|---|---|
-| **Unit** | Chunking, parsing, graph algorithms, DAG cycle detection | Every commit |
-| **Tool Registry** | Input/output schema validation, tool execution safety | Every PR |
-| **Playbook Syntax** | YAML schema, missing prompt files, valid dependencies | Every PR |
-| **State Machine** | Task progression, HITL pause/resume, error handling | Every PR |
-| **Integration** | API routes, PostgreSQL transactions, RLS filters | Every PR |
-| **Retrieval Evaluation** | Labeled question set, hit-rate, precision | Nightly & pre-release |
-| **Generation Evaluation** | Citation validity, refusal on unsupported questions | On prompt/model changes |
-| **Golden Scenarios** | 20+ real RFP and deal scenarios scored against known-good solutions | Before release |
-| **Adversarial Security** | Prompt injection via untrusted RFPs, SSRF, tool breakout | Nightly |
-
----
-
-## 6. Security Posture
-
-| Risk | Control | Phase |
-|---|---|---|
-| **Prompt Injection via Customer RFPs** | Ingested text strictly delimited as untrusted data; system prompts forbid instruction override | 1, 5 |
-| **Unauthorized Tool Execution** | Strict allowlist of tool schemas; no arbitrary shell execution or `eval()` | 3, 5 |
-| **Local Filesystem MCP Traversal** | Path containment: access restricted to explicitly mounted workspace directories | 5 |
-| **SSRF via Upstream Web Fetcher** | Deny private IP ranges, cloud metadata services, and internal redirects | 1, 5 |
-| **Data Leakage Across Customers** | PostgreSQL Row-Level Security (RLS) + organization scoping on every query | 0 |
-| **Disclosing Vendor-Restricted Data** | `vendor_restricted` metadata label; export blocks restricted data unless override is approved and audited | 4, 6 |
-| **Untracked High-Stakes Actions** | Append-only audit log for all HITL approvals, overrides, and document exports | 0, 5 |
-
----
-
-## 7. Scalability Posture
-
-- **Compact Footprint**: 20 products, 50 documents, and 50 users means computational efficiency is trivial if data structures are clean.
-- **Asynchronous Execution**: Workflow DAG execution runs via standard async Python; long-running LLM and tool steps run non-blocking.
-- **State in PostgreSQL**: Workflow execution states, step outputs, and artifacts are stored in relational tables (`workflow_runs`, `task_executions`), eliminating the need for complex external message brokers.
-- **Client Streaming**: Real-time step progress and LLM generation streamed to the browser via Server-Sent Events (SSE).
-
----
-
-## 8. Sequencing & Immediate Next Steps
-
-1. **Immediate Focus (Phase 5)**:
-   - Build the DAG Engine core (`backend/app/engine/schema.py`, `loader.py`, `runner.py`).
-   - Wrap existing Phase 1–4 capabilities into `backend/app/tools/` (catalog impact query, contradiction detector, hybrid search).
-   - Integrate MCP client for Local Filesystem, Web Fetcher, and DOCX/Markdown exporters.
-   - Implement the `human_approval` pause/resume mechanism and API endpoints.
-2. **Subsequent Step (Phase 6)**:
-   - Author the declarative `rfp-response` and `solution-composer` playbooks under `playbooks/pre-sales/`.
-3. **Frontend Integration (Phase 8)**:
-   - Build the Workflow Workspace UI and Visual Task Tree inspector.
+To eliminate documentation rot and maintain a single source of truth:
+1. **Single Plan of Record**: `Project_Plan.md` (Rev 4) is the sole authoritative plan.
+2. **`STATUS.md` Synchronization**: Update `STATUS.md` to accurately reflect Phase 0 as Immediate, Phases 1–4 as Done, and Phase 4.5 as Next.
+3. **Deprecate Dead Docs**: Archive `docs/ROADMAP.md` and eliminate duplicate agent configuration files.
+4. **Git Hygiene**: Add `graphify-out/` to `.gitignore` and purge `__pycache__` from git tracking.
