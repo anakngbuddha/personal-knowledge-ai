@@ -8,6 +8,7 @@ import { SearchExplorer } from "./components/SearchExplorer";
 import { UploadButton } from "./components/UploadButton";
 import { WorkflowWorkspace } from "./components/WorkflowWorkspace";
 import { useDocuments } from "./hooks/useDocuments";
+import { apiPointsAtLocalhostFromRemote } from "./services/http";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"documents" | "search" | "chat" | "graph" | "workflows">(
@@ -57,6 +58,15 @@ export default function App() {
         </nav>
       </header>
 
+      {apiPointsAtLocalhostFromRemote() && (
+        <div className="banner error">
+          This Vercel build is not pointed at Render. Set{" "}
+          <code>VITE_API_BASE_URL</code> to your Render URL (no trailing slash),
+          redeploy the frontend, and set <code>CORS_ORIGINS</code> on Render to{" "}
+          <code>{typeof window !== "undefined" ? window.location.origin : "https://your-app.vercel.app"}</code>
+          . Shortcut: add <code>?api=https://&lt;service&gt;.onrender.com</code> to this URL once.
+        </div>
+      )}
       {error && activeTab === "documents" && <div className="banner error">{error}</div>}
 
       <main className="content-container">

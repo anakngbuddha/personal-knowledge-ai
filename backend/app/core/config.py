@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     environment: str = "development"
     log_level: str = "INFO"
+    auto_migrate: bool = False  # True, or ENVIRONMENT=production, runs schema on boot
 
     # Database
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/pka"

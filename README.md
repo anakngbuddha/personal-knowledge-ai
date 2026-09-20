@@ -122,8 +122,8 @@ docs/               architecture.md, evaluation.md
 
 - **Backend to Render (free tier)**: `render.yaml` is a Blueprint with `plan: free`
   (the default is paid Starter, which is why a free-only account cannot apply it).
-  Use New → Blueprint, fill every `sync: false` secret, then run `scripts/init_db.py`
-  once against your Aiven database from your laptop.
+  Use New → Blueprint and fill every `sync: false` secret. Schema is created on boot
+  (`ENVIRONMENT=production`). Set `CORS_ORIGINS` to the exact Vercel origin.
 - **Frontend to Vercel**: `vercel.json` is included. Root directory is `frontend`.
   Set `VITE_API_BASE_URL` to the Render URL (no trailing slash) and add the Vercel
   origin to `CORS_ORIGINS` on the backend.

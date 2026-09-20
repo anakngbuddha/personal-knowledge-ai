@@ -5,10 +5,13 @@
 # Dashboard → New → Blueprint → this repo.
 # You will be prompted for every `sync: false` secret below.
 #
-# After the first deploy, run schema setup once against Aiven from your laptop:
-#   cd backend
-#   python ../scripts/init_db.py
-# (set DATABASE_URL first: postgresql+psycopg://USER:PASS@HOST:PORT/DB?sslmode=require)
+# After the first deploy the API bootstraps the Aiven schema itself
+# (ENVIRONMENT=production). You do not need to run scripts/init_db.py unless
+# CREATE EXTENSION vector is denied — then enable pgvector in the Aiven console
+# and restart the Render service.
+#
+# CORS_ORIGINS must be the exact Vercel origin, e.g.
+#   https://deepatlas-nine.vercel.app
 
 services:
   - type: web
@@ -24,6 +27,8 @@ services:
         value: "3.12"
       - key: ENVIRONMENT
         value: production
+      - key: AUTO_MIGRATE
+        value: "true"
       - key: LOG_LEVEL
         value: INFO
 

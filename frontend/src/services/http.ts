@@ -1,10 +1,53 @@
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+function isBrowserLocalHost(): boolean {
+  if (typeof window === "undefined") return true;
+  const host = window.location.hostname;
+  return host === "localhost" || host === "127.0.0.1";
+}
+
+function normalizeBase(url: string): string {
+  return url.trim().replace(/\/$/, "");
+}
+
+function readStoredBase(): string {
+  if (typeof window === "undefined") return "";
+  const fromQuery = new URLSearchParams(window.location.search).get("api")?.trim();
+  if (fromQuery) {
+    const cleaned = normalizeBase(fromQuery);
+    try {
+      localStorage.setItem("pka_api_base_url", cleaned);
+    } catch {
+      /* private mode */
+    }
+    return cleaned;
+  }
+  try {
+    return normalizeBase(localStorage.getItem("pka_api_base_url") ?? "");
+  } catch {
+    return "";
+  }
+}
+
+function resolveApiBaseUrl(): string {
+  const stored = readStoredBase();
+  if (stored) return stored;
+  const fromEnv = normalizeBase(import.meta.env.VITE_API_BASE_URL ?? "");
+  if (fromEnv) return fromEnv;
+  return isBrowserLocalHost() ? "http://localhost:8000" : "";
+}
+
+const BASE_URL = resolveApiBaseUrl();
 
 const TOKEN_KEY = "pka_access_token";
 const FETCH_TIMEOUT_MS = 15_000;
 
 export function apiBaseUrl(): string {
   return BASE_URL;
+}
+
+/** True when a Vercel (or other hosted) build is still aimed at localhost. */
+export function apiPointsAtLocalhostFromRemote(): boolean {
+  if (isBrowserLocalHost()) return false;
+  return BASE_URL === "" || /localhost|127\.0\.0\.1/.test(BASE_URL);
 }
 
 export function getAccessToken(): string | null {
@@ -69,6 +112,13 @@ function unreachable(err: unknown): Error {
 }
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (apiPointsAtLocalhostFromRemote()) {
+    throw new Error(
+      "API URL is not set. In Vercel → Environment Variables add VITE_API_BASE_URL=" +
+        "https://<your-render-service>.onrender.com (no trailing slash) and Redeploy. " +
+        "Or open this page with ?api=https://<your-render-service>.onrender.com"
+    );
+  }
   const timed = timedSignal(init?.signal);
   try {
     const response = await fetch(`${BASE_URL}${path}`, {
@@ -92,6 +142,9 @@ export async function requestBlob(
   path: string,
   init?: RequestInit
 ): Promise<{ blob: Blob; filename: string }> {
+  if (apiPointsAtLocalhostFromRemote()) {
+    throw new Error("API URL is not set. Add VITE_API_BASE_URL on Vercel and redeploy.");
+  }
   const timed = timedSignal(init?.signal);
   try {
     const response = await fetch(`${BASE_URL}${path}`, {

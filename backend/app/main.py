@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import ask, auth, catalog, documents, health, jobs, search, workflows
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.db.bootstrap import ensure_schema, should_bootstrap
 from app.jobs.worker import start_background_workers, stop_background_workers
 from app.workflows.worker import start_workflow_workers, stop_workflow_workers
 
@@ -14,6 +15,8 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if should_bootstrap():
+        ensure_schema()
     start_background_workers()
     start_workflow_workers()
     try:
