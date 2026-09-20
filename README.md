@@ -120,10 +120,10 @@ docs/               architecture.md, evaluation.md
 
 ## Deploy
 
-- **Backend to Render (free tier)**: do **not** use "New Blueprint Instance" — that is
-  paid. Create a **Web Service** from the dashboard and copy the settings in
-  `render.yaml` (root directory `backend`, build/start/health, then every env var).
-  Run `scripts/init_db.py` once against your Aiven database from your laptop.
+- **Backend to Render (free tier)**: `render.yaml` is a Blueprint with `plan: free`
+  (the default is paid Starter, which is why a free-only account cannot apply it).
+  Use New → Blueprint, fill every `sync: false` secret, then run `scripts/init_db.py`
+  once against your Aiven database from your laptop.
 - **Frontend to Vercel**: `vercel.json` is included. Root directory is `frontend`.
   Set `VITE_API_BASE_URL` to the Render URL (no trailing slash) and add the Vercel
   origin to `CORS_ORIGINS` on the backend.
