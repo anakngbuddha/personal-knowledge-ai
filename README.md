@@ -120,10 +120,13 @@ docs/               architecture.md, evaluation.md
 
 ## Deploy
 
-- **Backend to Render**: `render.yaml` is included. Set every `sync: false` env var in the
-  dashboard. Run `scripts/init_db.py` once against your Aiven database.
-- **Frontend to Vercel**: `vercel.json` is included. Set `VITE_API_BASE_URL` to the Render
-  URL and add the Vercel domain to `CORS_ORIGINS` on the backend.
+- **Backend to Render (free tier)**: do **not** use "New Blueprint Instance" — that is
+  paid. Create a **Web Service** from the dashboard and copy the settings in
+  `render.yaml` (root directory `backend`, build/start/health, then every env var).
+  Run `scripts/init_db.py` once against your Aiven database from your laptop.
+- **Frontend to Vercel**: `vercel.json` is included. Root directory is `frontend`.
+  Set `VITE_API_BASE_URL` to the Render URL (no trailing slash) and add the Vercel
+  origin to `CORS_ORIGINS` on the backend.
 
 Render's disk is ephemeral. Source files live in R2 only; that rule is enforced in code.
 

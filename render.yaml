@@ -1,38 +1,84 @@
-services:
-  - type: web
-    name: personal-knowledge-ai-api
-    runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.12"
-      # Set every value below in the Render dashboard. Do not commit secrets.
-      - key: ENVIRONMENT
-        value: production
-      - key: DATABASE_URL
-        sync: false
-      - key: CORS_ORIGINS
-        sync: false
-      - key: STORAGE_BACKEND
-        value: r2
-      - key: R2_ACCOUNT_ID
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: R2_BUCKET_NAME
-        sync: false
-      - key: EMBEDDING_PROVIDER
-        value: gemini
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: GEMINI_EMBEDDING_MODEL
-        value: gemini-embedding-001
-      - key: GEMINI_EMBEDDING_DIMENSIONS
-        value: "768"
-      - key: GEMINI_GENERATION_MODEL
-        value: gemini-2.5-flash
+# Free-tier Render Web Service — dashboard recipe, not a Blueprint.
+#
+# Render Blueprints ("New Blueprint Instance" on this file) are a paid feature.
+# On the free plan, create the service by hand:
+#
+#   Dashboard → New → Web Service → connect this GitHub repo
+#   Instance type: Free
+#   Then copy the settings and env vars below into the form.
+#
+# After the first deploy, run schema setup once against Aiven from your laptop:
+#   cd backend
+#   set DATABASE_URL=postgresql+psycopg://USER:PASS@HOST:PORT/DB?sslmode=require
+#   python ../scripts/init_db.py
+#
+# Then hit GET https://<your-service>.onrender.com/health/dependencies
+
+service:
+  name: personal-knowledge-ai-api
+  runtime: Python 3
+  instanceType: Free
+  rootDir: backend
+  buildCommand: pip install -r requirements.txt
+  startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+  healthCheckPath: /health
+
+# -----------------------------------------------------------------------------
+# Environment variables — paste these in Render → Environment
+#
+# Values marked SECRET must be typed in the dashboard. Never commit them.
+# Values marked SET are safe defaults; leave them as-is unless you know better.
+# -----------------------------------------------------------------------------
+
+env:
+  # Runtime
+  PYTHON_VERSION: "3.12"                          # SET
+  ENVIRONMENT: production                         # SET
+  LOG_LEVEL: INFO                                 # SET
+
+  # Aiven PostgreSQL. Copy the service URI, then:
+  #   1. Change postgres:// or postgresql:// → postgresql+psycopg://
+  #   2. Keep ?sslmode=require (add it if Aiven omitted it)
+  DATABASE_URL: postgresql+psycopg://USER:PASS@HOST:PORT/DB?sslmode=require  # SECRET
+
+  # Vercel origin(s), comma-separated. No trailing slash.
+  # Example: https://personal-knowledge-ai.vercel.app
+  # Add preview URLs too if you use them; CORS does not accept wildcards here.
+  CORS_ORIGINS: https://YOUR-APP.vercel.app       # SECRET (yours, not a password)
+
+  # Auth. The UI has no login screen yet, so owner_dev is what makes the
+  # Vercel frontend work. Anyone who can reach the API is the org owner.
+  # Switch to jwt later and mint tokens via POST /auth/token.
+  AUTH_MODE: owner_dev                            # SET (use jwt once you add login)
+  JWT_SECRET_KEY: generate-a-long-random-string   # SECRET  (openssl rand -hex 32)
+  DEFAULT_ORG_SLUG: default                       # SET
+
+  # Cloudflare R2
+  STORAGE_BACKEND: r2                             # SET
+  R2_ACCOUNT_ID: ""                               # SECRET  (Cloudflare account id)
+  R2_ACCESS_KEY_ID: ""                            # SECRET  (R2 API token access key)
+  R2_SECRET_ACCESS_KEY: ""                        # SECRET
+  R2_BUCKET_NAME: ""                              # SECRET  (bucket name, not a URL)
+  # Optional. Leave unset; the app builds https://<accountid>.r2.cloudflarestorage.com
+  # R2_ENDPOINT_URL: ""
+
+  # Gemini (embeddings + generation share one key)
+  EMBEDDING_PROVIDER: gemini                      # SET
+  LLM_PROVIDER: gemini                            # SET
+  GEMINI_API_KEY: ""                              # SECRET  (Google AI Studio)
+  GEMINI_EMBEDDING_MODEL: gemini-embedding-001    # SET
+  GEMINI_EMBEDDING_DIMENSIONS: "768"              # SET
+  GEMINI_GENERATION_MODEL: gemini-2.5-flash       # SET
+
+  # In-process workers. Free tier has no Background Worker, so these stay true
+  # on this one web service. Do not spin up a second process.
+  WORKER_ENABLED: "true"                          # SET
+  WORKFLOW_WORKER_ENABLED: "true"                 # SET
+  WORKER_CONCURRENCY: "1"                         # SET
+  WORKFLOW_WORKER_CONCURRENCY: "1"                # SET
+
+  # Safety defaults (match local .env.example; fine for a personal deploy)
+  MALWARE_SCANNER: heuristic                      # SET
+  OCR_PROVIDER: none                              # SET
+  URL_FETCH_ENABLED: "true"                       # SET
+  URL_FETCH_ALLOW_PRIVATE_IPS: "false"            # SET — never true in production
