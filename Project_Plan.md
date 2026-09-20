@@ -1,10 +1,8 @@
-# Project Plan: Solution Engineering Knowledge Workspace
+# Project Plan: Solution Engineering Knowledge Workspace & Agentic Operating System
 
-Status: **proposed (rev 2)**, 2026-09-19. Supersedes `docs/ROADMAP.md` Phases 6-10 where they conflict.
+Status: **Rev 3 (2026-09-20)**. Supersedes Rev 2 and `docs/ROADMAP.md`.
 
-Rev 2 incorporates the decided parameters below. The headline change: the corpus is small, so
-distributed-systems work is cut and the effort moves to **graph quality and catalog freshness**,
-which is where quality will actually be won or lost.
+Rev 3 incorporates the strategic evolution from a passive RAG/Catalog web application into an **Agentic Operating System and Second Brain** for **Pre-Sales, Post-Sales, and Tech Engineering/Architecture**. The knowledge substrate (Phases 1–4: clean chunking, pgvector hybrid retrieval, citation anchors, and the typed product catalog graph) is now exposed as first-class **Agent Tools** coordinated by a **Task-Graph (DAG) Execution Engine** with declarative **Markdown/YAML Playbooks**, **Model Context Protocol (MCP)** tool harnesses, and stateful **Human-in-the-Loop (HITL)** approval gates.
 
 ---
 
@@ -13,461 +11,323 @@ which is where quality will actually be won or lost.
 | Question | Decision | Consequence |
 |---|---|---|
 | Deployment model | **Shared multi-tenant** | Row-level security from day one; isolation tests permanent |
-| Catalog scope | **Own products and resold third-party products** | `vendor` and `source_of_truth` on every product; vendor collateral freshness is the hard problem |
-| Collateral ownership | **Single owner (you), for now** | Governance stays lightweight: review dates and a dashboard, no approval workflow engine |
+| Catalog scope | **Own products and resold third-party products** | `vendor` and `source_of_truth` on every product; vendor collateral freshness is tracked |
+| Collateral ownership | **Single owner (you), for now** | Governance stays lightweight: review dates and an audit dashboard, no bloated multi-tier review bureaucracy |
 | CRM integration | **Out of scope** | Accounts and opportunities are native records; CSV import/export only |
-| Scale, year one | **~20 products, ~50 documents, ~50 users** | Small. See section 2 |
-| Call recording and transcription | **Out of scope** | No audio or video ingestion. Discovery input is typed or pasted notes only |
+| Scale, year one | **~20 products, ~50 documents, ~50 users** | Small, dense, high-accuracy bar. Focus on agent precision, graph integrity, and workflow execution over distributed microservices |
+| Call recording | **Out of scope** | No audio/video ingestion. Discovery input enters as typed or pasted text, uploaded RFP spreadsheets, or SOW drafts |
+| **Agent Execution Model** | **Declarative Task DAG with Human-in-the-Loop (HITL)** | Hierarchical workflows (Workflow $\rightarrow$ Task $\rightarrow$ Subtask) with explicit inputs, outputs, prompts, and tools. Stateful pause at approval gates |
+| **Playbooks & Skills Authoring** | **Pure Markdown (`.md`) and YAML (`workflow.yaml`)** | Domain logic, prompt templates, and architecture rules live in the filesystem (`playbooks/`, `skills/`), decoupled from Python backend code |
+| **Tool & Context Standard** | **Model Context Protocol (MCP) + Internal Knowledge Tools** | Phase 1–4 capabilities wrapped as internal tools. External tool integration standardized on MCP |
+| **Initial MCP Tool Priorities** | **1. Local Filesystem, 2. Web/Fetch, 3. Exporters** | Direct ingestion of customer RFP spreadsheets/Word docs; live vendor doc/release-note retrieval; automated DOCX/Markdown report export |
 
 ---
 
 ## 1. What this is
 
-A knowledge workspace for pre-sales and post-sales solutions engineering: the product portfolio,
-collateral, and account history become one linked, searchable, citable graph, plus an AI that
-composes **multi-product solutions** grounded in that graph.
+A comprehensive **Agentic Second Brain** for pre-sales, post-sales, and solution architects. It unifies product catalogs, technical collateral, compatibility rules, and account history into one typed knowledge substrate, driven by an autonomous workflow orchestrator that executes complex engineering playbooks.
 
-The scenario it must handle end to end:
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          ORCHESTRATION LAYER                            │
+│  Playbooks & Skills (.md / .yaml)  │  Agent Harness & MCP Integrations │
+│  - RFP Responder Workflow          │  - Local Filesystem MCP           │
+│  - Solution Composer (HLD/BOM)     │  - Upstream Web/Fetch MCP         │
+│  - Incident Triage Runbook         │  - DOCX / Markdown Exporters      │
+├─────────────────────────────────────────────────────────────────────────┤
+│                   GRAPH EXECUTION ENGINE (STATEFUL DAG)                 │
+│   [Task 1: Intake] ──> [Task 2: Evaluate] ──> [Task 3: Graph Audit]     │
+│            │ (Prompts, Tools, State)                  │                 │
+│            ▼                                          ▼                 │
+│   [Human Gate: Sign-off] <──────────────────── [Task 4: Draft SOW]      │
+├─────────────────────────────────────────────────────────────────────────┤
+│                KNOWLEDGE SUBSTRATE (Phases 1 - 4 As-Built)              │
+│   Hybrid Vector/FTS Search  │  Typed Product Graph  │  Citation Engine  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-> A customer needs cloud infrastructure, but also has an on-prem server problem and wants video
-> conferencing. An SE asks what combination we can offer and gets a bundle, the reasons each
-> product fits, known integration gaps, the reference architecture, comparable past deals, and a
-> citation for every claim.
+The system handles real-world technical scenarios end-to-end:
 
-What each existing tool gives, and what must be added:
+> **Pre-Sales RFP Scenario**: An SE uploads an 80-question customer RFP spreadsheet. The engine parses requirements, audits internal capabilities, runs contradiction and prerequisite checks against the product graph, retrieves cited evidence chunks, flags low-confidence gaps, halts at a **Human-in-the-Loop approval gate** for architect review, and exports a branded DOCX response package.
+>
+> **Architecture & Solution Scenario**: A customer needs cloud infrastructure with on-prem integration and video conferencing. The agent composes compatible product bundles, validates cycle-free prerequisites, verifies that no conflicting products are bundled, produces a bill of materials (BOM), and generates a High-Level Design (HLD) draft.
+>
+> **Post-Sales Incident Scenario**: An engineer pastes an escalation log. The agent maps the customer's install base, traverses dependency edges to isolate root-cause candidates, queries approved runbooks, and drafts an actionable remediation procedure.
 
-| Need | Obsidian | NotebookLM | This app adds |
+---
+
+## 2. Architectural Comparison
+
+| Capability | Obsidian / Notes App | Traditional RAG Chatbot | Personal Knowledge AI (Rev 3) |
 |---|---|---|---|
-| Products and how they relate | Untyped links | Nothing | **Typed** graph: integrates-with, requires, conflicts-with |
-| Answers from real collateral | Nothing | Cited answers | Answers scoped to **current, approved** collateral |
-| Composing a solution | Nothing | Nothing | Requirement to capability to product matching |
-
-## 2. What the size of this changes
-
-20 products, 50 documents, and 50 users is a **small corpus with a high accuracy bar**. That
-inverts the usual priorities:
-
-- **Cut entirely:** read replicas, table partitioning, a dedicated vector database, a distributed
-  queue, aggressive caching layers, and sharding. One PostgreSQL instance with pgvector will serve
-  this corpus comfortably for years. Revisit only if measurement contradicts that.
-- **Keep, but simplify:** background processing. Bulk upload still must not block a request, but
-  FastAPI background tasks or a single lightweight worker is sufficient. No Redis, no Celery cluster.
-- **Where the risk actually sits:** with 50 documents, retrieval will rarely fail to find the right
-  passage. Bad answers will come from **a wrong or missing graph edge**, **stale vendor collateral**,
-  or **thin coverage of a product**. So the investment goes into catalog curation, evidence on
-  edges, freshness tracking, and evaluation — not infrastructure.
-- **Multi-tenancy at 50 users** is not about load, it is about **confidentiality**: customer
-  material must not leak between accounts, and resold-vendor material may carry its own restrictions.
-  RLS earns its place for correctness, not scale.
-- **Feasible consequence:** the golden-scenario and labeled question sets can plausibly cover a
-  large share of real usage. Evaluation is unusually cheap here. Use that.
-
-## 3. Core principles
-
-1. **Never invent a capability.** If collateral does not support a claim, say so.
-2. **Every claim carries a citation and a date.** Pricing and compatibility go stale.
-3. **Approved vs draft is first-class.** Customer-facing output uses approved collateral only.
-4. **The graph is typed.** "Related" is useless; "requires" and "conflicts with" are actionable.
-5. **Own vs resold is always visible.** An SE must never be unsure who owns a product's roadmap or
-   support path.
-6. **Customer data is confidential by default.**
-7. **Ingested content is untrusted input.** Documents are data, never instructions.
-8. **AI proposes, the SE decides.**
-9. **Measured, not vibes.** Retrieval and recommendations are evaluated against labeled sets.
+| **Product Relationships** | Untyped text links | Untyped embeddings | **Typed Directed Graph** (`requires`, `conflicts_with`, `integrates_with`) with evidence |
+| **Evidence & Truth** | Manual copy-paste | Unchecked generation | **Grounded Citations** down to page/slide with strict refusal when context is missing |
+| **Execution Model** | None | Single-turn Q&A | **Multi-step Task DAG** (Tasks $\rightarrow$ Subtasks $\rightarrow$ Prompts, Tools, Data) |
+| **Playbook Customization** | Static text notes | Hardcoded in backend | **Markdown/YAML Playbooks & Skills** in filesystem (`playbooks/`, `skills/`) |
+| **Tooling & Integrations** | Community plugins | Hardcoded API endpoints | **Model Context Protocol (MCP)** + Internal Knowledge Tool harness |
+| **Governance & Safety** | None | Blind LLM answers | **Stateful Human-in-the-Loop (HITL) Approval Gates** before finalizing output |
 
 ---
 
-## 4. Phase map
+## 3. Core Principles
 
-| Phase | Name | Outcome | Depends on |
-|---|---|---|---|
-| 0 | Foundation and security baseline | Multi-tenant, authenticated, auditable skeleton | — |
-| 1 | Ingestion | Bulk upload, many formats, background, safe | 0 |
-| 2 | Hybrid retrieval | Filtered, permission-aware, measurable search | 1 |
-| 3 | Grounded answers | Cited answers that refuse when unsupported | 2 |
-| 4 | Product catalog and typed graph | Portfolio modeled, own and resold | 1 |
-| 5 | Solution composer | The headline feature: requirements to bundles | 3, 4 |
-| 6 | Pre-sales workflows | RFP answering, proposals, battlecards | 5 |
-| 7 | Post-sales workflows | Install base, runbooks, QBR, expansion | 5 |
-| 8 | Notes, linking, and authoring | SE-authored knowledge in the same graph | 2 |
-| 9 | Freshness and feedback loop | Win/loss, staleness, gaps, contradictions | 6, 7 |
-| 10 | Hardening and integrations | SSO, document-source sync, capacity checks | 9 |
-
-A phase is not done until its testing and security items pass.
+1. **Never invent a capability.** If collateral does not support a claim, refuse and record an actionable gap.
+2. **Every claim carries a citation and a date.** Unsupported claims never enter customer-facing proposals.
+3. **The knowledge graph is typed.** "Related" is useless; `requires`, `conflicts_with`, and `integrates_with` dictate engineering reality.
+4. **AI proposes, the Engineer decides (HITL).** High-stakes architectural decisions, pricing, and conflict overrides require explicit human approval gates.
+5. **Decouple domain knowledge from code.** Playbooks, prompts, sizing heuristics, and skill definitions live in human-editable Markdown and YAML files.
+6. **Tool access is standardized via MCP.** Connect external tools (filesystem, web, issue trackers) via standard JSON-RPC protocol.
+7. **Customer data is confidential by default.** Multi-tenancy and permissions are enforced at the database layer (PostgreSQL RLS).
+8. **Ingested content is untrusted data.** Documents never dictate instructions; prompt-injection boundaries are strictly preserved.
+9. **Measured, not vibes.** Automated regression suites evaluate retrieval hit rates, citation accuracy, and workflow completion.
 
 ---
 
-## Phase 0: Foundation and security baseline
+## 4. Phase Map
 
-Structural, and the one thing genuinely painful to retrofit, since tenancy touches every query.
+| Phase | Name | Status | Depends on | Outcome |
+|---|---|---|---|---|
+| 0 | Foundation & Security Baseline | **Partial** | — | Multi-tenant skeleton, pgvector, storage, safety seams |
+| 1 | Ingestion Pipeline | **Done** | 0 | Bulk upload, chunking with citation anchors, background jobs |
+| 2 | Hybrid Retrieval | **Done** | 1 | Vector (pgvector) + FTS (tsvector) with Reciprocal Rank Fusion |
+| 3 | Grounded Answers | **Done** | 2 | Citation engine, structured refusals, multi-turn conversation |
+| 4 | Product Catalog & Typed Graph | **Done** | 1 | Own/resold catalog, capability taxonomy, cycle/conflict detection |
+| **5** | **Agentic Engine, Task DAG & Tool Harness** | **Next** | 3, 4 | Hierarchical task runner, state machine, HITL gates, MCP client |
+| **6** | **Pre-Sales Playbooks & Solution Composer** | Planned | 5 | RFP response DAG, discovery-to-HLD composer, DOCX export |
+| **7** | **Post-Sales Playbooks & Runbook Engine** | Planned | 5 | Install base graph, incident root-cause triage, QBR generator |
+| **8** | **Workflow Workspace UI & Visual Task Tree** | Planned | 6, 7 | Execution cockpit, DAG visualizer, live step logs, HITL modals |
+| **9** | **Tribal Knowledge & Dynamic Skill Authoring** | Planned | 8 | SE note linking (`[[wikilinks]]`), on-the-fly playbook creation |
+| **10** | **Freshness, Vendor Sync & Hardening** | Planned | 9 | Upstream collateral scraping, staleness alerts, capacity drills |
+
+---
+
+## Phase 0: Foundation and security baseline (Partial)
+- Tenancy data model and migration baseline in place.
+- Row-Level Security (RLS) enforcement seam implemented in database models.
+- Remaining: AuthN integration (OIDC/JWT), session revocation, and automated cross-tenant isolation tests.
+
+## Phase 1: Ingestion Pipeline (Done)
+- Multi-format ingestion (PDF, DOCX, PPTX, XLSX, TXT, HTML) with SSRF-safe URL fetcher.
+- Deterministic chunking preserving citation anchors (page, slide, section).
+- Background queue with retry, backoff, and error taxonomy.
+
+## Phase 2: Hybrid Retrieval (Done)
+- Dense vector search (pgvector HNSW cosine) combined with sparse BM25/FTS (tsvector GIN) via RRF.
+- Predicate filters (product, vendor, sensitivity, approval state, date).
+- Exposed diagnostic endpoint (`POST /search`) with ranking inspectability.
+
+## Phase 3: Grounded Answers (Done)
+- Grounded generation service enforcing strict citation extraction and missing-context refusal.
+- Streaming SSE and synchronous generation endpoints (`POST /ask`).
+- Conversation thread persistence with per-turn source inspectability.
+
+## Phase 4: Product Catalog & Typed Graph (Done)
+- Data models for Products (own/resold, vendor governance), Capabilities, ProductEdges, Reference Architectures.
+- Graph traversal algorithms: DFS cycle detection on `requires`, multi-hop contradiction detection.
+- Impact query engine (`query_product_impact`), coverage auditor, and AI edge suggestion curation workflow.
+
+---
+
+## Phase 5: Agentic Workflow Engine, Task DAG & Tool Harness
+
+The foundational bridge that transforms the passive application into an active execution engine.
 
 **Scope**
-- Tenancy: `organization` to `workspace` to resources. Every table carries `org_id`.
-- PostgreSQL **row-level security**, enforced by the database rather than by remembering a `WHERE`
-  clause. The application connects as a non-superuser role with RLS forced.
-- AuthN: email and password or OIDC; session or JWT handling with revocation.
-- AuthZ: roles `admin`, `solutions_engineer`, `sales`, `viewer`, plus per-account access grants.
-- Sensitivity labels on every resource: `public`, `internal`, `confidential`, `customer_data`,
-  plus `vendor_restricted` for resold material under NDA or partner terms.
-- Append-only audit log: who viewed or exported which customer or vendor material, and when.
-- Secrets via environment or a secret manager only, enforced by CI secret scanning.
-- Structured logging with request IDs and a PII redaction helper.
-- Error taxonomy that never leaks internals to the client.
+- **Hierarchical Task Graph (DAG) Engine (`backend/app/engine/`)**:
+  - `schema.py`: Pydantic models for `WorkflowDefinition`, `TaskDefinition`, `SubTaskDefinition`, `TaskState`, and `WorkflowRunState`.
+  - `loader.py`: Discovers and parses declarative `workflow.yaml` files alongside associated Markdown prompt templates (`prompts/*.md`) and rule playbooks (`rules.md`).
+  - `runner.py`: Asynchronous DAG executor that tracks dependencies, spawns parallel tasks where independent, injects context memory, and manages state transitions.
+- **Stateful Human-in-the-Loop (HITL) Gates**:
+  - Tasks can declare `gate: human_approval` with conditional triggers (e.g. confidence < 0.85, graph conflict detected, or final deliverable sign-off).
+  - Engine pauses execution, snapshots context to PostgreSQL, emits notification, and resumes on user input/override.
+- **Internal Knowledge Tool Harness (`backend/app/tools/`)**:
+  - Wrap Phase 1–4 capabilities into standardized callable tools:
+    - `catalog_impact_query(product_id, direction)`
+    - `detect_contradictions(product_ids)`
+    - `check_prerequisites(product_ids)`
+    - `hybrid_evidence_search(query, filters, top_k)`
+- **Model Context Protocol (MCP) Client (`backend/app/mcp/`)**:
+  - JSON-RPC client connecting the agent harness to standard external MCP servers:
+    1. **Local Filesystem MCP**: Ingest customer RFP spreadsheets, Word templates, and SOW drafts directly from configured project folders.
+    2. **Web / Fetch MCP**: Retrieve live upstream vendor release notes, datasheets, and security advisories.
+    3. **Document Exporters**: Automated generation of formatted deliverables (DOCX, Markdown, JSON).
+- **Persistence & API Layer**:
+  - Database migration adding `workflow_runs`, `task_executions`, and `task_artifacts` tables.
+  - Endpoints: `GET /workflows`, `POST /workflows/{slug}/run`, `GET /workflows/runs/{id}`, `POST /workflows/runs/{id}/resume`, and SSE real-time event stream (`/events`).
 
 **Testing**
-- CI on every PR, with a coverage floor.
-- **Tenant isolation tests, permanent and never skipped:** a user in org A gets 404 (not 403) for
-  org B's resources, on every endpoint. Every new endpoint adds a case.
-- Authorization matrix: each role against each endpoint, expected allow or deny.
-- Dependency vulnerability and secret scanning in CI.
+- Unit tests verifying DAG cycle detection, invalid dependency handling, and schema validation.
+- Mock execution tests verifying topological task sequencing, input/output data flow, and error recovery.
+- State persistence tests: verify paused HITL runs survive server restarts and resume accurately.
+- MCP client communication tests (stdio/SSE transport).
 
-**Exit:** a second organization cannot detect the first's existence through any endpoint, and the
-authorization matrix passes with no skipped rows.
+**Exit:** an end-to-end multi-task DAG executes, invokes internal tools and an external MCP tool, halts cleanly at a human approval gate, and resumes upon user confirmation.
 
 ---
 
-## Phase 1: Ingestion
+## Phase 6: Pre-Sales Playbooks & Solution Composer
+
+Delivers the core pre-sales productivity capabilities via declarative playbooks.
 
 **Scope**
-- Bulk upload: many files at once, folder drop, plus URL and pasted text.
-- Formats: PDF, DOCX, **PPTX** (where SE collateral usually lives), XLSX, TXT/Markdown, HTML.
-  OCR for scanned PDFs.
-- Background processing with per-job status, retry with backoff, and a failed state. A single
-  worker process is sufficient at this corpus size; no distributed queue.
-- Citation anchors preserved: page, slide number, sheet and cell range, heading path.
-- Deduplication by content hash; versioning when a document is re-uploaded.
-- Document metadata, all required at upload: source type, **vendor**, **own or resold**, products
-  referenced, **approval state**, **valid-until date**, sensitivity label.
-
-**Security**
-- File type and size validated by content sniffing, not extension.
-- Malware scanning before parsing; parsing in a resource-limited sandbox with timeouts.
-- XXE and zip-bomb protections for archives, OOXML, and HTML.
-- URL ingestion through an **SSRF-safe fetcher**: private IP ranges, cloud metadata endpoints, and
-  redirects to internal hosts all denied.
-- **Prompt-injection containment:** ingested text is demarcated as untrusted data in every prompt;
-  the system prompt states that document content can never issue instructions; content-derived text
-  never gains tool access. Instruction-like passages are flagged for review. This matters
-  specifically because customer RFPs and third-party vendor PDFs are ingested routinely.
+- **RFP & Security Questionnaire Answering Playbook (`playbooks/pre-sales/rfp-response/`)**:
+  - Ingestion task: parse multi-question spreadsheets/documents.
+  - Analysis task: map requirements to capabilities and identify relevant products.
+  - Evidence task: retrieve approved chunk citations for each requirement.
+  - Verification task: audit against product graph (check for conflicts or unmet prerequisites).
+  - HITL Gate: architect reviews low-confidence items and approves answers.
+  - Export task: render completed questionnaire in original template format via Exporter tool.
+- **Solution Composer Playbook (`playbooks/pre-sales/solution-composer/`)**:
+  - Discovery task: extract pain points, constraints (budget, timeline, deployment type), and incumbent vendors from meeting notes.
+  - Candidate bundle generation: scored on coverage, zero `conflicts_with` edges, and prerequisite satisfaction.
+  - Gap Analysis: explicitly list requirements that cannot be satisfied with citations explaining why.
+  - Deliverable generation: draft High-Level Design (HLD) document, bill of materials (BOM), and Statement of Work (SOW).
+- **Competitive Battlecard & Objection Handling Playbook**:
+  - Fast comparative lookup pulling verified counter-claims strictly from approved collateral.
 
 **Testing**
-- Fixture corpus per format, including one deliberately malformed file per type.
-- Golden extraction tests: page and slide anchors resolve to the right location.
-- Chunk determinism tests, so evaluation stays comparable across runs.
-- Bulk test at 10x the real corpus (500 documents): the queue drains, memory is flat, statuses correct.
-- Injection corpus: documents containing instruction-like text produce no behavior change.
+- Golden scenario regression set: 20+ past RFPs and deal requirements with known-good solutions.
+- Negative tests: unsatisfiable requirements strictly produce gaps, never hallucinated products or fake capabilities.
+- Conflict tests: a known-incompatible pair is never proposed in an HLD bundle.
 
-**Exit:** the full document set ingests unattended, every failure is individually explainable and
-retryable, and the injection corpus is inert.
+**Exit:** an 80-question RFP is ingested and processed through the workflow, producing cited answers, flagging gaps, pausing for HITL review, and exporting a clean deliverable.
 
 ---
 
-## Phase 2: Hybrid retrieval
+## Phase 7: Post-Sales Playbooks & Runbook Engine
+
+Extends the execution engine to post-sales implementation, operations, and account growth.
 
 **Scope**
-- Vector (pgvector) plus full-text (tsvector) with Reciprocal Rank Fusion. Deterministic.
-- **Filtered retrieval, required not optional:** by product, vendor, account, approval state,
-  freshness, sensitivity, and document type. Filters apply before fusion.
-- Permission-aware retrieval: candidates are filtered by the caller's grants at query time, so a
-  chunk the user may not read never reaches the model.
-- `POST /search` debug endpoint exposing scores and fusion inputs.
+- **Account Install Base Graph**:
+  - Model deployed customer configurations as graph instances linked to catalog products and version nodes.
+- **Incident Triage & Root Cause Playbook (`playbooks/post-sales/incident-triage/`)**:
+  - Ingest customer error logs or escalation tickets.
+  - Correlate installed components against known issues, vendor errata, and prerequisite graphs.
+  - Generate ranked diagnostic hypotheses and step-by-step remediation runbooks with citations.
+- **Upgrade Impact Audit Playbook**:
+  - Given a target version upgrade for Product X, traverse the graph to compute all downstream systems affected, required prerequisite upgrades, and breaking changes.
+- **QBR Pack & Expansion Signal Generator**:
+  - Analyze customer adoption, resolved escalations, and install base.
+  - Identify adjacent portfolio products that satisfy unmet capabilities or replace EOL components.
 
 **Testing**
-- Labeled set of 50+ real SE questions with the correct passage marked. At this corpus size that is
-  meaningful coverage, not a token sample.
-- Compare vector-only, keyword-only, and hybrid; record the baseline in writing before tuning.
-- Permission tests: a restricted chunk never appears in results or in a generated answer.
-- Latency budget: p95 under 500 ms. Expect this to be met trivially; record it anyway as a
-  regression tripwire.
+- Labeled evaluation against past resolved escalation cases.
+- EOL propagation tests: marking a product or version EOL flags all affected customer install bases.
 
-**Exit:** a written baseline exists and permission filtering has a test that fails loudly if removed.
+**Exit:** an engineer inputs an escalation scenario and the system generates a validated diagnostic runbook matching historical resolution.
 
 ---
 
-## Phase 3: Grounded answers
+## Phase 8: Workflow Workspace UI & Visual Task Tree
+
+Upgrades the frontend from a chat box to a high-performance **Solutions Engineering Cockpit**.
 
 **Scope**
-- Generation behind a provider interface. Strict grounded prompt: answer only from context and
-  **state when the context is insufficient**.
-- Citations extracted to a structured field, clickable back to page or slide.
-- Every answer shows the **freshness, approval state, and vendor** of its sources.
-- Conversation history, per-answer source list, source toggling.
-- Cost controls: per-org token budgets, per-user rate limits, streaming responses.
+- **Workflow Gallery**: Browse and launch available pre-sales, post-sales, and architecture playbooks.
+- **Visual Task Tree / DAG Inspector**:
+  - Interactive graph showing task nodes, dependencies, and real-time execution states (Pending, Running, Waiting for Approval, Completed, Failed).
+  - Live execution drawer: inspect tool calls, LLM prompts, input/output data, and log streams.
+- **Human-in-the-Loop (HITL) Decision Modal**:
+  - Clean interface for reviewing flagged architectural contradictions, approving capability mappings, or editing drafted RFP answers before resumption.
+- **Deliverable & Artifact Viewer**:
+  - Dedicated previewer for generated HLDs, SOWs, RFP tables, and runbooks with inline citation popovers and direct download buttons (DOCX, Markdown).
 
 **Testing**
-- Refusal set: questions the corpus genuinely cannot answer must be declined, not guessed.
-- Citation accuracy hand-scored on a fixed question set.
-- Prompts versioned like code; the regression suite runs on every prompt or model change.
-- Adversarial set: questions phrased to elicit unsupported pricing or competitive claims.
+- Component tests for DAG rendering, state transition animations, and HITL form submissions.
+- End-to-end browser walkthrough testing of workflow initiation, live streaming, and export downloads.
 
-**Exit:** citations resolve correctly on the labeled set, and unsupported questions are refused.
+**Exit:** user can launch an RFP or Solution Composer workflow, watch real-time task progression, resolve a pause gate, and inspect the final artifact without touching the terminal.
 
 ---
 
-## Phase 4: Product catalog and typed graph
+## Phase 9: Notes, Tribal Knowledge & Dynamic Skill Authoring
 
-Where this stops being a notes app. Given the decision to carry **both own and resold products**,
-provenance is modeled from the start rather than bolted on.
+Brings engineer-authored knowledge into the active execution loop.
 
 **Scope**
-- **Product entities:** name, **vendor**, **own or resold**, category, tier, deployment model
-  (cloud / on-prem / hybrid), licensing model, target segment, lifecycle status (GA, EOL, roadmap),
-  prerequisites, support path, and links to collateral.
-- Resold-specific fields: partner tier, margin band if tracked, **who owns support and escalation**,
-  contract or NDA constraints on what may be shared externally, and **upstream source of truth**
-  (the vendor page or datasheet the record derives from).
-- **Capability taxonomy:** a controlled vocabulary of what products do ("identity federation",
-  "site-to-site VPN", "call recording"). Products map to capabilities; customer requirements map to
-  the same vocabulary. This join is what makes matching possible, and with 20 products it is
-  genuinely achievable by hand in days, not months.
-- **Typed relationships**, each with evidence and a confidence value:
-  `integrates_with`, `requires`, `conflicts_with`, `replaces`, `bundles_with`, `alternative_to`,
-  `migrates_to`. Cross-vendor edges (own product integrates with resold product) are the
-  commercially interesting ones and deserve the most curation effort.
-- Graph visualization: portfolio view, and a neighborhood view around one product or account.
-- Manual curation UI plus AI-suggested edges that you accept or reject; every suggestion cites the
-  document implying it.
-- Reference architectures as first-class entities composing several products.
+- Markdown editor with live preview, frontmatter metadata, and `[[wikilinks]]` linking notes directly to products, capabilities, and accounts.
+- **Tribal Knowledge Capture**: Prompts the SE after completing a deal or troubleshooting incident to write up undocumented integration quirks or workarounds.
+- **Dynamic Skill & Playbook Authoring**:
+  - UI wizard and template for creating new playbooks and skills by dropping Markdown files into `playbooks/` and `skills/`.
+  - Hot-reloading of playbooks without requiring backend restarts.
 
 **Testing**
-- Schema validation: no orphan capabilities, no edge without evidence.
-- Graph integrity: cycle detection on `requires`; contradiction detection (a bundle containing a
-  `conflicts_with` pair).
-- Coverage report: every product has at least one capability, one document, and one edge.
-- Curation workflow: accepted suggestions become edges; rejected ones do not reappear unchanged.
+- Link integrity tests across entity renames and deletions.
+- Re-indexing validation: freshly saved SE notes are immediately discoverable by retrieval tools.
 
-**Exit:** all 20 products are modeled with capabilities and edges, and the graph answers "what does
-X require and what does it break" without a human reading a datasheet.
+**Exit:** an SE authors an integration note, and a subsequent RFP workflow immediately cites that note in its answer.
 
 ---
 
-## Phase 5: Solution composer
+## Phase 10: Freshness, Vendor Sync & Hardening
 
-The headline feature. Everything before it exists to make it trustworthy.
+Guarantees data integrity over time and hardens the platform for production.
 
 **Scope**
-- **Requirement capture:** paste discovery notes, an RFP extract, or typed call notes; the app extracts
-  discrete requirements, pain points, and constraints (budget, compliance, timeline, incumbent
-  vendors, deployment preference). The SE edits the extracted list.
-- **Requirement to capability mapping**, shown explicitly so it can be corrected.
-- **Bundle generation:** candidate sets scored on requirement coverage, internal compatibility (no
-  `conflicts_with` edges), constraint fit, and evidence strength.
-- Each bundle shows what it covers, **what it does not cover**, prerequisites, integration risks, a
-  reference architecture if one exists, own vs resold composition, and citations throughout.
-- **Gap report:** requirements nothing satisfies. Valuable output, not failure. Feeds Phase 9.
-- Alternatives and trade-offs: cheaper, faster to deploy, more scalable, fewer vendors.
-- Multi-domain by design. The cloud plus on-prem plus video conferencing case is the acceptance test.
-- Export to a proposal draft.
+- **Vendor Collateral Monitoring for Resold Products**:
+  - Web fetcher monitors upstream vendor documentation URLs and flags changed datasheets or expired collateral.
+- **Coverage & Staleness Dashboard**:
+  - Flags products with stale review dates, unmapped capabilities, or thin collateral.
+- **Enterprise Hardening**:
+  - SAML/OIDC SSO, session policies, backup and tested restore drills.
+  - Load testing at 10x projected corpus and concurrency limits.
 
 **Testing**
-- **Golden scenario set:** 20+ real past deals with known-good solutions. Measure whether the
-  composer proposes them; track the score across releases.
-- Negative tests: unsatisfiable requirements produce gaps, never invented products.
-- Constraint tests: an on-prem-only customer never receives a cloud-only bundle.
-- Conflict tests: a known-incompatible pair is never proposed together.
-- Blind comparison of composer output against an SE's manual answer.
+- Automated upstream scraper detection tests on sample vendor sites.
+- Disaster recovery: end-to-end database and object store backup and restoration verification.
 
-**Exit:** on the golden scenarios the composer matches or beats the manual answer on coverage, and
-never proposes a conflicting pair.
+**Exit:** weekly staleness report runs unattended, and restore drills pass under SLA.
 
 ---
 
-## Phase 6: Pre-sales workflows
-
-**Scope**
-- **RFP and security questionnaire answering:** ingest the questionnaire, draft cited answers from
-  approved collateral, flag low-confidence answers for review, export in the original format. Often
-  the single largest time saving available.
-- **Proposal and SOW drafting** from a chosen bundle using approved templates and boilerplate.
-- **Battlecards and objection handling**, cited, with competitive claims drawn only from approved
-  sources.
-- **Discovery question generator** based on what is not yet known about the account.
-- **Account workspace:** all material for one opportunity in one scope, with its own chat.
-- Native account and opportunity records with CSV import and export, since CRM sync is out of scope.
-
-**Security**
-- Customer material is `customer_data` by default, granted per account.
-- Exports and shares are audited and restrictable by role.
-- **Resold-vendor constraints enforced at export:** material marked `vendor_restricted` cannot enter
-  a customer-facing document without an explicit override, which is logged.
-
-**Testing**
-- Questionnaire regression set with human-graded answers.
-- Template rendering tests across output formats.
-- Approval-state enforcement: draft or restricted collateral never reaches an export.
-
-**Exit:** a real RFP is answered end to end through a review queue, with no unapproved or restricted
-content in the export.
-
----
-
-## Phase 7: Post-sales workflows
-
-**Scope**
-- **Install base per account** as graph nodes, so expansion and compatibility questions are answerable.
-- **Implementation runbooks** and configuration baselines per product combination.
-- **Known issues and escalation history**, searchable, so recurring problems are recognized on sight.
-  For resold products, record whether the escalation path is yours or the vendor's.
-- **Troubleshooting assistant** grounded in runbooks, past cases, and vendor documentation.
-- **QBR preparation:** adoption, open issues, gaps, and a recommended next step, cited.
-- **Expansion signals:** given the install base graph, which adjacent products fit, and why now.
-- **Renewal risk view:** open escalations, stale adoption, EOL products in the install base.
-
-**Testing**
-- Troubleshooting evaluation against past resolved cases as a labeled set.
-- EOL propagation: marking a product end-of-life flags every affected account. Especially important
-  for resold products, whose EOL dates are set by someone else.
-
-**Exit:** for a sample account the app produces a QBR pack and an expansion recommendation an SE
-would send with light edits.
-
----
-
-## Phase 8: Notes, linking, and authoring
-
-SE-authored knowledge belongs in the same graph. It sits here, not first, because the catalog and
-composer concentrate the value.
-
-**Scope**
-- Markdown editor with live preview; templates for discovery notes, solution briefs, runbooks, and
-  post-mortems.
-- `[[wikilinks]]` including links to product and account entities, with autocomplete and rename-safe
-  references; backlinks and unlinked mentions.
-- Notes indexed like any other source, so answers can cite an SE's own note.
-- Tags, folders, frontmatter properties, daily notes, command palette.
-- **Tribal knowledge capture:** prompt the SE to write up a deal or a workaround and link it to the
-  products involved. With only 50 documents, SE-authored notes will quickly become a large share of
-  the corpus, and they are where undocumented integration knowledge lives.
-- Version history with attribution.
-
-**Testing**
-- Link integrity across renames and deletes.
-- Reindex-on-save correctness and debounce behavior.
-- Notes respect sensitivity labels and account scoping like any other resource.
-
-**Exit:** an SE writes a solution brief, links it to three products, and it becomes retrievable and
-citable in the composer.
-
----
-
-## Phase 9: Freshness and feedback loop
-
-With a single collateral owner and resold products whose documents change without warning, this is
-the phase that keeps the system trustworthy. A stale knowledge base people still trust is worse than
-no knowledge base.
-
-**Scope**
-- **Freshness governance, deliberately lightweight** (single owner, no approval workflow engine):
-  every item has a review date; overdue items are flagged, down-ranked in retrieval, and listed on
-  one dashboard.
-- **Vendor collateral monitoring for resold products:** record the upstream source URL, re-check it
-  on a schedule, and flag when the upstream document changes or the local copy passes its
-  valid-until date. This is the highest-value automation in the phase, because third-party
-  datasheets change without notice.
-- **Win/loss capture:** record which bundle was proposed and the outcome; feed results into scoring.
-- **Coverage and gap dashboard:** capabilities customers ask for that the portfolio lacks, questions
-  the app failed to answer, products with thin collateral.
-- **Contradiction detection** across sources, for example two datasheets disagreeing on a limit.
-- Usage analytics: most-cited assets, most-asked questions, unanswered queries.
-- Continuous evaluation on a schedule, with results tracked over time.
-
-**Testing**
-- Backtesting: does outcome-weighted scoring improve golden-scenario results, or merely overfit? At
-  20 products, overfitting is a real risk, so hold out scenarios.
-- Staleness rules verified against seeded dates.
-- Contradiction detection measured for precision; a noisy detector gets ignored.
-
-**Exit:** a dashboard worth opening weekly, and evaluation scores tracked across releases.
-
----
-
-## Phase 10: Hardening and integrations
-
-Reduced from the original plan: with 50 users and 50 documents, most scale engineering is not
-justified. What remains is access management, content sync, and proving the limits.
-
-**Scope**
-- **SSO (SAML/OIDC) and SCIM provisioning**, enforced MFA, session policy. At 50 users this is about
-  offboarding correctness and access review, not convenience.
-- Sync from existing document sources (SharePoint, Drive, Confluence) with incremental updates and
-  permission mapping. This matters more than CRM here, because it is where collateral already lives.
-- Compliance posture: retention and deletion policies, access review, encryption at rest and in
-  transit, key rotation, data residency if required by a customer.
-- **Capacity verification, not capacity engineering:** load test at 10x projected corpus and
-  concurrency, publish the measured limits, and stop there. Add infrastructure only when a
-  measurement demands it.
-- Backup and **tested restore drills**. Restore is tested, not assumed.
-- Penetration test or third-party security review before significant customer data accumulates.
-- Public API and webhooks if integration demand appears.
-- Desktop or PWA packaging only if field offline use is real.
-
-**Exit:** documented capacity limits, a passed security review, and a tested restore path.
-
----
-
-## 5. Testing strategy (all phases)
+## 5. Testing Strategy Across All Phases
 
 | Layer | Covers | Runs |
 |---|---|---|
-| Unit | Chunking, parsing, scoring, graph rules | Every commit |
-| Integration | API, database, RLS behavior | Every PR |
-| Tenant isolation | Cross-org access on every endpoint | Every PR, never skipped |
-| Authorization matrix | Role by endpoint expectations | Every PR |
-| Retrieval evaluation | Labeled question set, hit rate | Nightly, and before release |
-| Generation evaluation | Citation accuracy, refusal behavior | Before any prompt or model change |
-| Composer evaluation | Golden past-deal scenarios | Before release |
-| Graph integrity | Cycles, contradictions, orphans, coverage | Every PR |
-| Adversarial | Prompt injection, data exfiltration attempts | Nightly |
-| Load and soak | Bulk ingestion, concurrent query, at 10x | Before release |
-| Security scanning | Dependencies, secrets, SAST | Every PR |
+| **Unit** | Chunking, parsing, graph algorithms, DAG cycle detection | Every commit |
+| **Tool Registry** | Input/output schema validation, tool execution safety | Every PR |
+| **Playbook Syntax** | YAML schema, missing prompt files, valid dependencies | Every PR |
+| **State Machine** | Task progression, HITL pause/resume, error handling | Every PR |
+| **Integration** | API routes, PostgreSQL transactions, RLS filters | Every PR |
+| **Retrieval Evaluation** | Labeled question set, hit-rate, precision | Nightly & pre-release |
+| **Generation Evaluation** | Citation validity, refusal on unsupported questions | On prompt/model changes |
+| **Golden Scenarios** | 20+ real RFP and deal scenarios scored against known-good solutions | Before release |
+| **Adversarial Security** | Prompt injection via untrusted RFPs, SSRF, tool breakout | Nightly |
 
-Two standing rules: **pin prompts and models during any comparison**, and **record the baseline
-before tuning**, or improvement cannot be distinguished from noise.
+---
 
-## 6. Security posture
+## 6. Security Posture
 
 | Risk | Control | Phase |
 |---|---|---|
-| Cross-tenant exposure | RLS plus permanent isolation tests | 0 |
-| Over-broad internal access | Roles, per-account grants, sensitivity labels | 0, 6 |
-| Confidential material in AI answers | Permission-filtered retrieval before generation | 2 |
-| Prompt injection via uploaded documents | Untrusted-data demarcation, no tool access, flagging | 1 |
-| SSRF via URL ingestion | Allowlist fetcher, private range denial | 1 |
-| Malicious file parsing | Sandboxed parsing, content sniffing, archive limits | 1 |
-| Leaked credentials | CI secret scanning, secret manager | 0 |
-| Unapproved content reaching a customer | Approval state enforced at export | 6 |
-| Vendor-restricted material disclosed externally | `vendor_restricted` label, logged override | 4, 6 |
-| Untraceable disclosure | Append-only audit log | 0 |
-| Model cost abuse | Per-org budgets and rate limits | 3 |
-| Data loss | Tested restore, retention policy | 10 |
+| **Prompt Injection via Customer RFPs** | Ingested text strictly delimited as untrusted data; system prompts forbid instruction override | 1, 5 |
+| **Unauthorized Tool Execution** | Strict allowlist of tool schemas; no arbitrary shell execution or `eval()` | 3, 5 |
+| **Local Filesystem MCP Traversal** | Path containment: access restricted to explicitly mounted workspace directories | 5 |
+| **SSRF via Upstream Web Fetcher** | Deny private IP ranges, cloud metadata services, and internal redirects | 1, 5 |
+| **Data Leakage Across Customers** | PostgreSQL Row-Level Security (RLS) + organization scoping on every query | 0 |
+| **Disclosing Vendor-Restricted Data** | `vendor_restricted` metadata label; export blocks restricted data unless override is approved and audited | 4, 6 |
+| **Untracked High-Stakes Actions** | Append-only audit log for all HITL approvals, overrides, and document exports | 0, 5 |
 
-## 7. Scalability posture
+---
 
-Right-sized to roughly 20 products, 50 documents, and 50 users:
+## 7. Scalability Posture
 
-- One PostgreSQL instance with pgvector. No replicas, partitioning, or dedicated vector store.
-- Background worker for ingestion so requests never block. No distributed queue.
-- Retrieval filters push work into indexed columns before vector search.
-- Cache embeddings and repeated generations, because model calls dominate cost, not compute.
-- Providers behind interfaces so they stay swappable.
-- Capacity assumptions written down and re-measured each phase. **Add infrastructure only when a
-  measurement demands it**, and record the measurement that justified it.
+- **Compact Footprint**: 20 products, 50 documents, and 50 users means computational efficiency is trivial if data structures are clean.
+- **Asynchronous Execution**: Workflow DAG execution runs via standard async Python; long-running LLM and tool steps run non-blocking.
+- **State in PostgreSQL**: Workflow execution states, step outputs, and artifacts are stored in relational tables (`workflow_runs`, `task_executions`), eliminating the need for complex external message brokers.
+- **Client Streaming**: Real-time step progress and LLM generation streamed to the browser via Server-Sent Events (SSE).
 
-## 8. Sequencing
+---
 
-**Why this order:** tenancy and security first because they are structural; ingestion and retrieval
-next because everything reads from them; catalog and composer before the workflow phases, because
-RFPs, proposals, and expansion advice are thin layers over the same matching engine.
+## 8. Sequencing & Immediate Next Steps
 
-**Do not build before Phase 5 ships:** collaboration, mobile apps, audio overviews, plugin system,
-CRM integration.
-
-**Out of scope entirely (decided):** call recording, audio or video ingestion, and transcription.
-Discovery input enters as typed or pasted text.
-
-**Highest-risk items, watch these:** capability taxonomy quality (Phase 4), cross-vendor edge
-curation (Phase 4), and resold-collateral freshness (Phase 9).
-
-## 9. Open questions
-
-None outstanding. All questions from the previous revision are decided (section 0).
+1. **Immediate Focus (Phase 5)**:
+   - Build the DAG Engine core (`backend/app/engine/schema.py`, `loader.py`, `runner.py`).
+   - Wrap existing Phase 1–4 capabilities into `backend/app/tools/` (catalog impact query, contradiction detector, hybrid search).
+   - Integrate MCP client for Local Filesystem, Web Fetcher, and DOCX/Markdown exporters.
+   - Implement the `human_approval` pause/resume mechanism and API endpoints.
+2. **Subsequent Step (Phase 6)**:
+   - Author the declarative `rfp-response` and `solution-composer` playbooks under `playbooks/pre-sales/`.
+3. **Frontend Integration (Phase 8)**:
+   - Build the Workflow Workspace UI and Visual Task Tree inspector.
