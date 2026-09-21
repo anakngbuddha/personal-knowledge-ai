@@ -10,7 +10,11 @@ from __future__ import annotations
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from app.core.logging import get_logger
+from app.db.models import ContextKind, CurationStatus, RelationType
 logger=get_logger(__name__)
+
+def _in_list(values)->str:
+ return ", ".join(f"'{value}'" for value in sorted(values))
 
 _RBAC=[
  "CREATE TABLE IF NOT EXISTS user_accounts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email varchar(320) NOT NULL UNIQUE, display_name varchar(255) NOT NULL, password_hash varchar(255) NOT NULL, is_active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now())",
@@ -33,9 +37,35 @@ _UNDERSTANDING=[
  "ALTER TABLE documents ADD COLUMN IF NOT EXISTS understood_at timestamptz",
 ]
 
+# 3.2 selling model: the seven selling relations, and use cases / room types /
+# platforms as things a product can be sold against.
+_SELLING_MODEL=[
+ "ALTER TABLE product_edges DROP CONSTRAINT IF EXISTS ck_product_edges_relation_type",
+ "ALTER TABLE product_edges ADD CONSTRAINT ck_product_edges_relation_type CHECK (relation_type in ("+_in_list(RelationType.ALL)+"))",
+ "ALTER TABLE product_edges ADD COLUMN IF NOT EXISTS page_number integer",
+ "ALTER TABLE products ADD COLUMN IF NOT EXISTS curation_status varchar(16) NOT NULL DEFAULT 'confirmed'",
+ "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_ai_suggested boolean NOT NULL DEFAULT false",
+ "ALTER TABLE products ADD COLUMN IF NOT EXISTS aliases jsonb",
+ "ALTER TABLE products ADD COLUMN IF NOT EXISTS source_document_id uuid REFERENCES documents(id) ON DELETE SET NULL",
+ "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_demo boolean NOT NULL DEFAULT false",
+ "ALTER TABLE products DROP CONSTRAINT IF EXISTS ck_products_curation_status",
+ "ALTER TABLE products ADD CONSTRAINT ck_products_curation_status CHECK (curation_status in ("+_in_list(CurationStatus.ALL)+"))",
+ "CREATE INDEX IF NOT EXISTS ix_products_curation_status ON products(curation_status)",
+ "CREATE INDEX IF NOT EXISTS ix_products_source_document_id ON products(source_document_id)",
+ "CREATE TABLE IF NOT EXISTS selling_contexts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, kind varchar(16) NOT NULL, name varchar(255) NOT NULL, slug varchar(128) NOT NULL, description text, aliases jsonb, curation_status varchar(16) NOT NULL DEFAULT 'confirmed', is_ai_suggested boolean NOT NULL DEFAULT false, source_document_id uuid REFERENCES documents(id) ON DELETE SET NULL, is_demo boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), CONSTRAINT uq_selling_contexts_workspace_kind_slug UNIQUE (workspace_id,kind,slug), CONSTRAINT ck_selling_contexts_kind CHECK (kind in ("+_in_list(ContextKind.ALL)+")), CONSTRAINT ck_selling_contexts_curation_status CHECK (curation_status in ("+_in_list(CurationStatus.ALL)+")))",
+ "CREATE INDEX IF NOT EXISTS ix_selling_contexts_org_id ON selling_contexts(org_id)",
+ "CREATE INDEX IF NOT EXISTS ix_selling_contexts_workspace_id ON selling_contexts(workspace_id)",
+ "CREATE INDEX IF NOT EXISTS ix_selling_contexts_kind ON selling_contexts(kind)",
+ "CREATE TABLE IF NOT EXISTS product_context_links (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, product_id uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE, context_id uuid NOT NULL REFERENCES selling_contexts(id) ON DELETE CASCADE, relation_type varchar(32) NOT NULL DEFAULT 'suits_use_case', evidence text NOT NULL, confidence double precision NOT NULL DEFAULT 1.0, document_id uuid REFERENCES documents(id) ON DELETE SET NULL, page_number integer, is_ai_suggested boolean NOT NULL DEFAULT false, status varchar(32) NOT NULL DEFAULT 'approved', rejection_reason text, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), CONSTRAINT uq_product_context_link UNIQUE (product_id,context_id,relation_type), CONSTRAINT ck_product_context_links_relation_type CHECK (relation_type in ('certified_for', 'requires_license', 'suits_use_case')), CONSTRAINT ck_product_context_links_status CHECK (status in ('approved', 'pending_review', 'rejected')), CONSTRAINT ck_product_context_links_evidence_required CHECK (length(trim(evidence)) > 0))",
+ "CREATE INDEX IF NOT EXISTS ix_product_context_links_product_id ON product_context_links(product_id)",
+ "CREATE INDEX IF NOT EXISTS ix_product_context_links_context_id ON product_context_links(context_id)",
+ "CREATE INDEX IF NOT EXISTS ix_product_context_links_status ON product_context_links(status)",
+]
+
 MIGRATIONS=[
  ("0015_multi_user_rbac",_RBAC),
  ("0016_document_understanding",_UNDERSTANDING,True),
+ ("0017_selling_model",_SELLING_MODEL,True),
 ]
 
 def applied_migrations(engine: Engine)->set[str]:

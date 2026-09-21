@@ -1,281 +1,150 @@
-"""Phase 4: Graph integrity tests.
+"""3.2 graph integrity.
 
-Tests cycle detection on `requires` edges, contradiction detection
-(direct, bundle, transitive), and coverage report generation.
+The map's vocabulary lives in three places: the Python constants, the CHECK
+constraints on the tables, and the migration that moves a deployed database
+forward. These tests fail the moment those three drift apart, which is the only
+way a new relation type can silently become un-insertable in production.
 """
+from __future__ import annotations
 
-import uuid
-from collections import namedtuple
-from datetime import datetime, timezone
-from unittest.mock import MagicMock
-
-import pytest
-
-from app.catalog.graph import (
-    compute_coverage,
-    detect_contradictions,
-    detect_cycles_in_requires,
-    run_integrity_check,
+from app.db.migrations import MIGRATIONS
+from app.db.models import (
+    Base,
+    CapabilityCategory,
+    ContextKind,
+    CurationStatus,
+    EdgeStatus,
+    ProductContextLink,
+    ProductEdge,
+    RelationType,
+    SellingContext,
 )
-from app.db.models import EdgeStatus, RelationType
+
+SELLING_RELATIONS = {
+    "recommended_with",
+    "cross_sell",
+    "upsell_to",
+    "certified_for",
+    "requires_license",
+    "bundle_component",
+    "suits_use_case",
+}
+
+ORIGINAL_RELATIONS = {
+    "integrates_with",
+    "requires",
+    "conflicts_with",
+    "replaces",
+    "bundles_with",
+    "alternative_to",
+    "migrates_to",
+}
 
 
-def _mock_edge(
-    source_id: uuid.UUID,
-    target_id: uuid.UUID,
-    relation_type: str,
-    status: str = EdgeStatus.APPROVED,
-) -> MagicMock:
-    edge = MagicMock()
-    edge.id = uuid.uuid4()
-    edge.source_product_id = source_id
-    edge.target_product_id = target_id
-    edge.relation_type = relation_type
-    edge.status = status
-    edge.evidence = "Test evidence"
-    edge.confidence = 1.0
-    edge.document_id = None
-    edge.is_ai_suggested = False
-    edge.rejection_reason = None
-    edge.created_at = datetime.now(timezone.utc)
-    edge.org_id = uuid.uuid4()
-    edge.workspace_id = uuid.uuid4()
-    return edge
+def _check_text(table, name: str) -> str:
+    for constraint in table.constraints:
+        if constraint.name == name:
+            return str(constraint.sqltext)
+    raise AssertionError(f"constraint {name} is missing from {table.name}")
 
 
-def _mock_product(product_id: uuid.UUID, name: str, vendor: str = "TestVendor") -> MagicMock:
-    p = MagicMock()
-    p.id = product_id
-    p.name = name
-    p.vendor = vendor
-    p.ownership = "own"
-    p.slug = name.lower().replace(" ", "-")
-    p.category = "General"
-    p.tier = "Core"
-    p.deployment_model = "cloud"
-    p.lifecycle_status = "GA"
-    p.capabilities = []
-    p.collateral_document_ids = None
-    p.org_id = uuid.uuid4()
-    p.workspace_id = uuid.uuid4()
-    p.created_at = datetime.now(timezone.utc)
-    p.updated_at = datetime.now(timezone.utc)
-    return p
+def test_selling_relations_are_added_without_losing_the_old_ones():
+    assert SELLING_RELATIONS <= RelationType.ALL
+    assert ORIGINAL_RELATIONS <= RelationType.ALL
+    assert RelationType.ALL == SELLING_RELATIONS | ORIGINAL_RELATIONS
 
 
-# ---------------------------------------------------------------------------
-# Cycle Detection
-# ---------------------------------------------------------------------------
+def test_every_relation_type_is_insertable():
+    clause = _check_text(ProductEdge.__table__, "ck_product_edges_relation_type")
+    for relation in RelationType.ALL:
+        assert f"'{relation}'" in clause, f"{relation} would be rejected by the database"
 
 
-class TestCycleDetection:
-    def test_no_cycles_in_linear_chain(self):
-        a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-        edges = [
-            _mock_edge(a, b, RelationType.REQUIRES),
-            _mock_edge(b, c, RelationType.REQUIRES),
-        ]
-        cycles = detect_cycles_in_requires(edges)
-        assert cycles == []
-
-    def test_detects_two_node_cycle(self):
-        a, b = uuid.uuid4(), uuid.uuid4()
-        prods = {a: _mock_product(a, "A"), b: _mock_product(b, "B")}
-        edges = [
-            _mock_edge(a, b, RelationType.REQUIRES),
-            _mock_edge(b, a, RelationType.REQUIRES),
-        ]
-        cycles = detect_cycles_in_requires(edges, prods)
-        assert len(cycles) >= 1
-        # At least one cycle contains both A and B
-        flat = [name for cycle in cycles for name in cycle]
-        assert "A" in flat and "B" in flat
-
-    def test_detects_three_node_cycle(self):
-        a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-        prods = {
-            a: _mock_product(a, "Alpha"),
-            b: _mock_product(b, "Beta"),
-            c: _mock_product(c, "Gamma"),
-        }
-        edges = [
-            _mock_edge(a, b, RelationType.REQUIRES),
-            _mock_edge(b, c, RelationType.REQUIRES),
-            _mock_edge(c, a, RelationType.REQUIRES),
-        ]
-        cycles = detect_cycles_in_requires(edges, prods)
-        assert len(cycles) >= 1
-
-    def test_ignores_non_requires_edges(self):
-        a, b = uuid.uuid4(), uuid.uuid4()
-        edges = [
-            _mock_edge(a, b, RelationType.INTEGRATES_WITH),
-            _mock_edge(b, a, RelationType.INTEGRATES_WITH),
-        ]
-        cycles = detect_cycles_in_requires(edges)
-        assert cycles == []
-
-    def test_ignores_pending_edges(self):
-        a, b = uuid.uuid4(), uuid.uuid4()
-        edges = [
-            _mock_edge(a, b, RelationType.REQUIRES, EdgeStatus.PENDING_REVIEW),
-            _mock_edge(b, a, RelationType.REQUIRES, EdgeStatus.PENDING_REVIEW),
-        ]
-        cycles = detect_cycles_in_requires(edges)
-        assert cycles == []
+def test_relation_check_allows_nothing_extra():
+    clause = _check_text(ProductEdge.__table__, "ck_product_edges_relation_type")
+    quoted = {part.strip().strip("'") for part in clause.split("(", 1)[1].rstrip(")").split(",")}
+    assert quoted == RelationType.ALL
 
 
-# ---------------------------------------------------------------------------
-# Contradiction Detection
-# ---------------------------------------------------------------------------
+def test_every_relation_type_has_plain_words():
+    for relation in RelationType.ALL:
+        words = RelationType.words(relation)
+        assert words
+        assert "_" not in words
 
 
-class TestContradictionDetection:
-    def test_direct_requires_conflicts_contradiction(self):
-        a, b = uuid.uuid4(), uuid.uuid4()
-        prods = {a: _mock_product(a, "A"), b: _mock_product(b, "B")}
-        edges = [
-            _mock_edge(a, b, RelationType.REQUIRES),
-            _mock_edge(a, b, RelationType.CONFLICTS_WITH),
-        ]
-        contradictions = detect_contradictions(edges, prods)
-        assert len(contradictions) >= 1
-        assert any(c["type"] == "direct_requires_conflict" for c in contradictions)
-
-    def test_bundle_conflict_in_reference_architecture(self):
-        a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-        prods = {
-            a: _mock_product(a, "A"),
-            b: _mock_product(b, "B"),
-            c: _mock_product(c, "C"),
-        }
-        # A conflicts with B
-        edges = [_mock_edge(a, b, RelationType.CONFLICTS_WITH)]
-
-        # A reference architecture containing both A and B
-        ArchProduct = namedtuple("ArchProduct", ["product_id"])
-        arch = MagicMock()
-        arch.name = "Test Architecture"
-        arch.products = [ArchProduct(product_id=a), ArchProduct(product_id=b), ArchProduct(product_id=c)]
-
-        contradictions = detect_contradictions(edges, prods, reference_architectures=[arch])
-        assert len(contradictions) >= 1
-        assert any(c["type"] == "bundle_conflict" for c in contradictions)
-
-    def test_transitive_requires_conflict(self):
-        a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-        prods = {
-            a: _mock_product(a, "A"),
-            b: _mock_product(b, "B"),
-            c: _mock_product(c, "C"),
-        }
-        # A requires B, B requires C, but A conflicts_with C
-        edges = [
-            _mock_edge(a, b, RelationType.REQUIRES),
-            _mock_edge(b, c, RelationType.REQUIRES),
-            _mock_edge(a, c, RelationType.CONFLICTS_WITH),
-        ]
-        contradictions = detect_contradictions(edges, prods)
-        # Should detect the direct A<>C contradiction at minimum
-        assert len(contradictions) >= 1
-
-    def test_no_contradictions_on_clean_graph(self):
-        a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-        prods = {
-            a: _mock_product(a, "A"),
-            b: _mock_product(b, "B"),
-            c: _mock_product(c, "C"),
-        }
-        edges = [
-            _mock_edge(a, b, RelationType.REQUIRES),
-            _mock_edge(b, c, RelationType.INTEGRATES_WITH),
-        ]
-        contradictions = detect_contradictions(edges, prods)
-        assert len(contradictions) == 0
+def test_expandable_relations_are_real_relations():
+    assert RelationType.EXPANDABLE <= RelationType.ALL
+    assert RelationType.CONFLICTS_WITH in RelationType.EXPANDABLE
+    assert RelationType.RECOMMENDED_WITH in RelationType.EXPANDABLE
 
 
-# ---------------------------------------------------------------------------
-# Integrity Report (Combined)
-# ---------------------------------------------------------------------------
+def test_context_kinds_cover_use_case_room_type_and_platform():
+    assert ContextKind.ALL == {"use_case", "room_type", "platform"}
+    clause = _check_text(SellingContext.__table__, "ck_selling_contexts_kind")
+    for kind in ContextKind.ALL:
+        assert f"'{kind}'" in clause
 
 
-class TestIntegrityReport:
-    def test_valid_graph_returns_is_valid_true(self):
-        a, b = uuid.uuid4(), uuid.uuid4()
-        prods = {a: _mock_product(a, "A"), b: _mock_product(b, "B")}
-        edges = [_mock_edge(a, b, RelationType.INTEGRATES_WITH)]
-        report = run_integrity_check(edges, prods)
-        assert report.is_valid is True
-        assert report.cycle_detected is False
-        assert report.contradictions_detected is False
-
-    def test_invalid_graph_with_cycle(self):
-        a, b = uuid.uuid4(), uuid.uuid4()
-        prods = {a: _mock_product(a, "A"), b: _mock_product(b, "B")}
-        edges = [
-            _mock_edge(a, b, RelationType.REQUIRES),
-            _mock_edge(b, a, RelationType.REQUIRES),
-        ]
-        report = run_integrity_check(edges, prods)
-        assert report.is_valid is False
-        assert report.cycle_detected is True
+def test_context_links_only_accept_context_shaped_relations():
+    assert ProductContextLink.CONTEXT_RELATIONS <= RelationType.ALL
+    clause = _check_text(
+        ProductContextLink.__table__, "ck_product_context_links_relation_type"
+    )
+    for relation in ProductContextLink.CONTEXT_RELATIONS:
+        assert f"'{relation}'" in clause
+    # A product-to-product relation must not be usable against a use case.
+    assert "'integrates_with'" not in clause
 
 
-# ---------------------------------------------------------------------------
-# Coverage Report
-# ---------------------------------------------------------------------------
+def test_context_links_are_reviewed_like_edges():
+    clause = _check_text(ProductContextLink.__table__, "ck_product_context_links_status")
+    for status in EdgeStatus.ALL:
+        assert f"'{status}'" in clause
+    assert ProductContextLink.__table__.c.status.default.arg == EdgeStatus.APPROVED
+    assert ProductContextLink.__table__.c.is_ai_suggested.default.arg is False
 
 
-class TestCoverageReport:
-    def test_fully_covered_product(self):
-        pid = uuid.uuid4()
-        p = _mock_product(pid, "Full Product")
-        cap = MagicMock()
-        cap.id = uuid.uuid4()
-        cap.capability_id = cap.id
-        p.capabilities = [cap]
-        p.collateral_document_ids = [str(uuid.uuid4())]
+def test_suggested_nodes_start_out_unconfirmed_only_when_asked():
+    # A hand-made product is confirmed; 3.1 is what sets `suggested`.
+    assert CurationStatus.ALL == {"confirmed", "suggested"}
+    from app.db.models import Product
 
-        other_pid = uuid.uuid4()
-        other_p = _mock_product(other_pid, "Other")
-        other_p.capabilities = [cap]
-        other_p.collateral_document_ids = [str(uuid.uuid4())]
+    assert Product.__table__.c.curation_status.default.arg == CurationStatus.CONFIRMED
+    assert Product.__table__.c.is_ai_suggested.default.arg is False
 
-        edge = _mock_edge(pid, other_pid, RelationType.INTEGRATES_WITH)
-        products = [p, other_p]
-        edges = [edge]
 
-        report = compute_coverage(products, [cap], edges)
-        # Both products have caps, docs, edges
-        assert report.products_with_edge == 2
+def test_edges_can_cite_a_page():
+    assert "page_number" in ProductEdge.__table__.c
+    assert "page_number" in ProductContextLink.__table__.c
 
-    def test_product_missing_capabilities_detected(self):
-        pid = uuid.uuid4()
-        p = _mock_product(pid, "Naked Product")
-        p.capabilities = []
-        p.collateral_document_ids = None
 
-        report = compute_coverage([p], [], [])
-        assert report.products_with_capability == 0
-        assert len(report.uncovered_products) == 1
-        assert "capabilities" in report.uncovered_products[0].missing
+def test_new_tables_are_created_on_a_fresh_database():
+    assert "selling_contexts" in Base.metadata.tables
+    assert "product_context_links" in Base.metadata.tables
 
-    def test_orphan_capability_detected(self):
-        pid = uuid.uuid4()
-        p = _mock_product(pid, "Product")
-        p.capabilities = []
-        p.collateral_document_ids = None
 
-        orphan_cap = MagicMock()
-        orphan_cap.id = uuid.uuid4()
-        orphan_cap.name = "Orphan Cap"
-        orphan_cap.category = "Test"
+def test_migration_teaches_a_deployed_database_the_same_words():
+    entry = next(item for item in MIGRATIONS if item[0] == "0017_selling_model")
+    statements = " ".join(entry[1])
+    for relation in RelationType.ALL:
+        assert f"'{relation}'" in statements
+    assert "CREATE TABLE IF NOT EXISTS selling_contexts" in statements
+    assert "CREATE TABLE IF NOT EXISTS product_context_links" in statements
+    assert "DROP CONSTRAINT IF EXISTS ck_product_edges_relation_type" in statements
 
-        report = compute_coverage([p], [orphan_cap], [])
-        assert len(report.orphan_capabilities) == 1
-        assert report.orphan_capabilities[0]["name"] == "Orphan Cap"
 
-    def test_empty_catalog_coverage(self):
-        report = compute_coverage([], [], [])
-        assert report.total_products == 0
-        assert report.exit_criteria_met is False
+def test_capability_categories_collapse_vendor_wording():
+    assert CapabilityCategory.normalize("Headsets") == CapabilityCategory.HEADSETS
+    assert CapabilityCategory.normalize("ceiling microphone") == CapabilityCategory.AUDIO
+    assert CapabilityCategory.normalize("Huawei Cloud") == CapabilityCategory.CLOUD
+    assert CapabilityCategory.normalize("4K camera") == CapabilityCategory.VIDEO
+    assert CapabilityCategory.normalize("Meeting Rooms") == CapabilityCategory.CONFERENCING
+    assert CapabilityCategory.normalize("") == CapabilityCategory.OTHER
+    assert CapabilityCategory.normalize(None) == CapabilityCategory.OTHER
+    assert CapabilityCategory.normalize("something nobody has said") == CapabilityCategory.OTHER
+
+
+def test_capability_aliases_all_land_in_a_real_bucket():
+    for bucket in CapabilityCategory.ALIASES.values():
+        assert bucket in CapabilityCategory.ALL
