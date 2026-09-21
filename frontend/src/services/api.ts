@@ -82,13 +82,13 @@ export const api = {
     }),
   testMcpIntegration: (slug:string) => request<McpPingResult>(`/integrations/mcp/${encodeURIComponent(slug)}/test`, {method:"POST"}),
   approveTask: (runId:string, slug:string, answers:RfpAnswerEdit[]) =>
-    request<WorkflowRun>(`/workflows/runs/${runId}/tasks/${encodeURIComponent(slug)}/approve", {
+    request<WorkflowRun>(`/workflows/runs/${runId}/tasks/${encodeURIComponent(slug)}/approve`, {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({answers})
     }),
   rejectTask: (runId:string, slug:string, reason:string) =>
-    request<WorkflowRun>(`/workflows/runs/${runId}/tasks/${encodeURIComponent(slug)}/reject", {
+    request<WorkflowRun>(`/workflows/runs/${runId}/tasks/${encodeURIComponent(slug)}/reject`, {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({reason})
@@ -114,9 +114,9 @@ export const api = {
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(body)
     }),
-  checkVendorSource: (id:string) => request<FreshnessCheck>(`/freshness/sources/${id}/check", {method:"POST"}),
+  checkVendorSource: (id:string) => request<FreshnessCheck>(`/freshness/sources/${id}/check`, {method:"POST"}),
   listFreshnessAlerts: () => request<FreshnessAlertList>("/freshness/alerts"),
-  ackFreshnessAlert: (id:string) => request<FreshnessAlert>(`/freshness/alerts/${id}/ack", {method:"POST"}),
+  ackFreshnessAlert: (id:string) => request<FreshnessAlert>(`/freshness/alerts/${id}/ack`, {method:"POST"}),
   listRestoreDrills: () => request<RestoreDrillList>("/ops/restore-drills"),
   runRestoreDrill: () => request<RestoreDrill>("/ops/restore-drills", {
     method:"POST",
