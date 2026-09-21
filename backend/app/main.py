@@ -7,6 +7,7 @@ from app.api.routes import (
     ask,
     auth,
     catalog,
+    catalog_import,
     documents,
     freshness,
     graph_review,
@@ -72,6 +73,7 @@ app.include_router(documents.router)
 app.include_router(search.router)
 app.include_router(jobs.router)
 app.include_router(ask.router)
+app.include_router(catalog_import.router)
 app.include_router(catalog.router)
 app.include_router(graph_review.router)
 app.include_router(workflows.router)
