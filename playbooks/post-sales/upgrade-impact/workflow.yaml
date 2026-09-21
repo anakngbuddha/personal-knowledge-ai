@@ -1,0 +1,12 @@
+slug: upgrade-impact
+name: Upgrade Impact Audit
+version: "1.0"
+tasks:
+  - slug: resolve_product
+    handler: upgrade.resolve
+  - slug: audit_impact
+    handler: upgrade.audit
+    depends_on: [resolve_product]
+  - slug: export_deliverable
+    handler: upgrade.export
+    depends_on: [audit_impact]

@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import ask, auth, catalog, documents, health, jobs, search, workflows
+from app.api.routes import ask, auth, catalog, documents, health, jobs, phase8, search, workflows
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.db.bootstrap import ensure_schema, should_bootstrap
@@ -28,12 +28,11 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Solution Engineering Knowledge Workspace",
-    version="0.7.0",
+    version="0.8.0",
     description=(
-        "Phase 1 (ingestion), Phase 2 (hybrid retrieval), Phase 3 (grounded answers), "
-        "Phase 4 (product catalog & typed graph), Phase 0 (JWT, PostgreSQL RLS, audit), "
-        "Phase 5 (tool calling, durable workflow runner, HITL), Phase 6 (RFP responder), "
-        "Phase 7 (workflow workspace UI)."
+        "Enterprise solution engineering workspace with ingestion, hybrid retrieval, grounded answers, "
+        "typed product graph, durable HITL workflows, RFP response, workflow cockpit, and Phase 8 "
+        "solution composition and post-sales playbooks."
     ),
     lifespan=lifespan,
 )
@@ -54,13 +53,14 @@ app.include_router(jobs.router)
 app.include_router(ask.router)
 app.include_router(catalog.router)
 app.include_router(workflows.router)
+app.include_router(phase8.router)
 
 
 @app.get("/", tags=["health"])
 def root() -> dict:
     return {
         "name": "Solution Engineering Knowledge Workspace",
-        "version": "0.7.0",
+        "version": "0.8.0",
         "phases_implemented": [
             "0 - JWT auth, PostgreSQL RLS, audit log",
             "1 - ingestion",
@@ -70,8 +70,8 @@ def root() -> dict:
             "5 - tool calling, durable workflows, HITL",
             "6 - RFP responder playbook",
             "7 - workflow workspace UI",
+            "8 - solution composer, incident triage, upgrade impact audit",
         ],
         "phase_0_status": "done",
         "docs": "/docs",
     }
-

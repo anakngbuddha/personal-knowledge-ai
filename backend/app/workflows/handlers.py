@@ -69,3 +69,4 @@ def fixture_gate(ctx: HandlerContext, payload: dict[str, Any]) -> dict[str, Any]
 
 
 import app.playbooks.rfp  # noqa: E402,F401 - register rfp.* handlers
+import app.playbooks.phase8  # noqa: E402,F401 - register phase 8 handlers

@@ -1,0 +1,22 @@
+slug: solution-composer
+name: Solution Composer
+version: "1.0"
+tasks:
+  - slug: extract_constraints
+    handler: solution.extract_constraints
+  - slug: compose_candidates
+    handler: solution.compose_candidates
+    depends_on: [extract_constraints]
+  - slug: validate_bundle
+    handler: solution.validate_bundle
+    depends_on: [compose_candidates]
+  - slug: generate_hld
+    handler: solution.generate_hld
+    depends_on: [validate_bundle]
+  - slug: human_gate
+    handler: solution.gate
+    depends_on: [generate_hld]
+    gate: human_approval
+  - slug: export_deliverable
+    handler: solution.export
+    depends_on: [human_gate]

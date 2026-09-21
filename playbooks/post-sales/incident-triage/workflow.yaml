@@ -1,0 +1,18 @@
+slug: incident-triage
+name: Incident Root-Cause Triage
+version: "1.0"
+tasks:
+  - slug: analyze_logs
+    handler: incident.analyze
+  - slug: traverse_install_base
+    handler: incident.traverse
+    depends_on: [analyze_logs]
+  - slug: retrieve_evidence
+    handler: incident.retrieve
+    depends_on: [analyze_logs]
+  - slug: build_runbook
+    handler: incident.build_runbook
+    depends_on: [traverse_install_base, retrieve_evidence]
+  - slug: export_deliverable
+    handler: incident.export
+    depends_on: [build_runbook]

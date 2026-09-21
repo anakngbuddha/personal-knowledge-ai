@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -74,17 +74,9 @@ def parse_playbook(raw: dict, *, path: str = "") -> Playbook:
         task_slug = str(item.get("slug") or "").strip()
         handler = str(item.get("handler") or "").strip()
         if not task_slug or not handler:
-            raise AppError(
-                status_code=400,
-                code="invalid_playbook",
-                message="each task needs slug and handler",
-            )
+            raise AppError(status_code=400, code="invalid_playbook", message="each task needs slug and handler")
         if task_slug in seen:
-            raise AppError(
-                status_code=400,
-                code="invalid_playbook",
-                message=f"duplicate task slug {task_slug}",
-            )
+            raise AppError(status_code=400, code="invalid_playbook", message=f"duplicate task slug {task_slug}")
         seen.add(task_slug)
         depends = item.get("depends_on") or []
         if not isinstance(depends, list):
@@ -93,45 +85,15 @@ def parse_playbook(raw: dict, *, path: str = "") -> Playbook:
         if gate is not None:
             gate = str(gate)
             if gate != "human_approval":
-                raise AppError(
-                    status_code=400,
-                    code="invalid_playbook",
-                    message=f"unsupported gate {gate}",
-                )
-        tasks.append(
-            PlaybookTask(
-                slug=task_slug,
-                handler=handler,
-                depends_on=tuple(str(d) for d in depends),
-                gate=gate,
-            )
-        )
-    unknown_deps = [
-        dep
-        for task in tasks
-        for dep in task.depends_on
-        if dep not in seen
-    ]
+                raise AppError(status_code=400, code="invalid_playbook", message=f"unsupported gate {gate}")
+        tasks.append(PlaybookTask(task_slug, handler, tuple(str(d) for d in depends), gate))
+    unknown_deps = [dep for task in tasks for dep in task.depends_on if dep not in seen]
     if unknown_deps:
-        raise AppError(
-            status_code=400,
-            code="invalid_playbook",
-            message=f"unknown depends_on: {unknown_deps}",
-        )
+        raise AppError(status_code=400, code="invalid_playbook", message=f"unknown depends_on: {unknown_deps}")
     cycles = _detect_cycles(tasks)
     if cycles:
-        raise AppError(
-            status_code=400,
-            code="invalid_playbook",
-            message=f"depends_on cycle: {cycles[0]}",
-        )
-    return Playbook(
-        slug=slug,
-        name=str(raw.get("name") or slug),
-        version=str(raw.get("version") or "1.0"),
-        tasks=tuple(tasks),
-        path=path,
-    )
+        raise AppError(status_code=400, code="invalid_playbook", message=f"depends_on cycle: {cycles[0]}")
+    return Playbook(slug, str(raw.get("name") or slug), str(raw.get("version") or "1.0"), tuple(tasks), path)
 
 
 @lru_cache
@@ -142,18 +104,13 @@ def load_playbook(slug: str) -> Playbook:
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         except yaml.YAMLError as exc:
-            raise AppError(
-                status_code=400, code="invalid_playbook", message=f"invalid YAML in {path}"
-            ) from exc
-        if not isinstance(raw, dict):
-            continue
-        if str(raw.get("slug") or "") == slug:
+            raise AppError(status_code=400, code="invalid_playbook", message=f"invalid YAML in {path}") from exc
+        if isinstance(raw, dict) and str(raw.get("slug") or "") == slug:
             return parse_playbook(raw, path=str(path))
     raise AppError(status_code=404, code="playbook_not_found", message=f"playbook {slug} not found")
 
 
-# Playbooks that the workspace UI may start. Phase 8 adds more.
-RUNNABLE_PLAYBOOKS = frozenset({"rfp-response"})
+RUNNABLE_PLAYBOOKS = frozenset({"rfp-response", "solution-composer", "incident-triage", "upgrade-impact"})
 
 
 def _is_fixture_path(path: Path) -> bool:
@@ -161,7 +118,6 @@ def _is_fixture_path(path: Path) -> bool:
 
 
 def list_playbooks() -> list[Playbook]:
-    """Catalog playbooks for the gallery. Test fixtures are never listed."""
     root = playbooks_root()
     if not root.is_dir():
         return []
