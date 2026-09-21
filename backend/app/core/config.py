@@ -100,6 +100,20 @@ class Settings(BaseSettings):
     graph_extract_max_chars: int = 16000
     graph_auto_accept_confidence: float = 0.85
     
+    # 3.3 the product list starts empty. The sample catalog is a demo, not a default:
+    # it only loads when this is on, and everything it creates is stamped as demo
+    # material so it can never be quoted back in an answer.
+    demo_seed_catalog: bool = False
+    catalog_import_max_rows: int = 2000
+    catalog_import_max_bytes: int = 5242880
+    
+    # 3.5 answer with the map, not only with passages. When a question names a product
+    # we know, walk a hop or two and bring the neighbours' best passages along.
+    graph_expansion_enabled: bool = True
+    graph_expansion_hops: int = 2
+    graph_expansion_max_neighbours: int = 6
+    graph_expansion_chunks_per_neighbour: int = 1
+    
     auth_mode: str = "jwt"
     default_org_slug: str = "default"
     default_org_name: str = "Default Organization"

@@ -62,10 +62,18 @@ _SELLING_MODEL=[
  "CREATE INDEX IF NOT EXISTS ix_product_context_links_status ON product_context_links(status)",
 ]
 
+# 3.3 sample material is marked, so retrieval can drop it. Existing rows are real
+# uploads by definition, so the default is false and no backfill is needed.
+_DEMO_SOURCES=[
+ "ALTER TABLE documents ADD COLUMN IF NOT EXISTS is_demo boolean NOT NULL DEFAULT false",
+ "CREATE INDEX IF NOT EXISTS ix_documents_is_demo ON documents(is_demo)",
+]
+
 MIGRATIONS=[
  ("0015_multi_user_rbac",_RBAC),
  ("0016_document_understanding",_UNDERSTANDING,True),
  ("0017_selling_model",_SELLING_MODEL,True),
+ ("0018_demo_sources",_DEMO_SOURCES,True),
 ]
 
 def applied_migrations(engine: Engine)->set[str]:
