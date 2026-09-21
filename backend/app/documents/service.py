@@ -2,7 +2,7 @@
 
     upload -> sniff -> scan -> hash -> dedup / version -> object storage
            -> document row -> queued job
-           -> extract -> chunk -> injection flags -> embed -> persist (+ FTS)
+           -> extract -> understand -> chunk -> injection flags -> embed -> persist (+ FTS)
 
 A document is only `ready` when the source file is in object storage and its chunks,
 embeddings, and full-text data all exist in PostgreSQL.
@@ -14,6 +14,10 @@ Changes from the previous build, all of them Phase 1 requirements:
 * ingestion is queued in a durable table rather than an in-process task list
 * the source file is never written to local disk, not even a temp file
 * instruction-like passages are flagged per chunk and counted on the document
+
+Added in 2.2: one understand pass per source, between extraction and ready. It is
+advisory by construction. It cannot fail an upload, and only a confident reading is
+allowed to fill vendor, products, or validity.
 """
 
 from __future__ import annotations
@@ -37,6 +41,7 @@ from app.documents.chunking import chunk_blocks
 from app.documents.metadata import DocumentMetadataIn
 from app.documents.scanning import scan_or_raise
 from app.documents.sniffing import decide_file_type
+from app.documents.understanding import apply_understanding, understand_source
 from app.embeddings.factory import get_embedding_provider
 from app.jobs import queue
 from app.security.labels import ApprovalState
@@ -218,6 +223,16 @@ def process_document(document_id: uuid.UUID) -> None:
         if not chunks:
             raise AppError("chunking produced no chunks")
 
+        # 2.2 understand step. Never fatal: a source we could not summarize is still
+        # searchable, and that is the reason it was uploaded.
+        understanding = None
+        if settings.document_understanding_enabled:
+            _progress("Working out what this source says")
+            understanding = understand_source(
+                "\n\n".join(block.text for block in result.blocks if block.text),
+                filename=document.original_filename,
+            )
+
         provider = get_embedding_provider()
         db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete()
         db.commit()
@@ -234,6 +249,20 @@ def process_document(document_id: uuid.UUID) -> None:
             for chunk, text, vector in zip(batch, texts, vectors, strict=True):
                 findings = injection.scan_for_injection(text)
                 flagged += bool(findings)
+                chunk_meta = {
+                    "source_filename": document.original_filename,
+                    "citation": chunk.anchor.label(),
+                    "heading": chunk.heading,
+                    "is_table": chunk.is_table,
+                    "parent_index": chunk.parent_index,
+                    "embedding_model": provider.model_id,
+                    "embedding_dimensions": provider.dimensions,
+                    **result.metadata,
+                }
+                if chunk.parent_text:
+                    # 2.3: match the child, prompt the parent. Fences are neutralised
+                    # here too, because this text also reaches the model.
+                    chunk_meta["parent_text"] = injection.neutralize_fences(chunk.parent_text)
                 db.add(
                     DocumentChunk(
                         document_id=document.id,
@@ -250,13 +279,7 @@ def process_document(document_id: uuid.UUID) -> None:
                         end_offset=chunk.end_offset,
                         embedding=vector,
                         injection_flags=[f.as_dict() for f in findings] or None,
-                        chunk_metadata={
-                            "source_filename": document.original_filename,
-                            "citation": chunk.anchor.label(),
-                            "embedding_model": provider.model_id,
-                            "embedding_dimensions": provider.dimensions,
-                            **result.metadata,
-                        },
+                        chunk_metadata=chunk_meta,
                     )
                 )
             db.commit()
@@ -267,7 +290,15 @@ def process_document(document_id: uuid.UUID) -> None:
         document.page_count = result.page_count
         document.ocr_applied = result.ocr_applied
         document.injection_flag_count = flagged
-        document.doc_metadata = {**(result.metadata or {}), "warnings": result.warnings} or None
+        doc_meta = {**(result.metadata or {}), "warnings": result.warnings}
+        if understanding is not None:
+            apply_understanding(document, understanding)
+            doc_meta["understanding"] = {
+                "origin": understanding.origin,
+                "confidence": understanding.confidence,
+                "prompt_version": understanding.prompt_version,
+            }
+        document.doc_metadata = doc_meta or None
         document.status = DocumentStatus.READY
         document.processed_at = datetime.now(timezone.utc)
         db.commit()
