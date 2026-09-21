@@ -158,6 +158,22 @@ class Document(Base):
     metadata_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     metadata_missing: Mapped[list | None] = mapped_column(JSONB)
 
+    # --------------------------------------------------- what the source says
+    # Written once by the 2.2 understand step, then editable by hand. These are a
+    # reading of the document, not curated truth: `vendor`, `products_referenced`,
+    # and `valid_until` above are only auto-filled from them when the model is
+    # confident and the curated field is still blank.
+    summary: Mapped[str | None] = mapped_column(Text)
+    key_facts: Mapped[list | None] = mapped_column(JSONB)
+    topic_tags: Mapped[list | None] = mapped_column(JSONB)
+    detected_doc_type: Mapped[str | None] = mapped_column(String(64))
+    detected_vendors: Mapped[list | None] = mapped_column(JSONB)
+    detected_products: Mapped[list | None] = mapped_column(JSONB)
+    detected_version_label: Mapped[str | None] = mapped_column(String(128))
+    understanding_confidence: Mapped[float | None] = mapped_column(Float)
+    understanding_source: Mapped[str | None] = mapped_column(String(16))  # llm | heuristic
+    understood_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     # --------------------------------------------------------------- versioning
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -237,6 +253,8 @@ class DocumentChunk(Base):
         TSVECTOR, Computed(f"to_tsvector('{FTS_CONFIG}', text)", persisted=True)
     )
     injection_flags: Mapped[list | None] = mapped_column(JSONB)
+    # Carries the 2.3 parent passage and table flag alongside the citation label, so
+    # retrieval can match a narrow child and still prompt with the full section.
     chunk_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -978,4 +996,3 @@ class SsoProvider(Base):
         UniqueConstraint("org_id", "protocol", name="uq_sso_providers_org_protocol"),
         CheckConstraint("protocol in ('oidc', 'saml')", name="ck_sso_providers_protocol"),
     )
-
