@@ -14,6 +14,7 @@ from app.api.routes import (
     health,
     integrations,
     jobs,
+    map_edit,
     notes,
     ops,
     phase8,
@@ -75,6 +76,7 @@ app.include_router(jobs.router)
 app.include_router(ask.router)
 app.include_router(catalog_import.router)
 app.include_router(catalog.router)
+app.include_router(map_edit.router)
 app.include_router(graph_review.router)
 app.include_router(workflows.router)
 app.include_router(phase8.router)
