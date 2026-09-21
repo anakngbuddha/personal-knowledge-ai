@@ -31,6 +31,7 @@ class Op(StrEnum):
     IS_NULL = "is_null"
     NOT_NULL = "not_null"
     IS_TRUE = "is_true"
+    IS_FALSE = "is_false"
     CONTAINS_ANY = "contains_any"  # JSONB array overlap
     GTE_OR_NULL = "gte_or_null"  # freshness: valid_until >= date OR unset
     IN_OR_NULL = "in_or_null"  # account scope: mine OR unscoped
@@ -190,9 +191,19 @@ class RetrievalFilters:
 
 
 def corpus_predicates() -> list[Predicate]:
-    """Structural predicates. A superseded version or a half-ingested document is
-    never a retrieval candidate, regardless of who is asking."""
+    """Structural predicates. A superseded version, a half-ingested document, or a
+    sample source is never a retrieval candidate, regardless of who is asking."""
     return [
         Predicate("is_current", Op.IS_TRUE, True, Origin.CORPUS, "current version only"),
         Predicate("status", Op.EQ, "ready", Origin.CORPUS, "fully ingested documents only"),
+        # 3.3: the sample catalog is there to fill the screens, not to answer a real
+        # question. It is excluded here rather than in a caller's filter so no code
+        # path can forget to exclude it.
+        Predicate(
+            "is_demo",
+            Op.IS_FALSE,
+            False,
+            Origin.CORPUS,
+            "sample material never answers a real question",
+        ),
     ]

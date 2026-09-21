@@ -165,6 +165,11 @@ class Document(Base):
     metadata_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     metadata_missing: Mapped[list | None] = mapped_column(JSONB)
 
+    # 3.3 Sample material. The demo catalog and its collateral exist so the screens
+    # have something to show on day one. An answer must never quote them back as if
+    # they were the customer's own source, so retrieval drops them outright.
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+
     # --------------------------------------------------- what the source says
     # Written once by the 2.2 understand step, then editable by hand. These are a
     # reading of the document, not curated truth: `vendor`, `products_referenced`,

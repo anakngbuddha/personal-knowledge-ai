@@ -31,6 +31,7 @@ FIELD_COLUMNS = {
     "products_referenced": Document.products_referenced,
     "valid_until": Document.valid_until,
     "is_current": Document.is_current,
+    "is_demo": Document.is_demo,
     "status": Document.status,
     "injection_flag_count": Document.injection_flag_count,
 }
@@ -71,6 +72,8 @@ def compile_predicate(predicate: Predicate) -> ColumnElement:
         return column.isnot(None)
     if predicate.op is Op.IS_TRUE:
         return column.is_(True)
+    if predicate.op is Op.IS_FALSE:
+        return column.is_(False)
     if predicate.op is Op.CONTAINS_ANY:
         items = list(value or ())
         if not items:
