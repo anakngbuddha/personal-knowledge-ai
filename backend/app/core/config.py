@@ -1,39 +1,151 @@
 from functools import lru_cache
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 class Settings(BaseSettings):
- model_config=SettingsConfigDict(env_file=".env",extra="ignore",case_sensitive=False)
- environment:str="development"; log_level:str="INFO"; auto_migrate:bool=False; database_url:str="postgresql+psycopg://postgres:postgres@localhost:5432/pka"
- @field_validator("database_url",mode="before")
- @classmethod
- def normalize_database_url(cls,v:str)->str:
-  if isinstance(v,str):
-   if v.startswith("postgres://"): return "postgresql+psycopg://"+v[11:]
-   if v.startswith("postgresql://") and not v.startswith("postgresql+"): return "postgresql+psycopg://"+v[13:]
-  return v
- storage_backend:str="r2"; local_storage_dir:str="./.storage"; r2_account_id:str=""; r2_access_key_id:str=""; r2_secret_access_key:str=""; r2_bucket_name:str=""; r2_endpoint_url:str=""
- embedding_provider:str="gemini"; gemini_api_key:str=""; gemini_api_base:str="https://generativelanguage.googleapis.com/v1beta"; gemini_embedding_model:str="gemini-embedding-001"; gemini_embedding_dimensions:int=768; gemini_generation_model:str="gemini-2.5-flash"; llm_provider:str="gemini"
- generation_rate_limit_rpm:int=20; generation_rate_limit_tpd:int=100000; generation_max_context_chunks:int=12; generation_max_history_turns:int=10; generation_stream_enabled:bool=True; generation_max_output_tokens:int=4096; tool_max_rounds:int=1; tool_max_calls_per_round:int=4
- mcp_enabled:bool=False; mcp_credentials_key:str=""; brave_api_key:str=""; mcp_playwright_enabled:bool=False; mcp_ms365_enabled:bool=False; ms365_mcp_token:str=""; mcp_call_timeout_seconds:float=45.0; mcp_max_result_bytes:int=32768; mcp_tool_max_rounds:int=8
- notes_max_body_chars:int=200000; freshness_worker_enabled:bool=True; freshness_poll_seconds:float=30.0; freshness_default_interval_seconds:int=86400; freshness_max_bytes:int=2000000; restore_drill_sla_seconds:float=300.0; sso_enabled:bool=False; sso_credentials_key:str=""; oidc_issuer:str=""; oidc_client_id:str=""; oidc_client_secret:str=""; oidc_audience:str=""; oidc_redirect_uri:str="http://localhost:8000/auth/oidc/callback"; saml_entity_id:str=""; saml_acs_url:str="http://localhost:8000/auth/saml/acs"; saml_idp_issuer:str=""; saml_idp_secret:str=""; saml_allow_unsigned:bool=False
- top_k:int=8; rrf_k:int=60; candidate_k:int=50; chunk_size:int=1200; chunk_overlap:int=150; embedding_batch_size:int=16; max_upload_mb:int=25; fts_config:str="english"
- auth_mode:str="jwt"; default_org_slug:str="default"; default_org_name:str="Default Organization"; jwt_secret_key:str=""; jwt_algorithm:str="HS256"; jwt_access_token_expire_minutes:int=1440; allow_legacy_token_endpoint:bool=True
- parse_timeout_seconds:float=120.0; max_archive_entries:int=2000; max_uncompressed_mb:int=400; max_compression_ratio:float=120.0; max_pdf_pages:int=3000; max_extracted_chars:int=20000000; malware_scanner:str="heuristic"; clamav_host:str=""; clamav_port:int=3310; clamav_timeout_seconds:float=30.0; ocr_provider:str="none"; ocr_language:str="eng"; ocr_dpi:int=200; ocr_max_pages:int=50; url_fetch_enabled:bool=True; url_fetch_timeout_seconds:float=20.0; url_fetch_max_redirects:int=3; url_fetch_allow_private_ips:bool=False
- worker_enabled:bool=True; worker_poll_seconds:float=2.0; worker_concurrency:int=1; job_max_attempts:int=4; job_backoff_base_seconds:float=15.0; job_backoff_max_seconds:float=900.0; job_stale_seconds:float=1800.0; workflow_worker_enabled:bool=True; workflow_worker_concurrency:int=1; workflow_task_stale_seconds:float=1800.0; workflow_task_max_attempts:int=4; cors_origins:str="http://localhost:5173"
- @model_validator(mode="after")
- def production_security(self):
-  if self.environment.lower()=="production":
-   if self.auth_mode!="jwt": raise ValueError("AUTH_MODE must be jwt in production")
-   if not self.jwt_secret_key or len(self.jwt_secret_key)<32: raise ValueError("JWT_SECRET_KEY must be at least 32 characters in production")
-  return self
- @property
- def cors_origin_list(self)->list[str]: return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
- @property
- def r2_endpoint(self)->str: return self.r2_endpoint_url or f"https://{self.r2_account_id}.r2.cloudflarestorage.com"
- @property
- def max_upload_bytes(self)->int: return self.max_upload_mb*1024*1024
- @property
- def max_uncompressed_bytes(self)->int: return self.max_uncompressed_mb*1024*1024
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+    environment: str = "development"
+    log_level: str = "INFO"
+    auto_migrate: bool = False
+    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/pka"
+    
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        if isinstance(v, str):
+            if v.startswith("postgres://"): return "postgresql+psycopg://" + v[11:]
+            if v.startswith("postgresql://") and not v.startswith("postgresql+"): return "postgresql+psycopg://" + v[13:]
+        return v
+    
+    storage_backend: str = "r2"
+    local_storage_dir: str = "./.storage"
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = ""
+    r2_endpoint_url: str = ""
+    
+    embedding_provider: str = "gemini"
+    gemini_api_key: str = ""
+    gemini_api_base: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_embedding_model: str = "gemini-embedding-001"
+    gemini_embedding_dimensions: int = 768
+    gemini_generation_model: str = "gemini-2.5-flash"
+    llm_provider: str = "gemini"
+    
+    generation_rate_limit_rpm: int = 20
+    generation_rate_limit_tpd: int = 100000
+    generation_max_context_chunks: int = 12
+    generation_max_history_turns: int = 10
+    generation_stream_enabled: bool = True
+    generation_max_output_tokens: int = 4096
+    tool_max_rounds: int = 1
+    tool_max_calls_per_round: int = 4
+    
+    mcp_enabled: bool = False
+    mcp_credentials_key: str = ""
+    brave_api_key: str = ""
+    mcp_playwright_enabled: bool = False
+    mcp_ms365_enabled: bool = False
+    ms365_mcp_token: str = ""
+    mcp_call_timeout_seconds: float = 45.0
+    mcp_max_result_bytes: int = 32768
+    mcp_tool_max_rounds: int = 8
+    
+    notes_max_body_chars: int = 200000
+    freshness_worker_enabled: bool = True
+    freshness_poll_seconds: float = 30.0
+    freshness_default_interval_seconds: int = 86400
+    freshness_max_bytes: int = 2000000
+    restore_drill_sla_seconds: float = 300.0
+    sso_enabled: bool = False
+    sso_credentials_key: str = ""
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_audience: str = ""
+    oidc_redirect_uri: str = "http://localhost:8000/auth/oidc/callback"
+    saml_entity_id: str = ""
+    saml_acs_url: str = "http://localhost:8000/auth/saml/acs"
+    saml_idp_issuer: str = ""
+    saml_idp_secret: str = ""
+    saml_allow_unsigned: bool = False
+    
+    top_k: int = 8
+    rrf_k: int = 60
+    candidate_k: int = 50
+    chunk_size: int = 1200
+    chunk_overlap: int = 150
+    embedding_batch_size: int = 16
+    max_upload_mb: int = 25
+    fts_config: str = "english"
+    
+    auth_mode: str = "jwt"
+    default_org_slug: str = "default"
+    default_org_name: str = "Default Organization"
+    jwt_secret_key: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 1440
+    allow_legacy_token_endpoint: bool = True
+    
+    parse_timeout_seconds: float = 120.0
+    max_archive_entries: int = 2000
+    max_uncompressed_mb: int = 400
+    max_compression_ratio: float = 120.0
+    max_pdf_pages: int = 3000
+    max_extracted_chars: int = 20000000
+    malware_scanner: str = "heuristic"
+    clamav_host: str = ""
+    clamav_port: int = 3310
+    clamav_timeout_seconds: float = 30.0
+    ocr_provider: str = "none"
+    ocr_language: str = "eng"
+    ocr_dpi: int = 200
+    ocr_max_pages: int = 50
+    auto_approve_uploads: bool = True
+    url_fetch_enabled: bool = True
+    url_fetch_timeout_seconds: float = 20.0
+    url_fetch_max_redirects: int = 3
+    url_fetch_allow_private_ips: bool = False
+    
+    worker_enabled: bool = True
+    worker_poll_seconds: float = 2.0
+    worker_concurrency: int = 1
+    job_max_attempts: int = 4
+    job_backoff_base_seconds: float = 15.0
+    job_backoff_max_seconds: float = 900.0
+    job_stale_seconds: float = 1800.0
+    workflow_worker_enabled: bool = True
+    workflow_worker_concurrency: int = 1
+    workflow_task_stale_seconds: float = 1800.0
+    workflow_task_max_attempts: int = 4
+    cors_origins: str = "http://localhost:5173"
+    
+    @model_validator(mode="after")
+    def production_security(self):
+        if self.environment.lower() == "production":
+            if self.auth_mode != "jwt": raise ValueError("AUTH_MODE must be jwt in production")
+            if not self.jwt_secret_key or len(self.jwt_secret_key) < 32: raise ValueError("JWT_SECRET_KEY must be at least 32 characters in production")
+        return self
+    
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+    
+    @property
+    def r2_endpoint(self) -> str:
+        return self.r2_endpoint_url or f"https://{self.r2_account_id}.r2.cloudflarestorage.com"
+    
+    @property
+    def max_upload_bytes(self) -> int:
+        return self.max_upload_mb * 1024 * 1024
+    
+    @property
+    def max_uncompressed_bytes(self) -> int:
+        return self.max_uncompressed_mb * 1024 * 1024
+
 @lru_cache
-def get_settings()->Settings: return Settings()
-settings=get_settings()
+def get_settings() -> Settings:
+    return Settings()
+
+settings = get_settings()
