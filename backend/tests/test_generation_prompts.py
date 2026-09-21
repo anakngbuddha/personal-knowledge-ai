@@ -60,10 +60,13 @@ def test_format_source_metadata_provenance():
 
 
 def test_build_context_block_empty_sources():
-    """Empty sources must produce an explicit instruction to decline."""
-    block = build_context_block([])
-    assert "No sources were retrieved" in block
-    assert "decline to answer" in block
+    """Empty sources: strict mode declines; expert mode may use general knowledge."""
+    strict = build_context_block([], strict_mode=True)
+    assert "No sources were retrieved" in strict
+    assert "decline to answer" in strict
+    expert = build_context_block([], strict_mode=False)
+    assert "No sources were retrieved" in expert
+    assert "general knowledge" in expert.lower()
 
 
 def test_build_context_block_with_sources():

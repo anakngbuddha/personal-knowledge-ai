@@ -62,7 +62,11 @@ services:
       - key: MALWARE_SCANNER
         value: heuristic
       - key: OCR_PROVIDER
-        value: none
+        value: gemini
+      - key: AUTO_APPROVE_UPLOADS
+        value: "true"
+      - key: GEMINI_RPM
+        value: "10"
       - key: URL_FETCH_ENABLED
         value: "true"
       - key: URL_FETCH_ALLOW_PRIVATE_IPS

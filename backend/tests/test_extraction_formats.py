@@ -107,7 +107,24 @@ def test_scanned_pdf_says_what_to_do_about_it():
     with pytest.raises(ExtractionError) as excinfo:
         extract(blank, "pdf")
     message = str(excinfo.value).lower()
-    assert "scanned" in message and "ocr_provider" in message
+    assert "scan" in message
+    assert "text version" in message
+
+
+def test_fake_ocr_recovers_text_from_a_rasterized_page(monkeypatch):
+    from app.ocr.factory import get_ocr_provider
+    from app.ocr.fake import FakeOcrProvider
+
+    monkeypatch.setattr(
+        "app.documents.extraction._rasterize_pdf_page",
+        lambda data, page_number: b"\x89PNG-fake-page",
+    )
+    monkeypatch.setattr("app.ocr.factory.get_ocr_provider", lambda: FakeOcrProvider("Jabra Speak 750"))
+    get_ocr_provider.cache_clear()
+    blank = F.make_pdf([[""]])
+    result = extract(blank, "pdf")
+    assert result.ocr_applied is True
+    assert "Jabra Speak 750" in result.blocks[0].text
 
 
 def test_detect_file_type_covers_the_new_formats():

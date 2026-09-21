@@ -97,6 +97,7 @@ def extract(
     source: str | Path | bytes,
     file_type: str,
     limits: ParseLimits | None = None,
+    on_progress=None,
 ) -> ExtractionResult:
     """Extract from raw bytes or a path. Bytes are preferred; paths are a convenience."""
     if isinstance(source, (str, Path)):
@@ -125,7 +126,10 @@ def extract(
     if file_type == "html":
         check_html_safety(data)
 
-    result = handler(data, limits, deadline)
+    if file_type == "pdf":
+        result = _extract_pdf(data, limits, deadline, on_progress=on_progress)
+    else:
+        result = handler(data, limits, deadline)
     guard_extracted_size(result.total_chars, limits)
     if not result.blocks:
         raise ExtractionError("no extractable text found")
@@ -135,7 +139,7 @@ def extract(
 # --------------------------------------------------------------------------- PDF
 
 
-def _extract_pdf(data: bytes, limits: ParseLimits, deadline) -> ExtractionResult:
+def _extract_pdf(data: bytes, limits: ParseLimits, deadline, on_progress=None) -> ExtractionResult:
     from pypdf import PdfReader
 
     try:
@@ -174,7 +178,9 @@ def _extract_pdf(data: bytes, limits: ParseLimits, deadline) -> ExtractionResult
     ocr_applied = False
     warnings: list[str] = []
     if empty_pages:
-        recovered, ocr_applied = _ocr_pdf_pages(pages, empty_pages, deadline)
+        recovered, ocr_applied = _ocr_pdf_pages(
+            data, pages, empty_pages, deadline, on_progress=on_progress
+        )
         if recovered:
             blocks.extend(recovered)
             blocks.sort(key=lambda b: (b.page_number or 0))
@@ -186,10 +192,7 @@ def _extract_pdf(data: bytes, limits: ParseLimits, deadline) -> ExtractionResult
 
     if not blocks:
         raise ExtractionError(
-            "no extractable text found. This looks like a scanned PDF with no text "
-            "layer. Set OCR_PROVIDER=tesseract to OCR it, or replace it with a "
-            "text-bearing copy (preferred: OCR accuracy is not good enough for "
-            "collateral that answers will cite)."
+            "This PDF is a scan and couldn't be read. Try again or upload a text version."
         )
 
     metadata: dict = {}
@@ -212,12 +215,17 @@ def _extract_pdf(data: bytes, limits: ParseLimits, deadline) -> ExtractionResult
     )
 
 
-def _ocr_pdf_pages(pages, page_numbers: list[int], deadline) -> tuple[list[Block], bool]:
-    """OCR the embedded images of pages with no text layer.
+def _ocr_pdf_pages(
+    data: bytes,
+    pages,
+    page_numbers: list[int],
+    deadline,
+    on_progress=None,
+) -> tuple[list[Block], bool]:
+    """OCR pages with no text layer.
 
-    Scanned PDFs are almost always one full-page image per page, which pypdf can hand
-    us directly. Full rasterisation (poppler / pdf2image) would cover the rest and is
-    the documented upgrade path; it is not worth a native dependency yet.
+    Prefer embedded images (cheap). If a page has no image, rasterize the whole
+    page with pypdfium2 (pip-only, no poppler/tesseract binary).
     """
     from app.core.config import settings
     from app.ocr.factory import get_ocr_provider
@@ -228,8 +236,10 @@ def _ocr_pdf_pages(pages, page_numbers: list[int], deadline) -> tuple[list[Block
 
     blocks: list[Block] = []
     budget = min(len(page_numbers), settings.ocr_max_pages)
-    for page_number in page_numbers[:budget]:
+    for index, page_number in enumerate(page_numbers[:budget], start=1):
         deadline.check(f"OCR page {page_number}")
+        if on_progress:
+            on_progress(f"Reading scanned page {index} of {budget}")
         page = pages[page_number - 1]
         collected: list[str] = []
         try:
@@ -245,6 +255,16 @@ def _ocr_pdf_pages(pages, page_numbers: list[int], deadline) -> tuple[list[Block
             text = _normalize(text)
             if text:
                 collected.append(text)
+        if not collected:
+            png = _rasterize_pdf_page(data, page_number)
+            if png:
+                try:
+                    text = _normalize(provider.image_to_text(png))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("OCR raster page %s failed: %s", page_number, exc)
+                    text = ""
+                if text:
+                    collected.append(text)
         if collected:
             body = "\n\n".join(collected)
             blocks.append(
@@ -255,6 +275,36 @@ def _ocr_pdf_pages(pages, page_numbers: list[int], deadline) -> tuple[list[Block
                 )
             )
     return blocks, bool(blocks)
+
+
+def _rasterize_pdf_page(data: bytes, page_number: int) -> bytes | None:
+    """Render one PDF page to PNG. Returns None if pypdfium2 cannot read the file."""
+    from app.core.config import settings
+
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        logger.warning("pypdfium2 is not installed; cannot rasterize scanned pages")
+        return None
+    pdf = None
+    try:
+        pdf = pdfium.PdfDocument(data)
+        page = pdf[page_number - 1]
+        scale = max(1.0, settings.ocr_dpi / 72)
+        bitmap = page.render(scale=scale)
+        image = bitmap.to_pil()
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception as exc:  # noqa: BLE001 - some fixtures are not real PDFs
+        logger.warning("could not rasterize PDF page %s: %s", page_number, exc)
+        return None
+    finally:
+        if pdf is not None:
+            try:
+                pdf.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # -------------------------------------------------------------------------- DOCX

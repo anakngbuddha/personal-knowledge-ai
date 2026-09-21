@@ -10,6 +10,9 @@ def get_ocr_provider() -> OcrProvider:
     if provider_name == "gemini":
         from app.ocr.gemini import GeminiOcrProvider
         return GeminiOcrProvider()
+    if provider_name == "fake":
+        from app.ocr.fake import FakeOcrProvider
+        return FakeOcrProvider()
     if provider_name == "tesseract":
         from app.ocr.tesseract import TesseractOcrProvider
         return TesseractOcrProvider()

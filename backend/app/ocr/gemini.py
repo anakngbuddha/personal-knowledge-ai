@@ -1,58 +1,80 @@
-"""Gemini vision OCR provider for scanned PDFs.
+"""Gemini vision OCR for scanned PDFs.
 
-Scanned PDFs are rasterized page-by-page and sent to Gemini's multimodal API.
-Rate limiting respects the free-tier limit (~10 req/min).
+Uses httpx (same as the chat/embedding providers) so Render does not need the
+Google SDK or any native binary. Calls go through the shared Gemini token bucket.
 """
 
 from __future__ import annotations
 
-import io
+import base64
 import logging
-import time
-from threading import Lock
 
-import google.generativeai as genai
+import httpx
 
 from app.core.config import settings
-from app.core.errors import ExtractionError
+from app.core.errors import ProviderRateLimited
+from app.llm.limiter import acquire_gemini
 from app.ocr.base import OcrProvider
 
 logger = logging.getLogger(__name__)
 
+_EXTRACT_PROMPT = (
+    "Extract all visible text from this page image. Return only the text content, "
+    "preserving structure like headings, lists, and tables."
+)
+
 
 class GeminiOcrProvider(OcrProvider):
-    """Use Gemini vision API to extract text from image-based PDFs."""
-
     name = "gemini"
-    _rate_limiter_lock = Lock()
-    _last_call_time = 0
-    _min_interval = 6.0
 
-    def __init__(self):
-        if not settings.gemini_api_key:
-            raise ExtractionError("Gemini API key not configured")
-        genai.configure(api_key=settings.gemini_api_key)
-        self._model = genai.GenerativeModel("gemini-2.0-flash")
+    def __init__(self) -> None:
+        self._api_key = settings.gemini_api_key
+        self._model = settings.gemini_generation_model
+        self._timeout = 60.0
 
     @property
     def available(self) -> bool:
-        return bool(settings.gemini_api_key)
+        return bool(self._api_key)
 
     def image_to_text(self, image_bytes: bytes) -> str:
-        try:
-            self._wait_for_rate_limit()
-            response = self._model.generate_content([
-                "Extract all visible text from this page image. Return only the text content, preserving structure like headings, lists, and tables.",
-                {"mime_type": "image/png", "data": image_bytes},
-            ])
-            return response.text or ""
-        except Exception as exc:
-            logger.warning("Gemini OCR failed: %s", exc)
+        if not image_bytes or not self._api_key:
             return ""
-
-    def _wait_for_rate_limit(self) -> None:
-        with self._rate_limiter_lock:
-            elapsed = time.time() - GeminiOcrProvider._last_call_time
-            if elapsed < self._min_interval:
-                time.sleep(self._min_interval - elapsed)
-            GeminiOcrProvider._last_call_time = time.time()
+        acquire_gemini()
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": _EXTRACT_PROMPT},
+                        {
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": base64.b64encode(image_bytes).decode("ascii"),
+                            }
+                        },
+                    ]
+                }
+            ]
+        }
+        url = f"{settings.gemini_api_base}/models/{self._model}:generateContent"
+        try:
+            response = httpx.post(
+                url,
+                params={"key": self._api_key},
+                json=payload,
+                timeout=self._timeout,
+            )
+        except httpx.TransportError as exc:
+            logger.warning("Gemini OCR transport error: %s", exc)
+            return ""
+        if response.status_code == 429:
+            raise ProviderRateLimited("Gemini OCR rate limit reached")
+        if response.status_code >= 400:
+            logger.warning("Gemini OCR HTTP %s: %s", response.status_code, response.text[:300])
+            return ""
+        data = response.json()
+        try:
+            parts = data["candidates"][0]["content"]["parts"]
+            return "".join(str(part.get("text") or "") for part in parts).strip()
+        except (KeyError, IndexError, TypeError):
+            logger.warning("Gemini OCR returned no text")
+            return ""
