@@ -65,6 +65,13 @@ services:
         value: gemini
       - key: AUTO_APPROVE_UPLOADS
         value: "true"
+      # The product list starts empty in production. The sample catalog is a demo.
+      - key: DEMO_SEED_CATALOG
+        value: "false"
+      - key: GRAPH_EXTRACTION_ENABLED
+        value: "true"
+      - key: GRAPH_EXPANSION_ENABLED
+        value: "true"
       - key: GEMINI_RPM
         value: "10"
       - key: URL_FETCH_ENABLED
