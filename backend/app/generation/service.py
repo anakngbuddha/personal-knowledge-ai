@@ -16,6 +16,10 @@ can never issue instructions.
 2.3 adds one step between search and prompt: when the matched chunk is a child of a
 larger section, the parent passage is prompted instead of the child. The citation still
 points at the child, so provenance does not get vaguer as context gets wider.
+
+3.5 adds another: when the question names a product the map knows, the accepted
+relationships around it are stated in the prompt, and the best passage for each
+neighbour is retrieved as well, so the model can cite the pairing rather than assert it.
 """
 
 from __future__ import annotations
@@ -46,11 +50,12 @@ from app.llm.base import GroundedAnswer, GroundedAnswerChunk, SourceMetadata
 from app.llm.factory import get_llm_provider
 from app.llm.prompts import (
     PROMPT_VERSION,
-    SYSTEM_PROMPT,
     build_context_block,
+    build_relationships_block,
     build_user_message,
     system_prompt_for,
 )
+from app.retrieval import graph_context as map_lookup
 from app.retrieval.rewrite import expand_queries, keyword_overlap_score, rewrite_query
 from app.retrieval.search import search as run_search
 from app.retrieval.spec import RetrievalFilters
@@ -123,12 +128,14 @@ def _prepare_context(
     filters: dict | None = None,
     exclude_document_ids: list[str] | None = None,
     history: list[dict] | None = None,
-) -> tuple[list[dict], list[SourceMetadata]]:
+    workspace_id: uuid.UUID | None = None,
+) -> tuple[list[dict], list[SourceMetadata], str]:
     """Retrieve and prepare context chunks for the LLM.
 
     Rewrites follow-ups using conversation history, expands broad questions
-    into a few sub-queries, optionally reranks the fused hits, and widens each
-    surviving hit to its parent section.
+    into a few sub-queries, optionally reranks the fused hits, widens each
+    surviving hit to its parent section, and (3.5) brings in what the product
+    map knows about the products the question names.
     """
     retrieval_filters = _build_retrieval_filters(filters, exclude_document_ids)
     max_chunks = settings.generation_max_context_chunks
@@ -166,6 +173,32 @@ def _prepare_context(
             reverse=True,
         )
     hits = hits[:max_chunks]
+
+    # 3.5 The map. Its sentences go in the prompt; its neighbours bring their own best
+    # passage so a pairing can be cited instead of asserted.
+    graph = map_lookup.expand(db, workspace_id=workspace_id, question=question)
+    relationships_block = build_relationships_block(graph.as_lines())
+    if graph.neighbour_names:
+        known = {hit.chunk_id for hit in hits}
+        per_neighbour = max(1, settings.graph_expansion_chunks_per_neighbour)
+        for name in graph.neighbour_names:
+            try:
+                extra = run_search(
+                    db,
+                    principal=principal,
+                    query=name,
+                    filters=retrieval_filters,
+                    mode="hybrid",
+                    top_k=per_neighbour,
+                )
+            except Exception:  # noqa: BLE001 - a neighbour is a bonus, never a blocker
+                logger.debug("neighbour lookup failed for %s", name, exc_info=True)
+                continue
+            for hit in extra.hits:
+                if hit.chunk_id in known:
+                    continue
+                known.add(hit.chunk_id)
+                hits.append(hit)
 
     parents = _parent_passages(db, [hit.chunk_id for hit in hits])
 
@@ -233,7 +266,7 @@ def _prepare_context(
             )
         )
 
-    return context_chunks, source_metadata
+    return context_chunks, source_metadata, relationships_block
 
 
 def ask(
@@ -279,13 +312,19 @@ def ask(
         conv_uuid = conv.id
 
     # Retrieve and prepare context
-    context_chunks, all_sources = _prepare_context(
-        db, principal, question, filters, exclude_document_ids, history
+    context_chunks, all_sources, relationships_block = _prepare_context(
+        db,
+        principal,
+        question,
+        filters,
+        exclude_document_ids,
+        history,
+        workspace_id=workspace_id,
     )
 
     # Build the full prompt
     context_block = build_context_block(context_chunks, strict_mode=strict_mode)
-    user_message = build_user_message(question, context_block)
+    user_message = build_user_message(question, context_block, relationships_block)
     prompt = system_prompt_for(enable_tools=enable_tools, strict_mode=strict_mode)
 
     # Generate
@@ -441,13 +480,19 @@ def ask_stream(
         conv_uuid = conv.id
 
     # Retrieve and prepare context
-    context_chunks, all_sources = _prepare_context(
-        db, principal, question, filters, exclude_document_ids, history
+    context_chunks, all_sources, relationships_block = _prepare_context(
+        db,
+        principal,
+        question,
+        filters,
+        exclude_document_ids,
+        history,
+        workspace_id=workspace_id,
     )
 
     # Build the full prompt
     context_block = build_context_block(context_chunks, strict_mode=strict_mode)
-    user_message = build_user_message(question, context_block)
+    user_message = build_user_message(question, context_block, relationships_block)
     prompt = system_prompt_for(enable_tools=False, strict_mode=strict_mode)
 
     # Stream generation
