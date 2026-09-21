@@ -43,14 +43,30 @@ def test_a_resold_document_needs_its_upstream_source_of_truth():
     assert complete.is_complete
 
 
-def test_incomplete_metadata_cannot_be_approved():
+def test_incomplete_metadata_cannot_be_approved_when_auto_approve_is_off(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "auto_approve_uploads", False)
     meta = DocumentMetadataIn(approval_state="approved")
     error = meta.promotion_error()
     assert error and "cannot approve" in error
     assert "vendor" in error
 
 
-def test_complete_metadata_can_be_approved():
+def test_auto_approve_allows_incomplete_metadata():
+    from app.core.config import settings
+
+    # Default for single-owner mode is auto-approve.
+    assert settings.auto_approve_uploads is True
+    meta = DocumentMetadataIn(approval_state="approved")
+    assert meta.promotion_error() is None
+    assert meta.is_complete is False
+
+
+def test_complete_metadata_can_be_approved(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "auto_approve_uploads", False)
     meta = DocumentMetadataIn(
         vendor="Us",
         ownership="own",

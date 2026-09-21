@@ -20,10 +20,12 @@ So the rule implemented here is **safe defaults, never silent ones**:
   property the safety controls actually need.
 * Everything else defaults to an explicit `unknown`/null and is recorded in
   `metadata_missing`.
-* `metadata_complete` is false until a human fills the rest in, and the plan's real
-  gates hang off that flag: a document cannot be promoted to `approved` while it is
-  incomplete, which is what Phase 6's export check will enforce.
-* `GET /documents?metadata_complete=false` is the chase list.
+* `metadata_complete` means the enrichment fields (vendor, ownership, products,
+  valid_until) are filled. With AUTO_APPROVE_UPLOADS (default on), it is a chase
+  list, not a retrieval gate: uploads become approved immediately.
+* With AUTO_APPROVE_UPLOADS off, a document still cannot be promoted to `approved`
+  while incomplete.
+* `GET /documents?metadata_complete=false` is the enrichment chase list.
 
 Net effect: the same end state the plan wants, reached by a route that survives a
 folder drop. If a stricter policy is ever wanted, set `REQUIRE_FULL_METADATA=true`
@@ -124,7 +126,15 @@ class DocumentMetadataIn(BaseModel):
         return not self.missing_fields()
 
     def promotion_error(self) -> str | None:
-        """Why this document may not be marked `approved` yet."""
+        """Why this document may not be marked `approved` yet.
+
+        When AUTO_APPROVE_UPLOADS is on, vendor/products/valid_until are optional
+        enrichment rather than a gate, so incomplete metadata can still be approved.
+        """
+        from app.core.config import settings
+
+        if settings.auto_approve_uploads:
+            return None
         if self.approval_state == ApprovalState.APPROVED and not self.is_complete:
             return (
                 "cannot approve a document with incomplete metadata; missing: "

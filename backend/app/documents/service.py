@@ -104,9 +104,12 @@ def create_document(
 ) -> Document:
     """Validate, scan, store and register one document. Does not extract."""
     meta = metadata or DocumentMetadataIn()
-    promotion_error = meta.promotion_error()
-    if promotion_error:
-        raise AppError(promotion_error)
+    if settings.auto_approve_uploads:
+        meta = meta.model_copy(update={"approval_state": ApprovalState.APPROVED})
+    else:
+        promotion_error = meta.promotion_error()
+        if promotion_error:
+            raise AppError(promotion_error)
 
     decision = decide_file_type(original_filename, data, mime_type)
     # Scanning happens on the bytes we were actually given, before any parser,
@@ -201,7 +204,13 @@ def process_document(document_id: uuid.UUID) -> None:
 
         data = get_storage().get(document.storage_key)
         try:
-            result = extraction.extract(data, document.file_type)
+            def _progress(message: str) -> None:
+                extra = dict(document.doc_metadata or {})
+                extra["progress"] = message
+                document.doc_metadata = extra
+                db.commit()
+
+            result = extraction.extract(data, document.file_type, on_progress=_progress)
             chunks = chunk_blocks(result.blocks)
         finally:
             del data
@@ -277,7 +286,10 @@ def process_document(document_id: uuid.UUID) -> None:
         document = db.get(Document, document_id)
         if document is not None:
             document.status = DocumentStatus.FAILED
-            document.error_message = f"{type(exc).__name__}: {exc}"[:2000]
+            raw = str(exc)[:2000]
+            document.error_message = (
+                raw if type(exc).__name__ == "ExtractionError" else f"{type(exc).__name__}: {exc}"[:2000]
+            )
             db.commit()
         raise
     finally:
@@ -285,8 +297,12 @@ def process_document(document_id: uuid.UUID) -> None:
 
 
 def set_approval_state(db: Session, document: Document, state: str) -> Document:
-    """Promotion gate: incomplete metadata cannot become `approved`."""
-    if state == ApprovalState.APPROVED and not document.metadata_complete:
+    """Promotion gate: incomplete metadata cannot become `approved` unless auto-approve is on."""
+    if (
+        state == ApprovalState.APPROVED
+        and not document.metadata_complete
+        and not settings.auto_approve_uploads
+    ):
         raise AppError(
             "cannot approve a document with incomplete metadata; missing: "
             + ", ".join(document.metadata_missing or [])

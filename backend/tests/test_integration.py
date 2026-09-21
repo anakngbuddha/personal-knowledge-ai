@@ -303,6 +303,13 @@ def test_injection_flags_are_recorded_on_the_document(db, owner):
     assert flagged >= 1
 
 
+def test_auto_approve_marks_upload_approved_without_metadata(db, owner):
+    document = ingest(db, owner, "notes.md", b"# Hello\n\nA source with no vendor fields.\n")
+    assert document.approval_state == "approved"
+    assert document.metadata_complete is False
+    assert "vendor" in (document.metadata_missing or [])
+
+
 def test_metadata_completeness_is_queryable(db, owner):
     incomplete = ingest(db, owner, "bare.md", b"# Bare\n\nNo metadata supplied.\n")
     assert incomplete.metadata_complete is False

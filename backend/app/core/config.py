@@ -102,6 +102,7 @@ class Settings(BaseSettings):
     ocr_language: str = "eng"
     ocr_dpi: int = 200
     ocr_max_pages: int = 50
+    gemini_rpm: int = 10
     auto_approve_uploads: bool = True
     url_fetch_enabled: bool = True
     url_fetch_timeout_seconds: float = 20.0
