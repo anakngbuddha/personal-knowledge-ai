@@ -1,0 +1,145 @@
+.source-insight {
+  border: 1px solid var(--rule, #d9d3c7);
+  border-radius: 10px;
+  padding: 1rem 1.15rem;
+  margin-bottom: 1.25rem;
+  background: var(--paper, #fffdf8);
+}
+
+.source-insight header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.source-insight h3 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.source-insight .insight-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.66rem;
+  opacity: 0.65;
+  margin: 0 0 0.15rem;
+}
+
+.source-insight .insight-summary {
+  margin: 0 0 0.75rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.source-insight .insight-block {
+  margin-bottom: 0.75rem;
+}
+
+.source-insight .insight-label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.6;
+  margin-bottom: 0.3rem;
+}
+
+.source-insight .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.source-insight .chip {
+  border: 1px solid var(--rule, #d9d3c7);
+  border-radius: 999px;
+  padding: 0.12rem 0.6rem;
+  font-size: 0.78rem;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.source-insight .insight-facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.source-insight .insight-facts li {
+  display: grid;
+  grid-template-columns: minmax(7rem, 32%) 1fr;
+  gap: 0.6rem;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.source-insight .insight-facts .fact-label {
+  opacity: 0.68;
+}
+
+.source-insight .insight-suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.source-insight .insight-suggestions li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  font-size: 0.86rem;
+}
+
+.source-insight .insight-suggestions .suggestion-text {
+  flex: 1 1 14rem;
+}
+
+.source-insight .insight-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.source-insight .insight-edit {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.source-insight .insight-edit label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+}
+
+.source-insight .insight-edit input,
+.source-insight .insight-edit textarea {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--rule, #d9d3c7);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.source-insight .insight-edit textarea {
+  min-height: 7.5rem;
+  resize: vertical;
+}
+
+.source-insight .insight-note {
+  font-size: 0.78rem;
+  opacity: 0.7;
+  margin: 0.4rem 0 0;
+}
+
+.source-insight .insight-problem {
+  font-size: 0.82rem;
+  color: #8c2f1f;
+  margin: 0.4rem 0 0;
+}
