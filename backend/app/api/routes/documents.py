@@ -336,7 +336,12 @@ def patch_metadata(
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> Document:
-    """Fill in the curation metadata that bulk upload deliberately left blank."""
+    """Fill in the curation metadata that bulk upload deliberately left blank.
+
+    This is also where a person corrects the 2.2 understand step: the summary and the
+    auto-filled vendor, products, and validity date are all editable here, and a human
+    edit is never overwritten by a later re-read.
+    """
     document = _scoped(db, principal, document_id)
     merged = DocumentMetadataIn(
         title=payload.title if payload.title is not None else document.title,
@@ -375,6 +380,9 @@ def patch_metadata(
     document.source_of_truth_url = merged.source_of_truth_url
     document.metadata_complete = not missing
     document.metadata_missing = missing or None
+    if payload.summary is not None:
+        document.summary = payload.summary.strip() or None
+        document.understanding_source = "person"
     db.commit()
     db.refresh(document)
     return document
@@ -481,6 +489,8 @@ def document_chunks(
             text=row.text,
             has_embedding=row.embedding is not None,
             injection_flags=row.injection_flags,
+            is_table=bool((row.chunk_metadata or {}).get("is_table")),
+            has_parent_passage=bool((row.chunk_metadata or {}).get("parent_text")),
         )
         for row in rows
     ]

@@ -4,6 +4,13 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class KeyFactOut(BaseModel):
+    """One fact the understand step read out of a source."""
+
+    label: str
+    value: str
+
+
 class DocumentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -26,6 +33,18 @@ class DocumentOut(BaseModel):
     source_type: str = "upload"
     source_url: str | None = None
     source_of_truth_url: str | None = None
+
+    # What the understand step read (2.2). A reading of the source, not curated truth.
+    summary: str | None = None
+    key_facts: list[KeyFactOut] | None = None
+    topic_tags: list[str] | None = None
+    detected_doc_type: str | None = None
+    detected_vendors: list[str] | None = None
+    detected_products: list[str] | None = None
+    detected_version_label: str | None = None
+    understanding_confidence: float | None = None
+    understanding_source: str | None = None
+    understood_at: datetime | None = None
 
     metadata_complete: bool = False
     metadata_missing: list[str] | None = None
@@ -67,6 +86,8 @@ class ChunkOut(BaseModel):
     text: str
     has_embedding: bool = True
     injection_flags: list[dict] | None = None
+    is_table: bool = False
+    has_parent_passage: bool = False
 
 
 class UploadReport(BaseModel):
@@ -126,3 +147,5 @@ class MetadataPatchIn(BaseModel):
     sensitivity: str | None = None
     valid_until: date | None = None
     source_of_truth_url: str | None = None
+    # The understand step writes this once; a person can rewrite it.
+    summary: str | None = None
