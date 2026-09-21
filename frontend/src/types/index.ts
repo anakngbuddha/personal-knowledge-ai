@@ -17,6 +17,7 @@ export interface KnowledgeDocument {
   approval_state?: string | null;
   sensitivity?: string | null;
   valid_until?: string | null;
+  ocr_applied?: boolean;
   metadata_complete: boolean;
   metadata_missing?: string[] | null;
   version: number;

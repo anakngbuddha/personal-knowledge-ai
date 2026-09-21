@@ -96,7 +96,7 @@ export function SearchExplorer() {
                 checked={approvedOnly}
                 onChange={(e) => setApprovedOnly(e.target.checked)}
               />
-              Approved collateral only
+              Ready sources only
             </label>
             <label className="checkbox-label">
               <input

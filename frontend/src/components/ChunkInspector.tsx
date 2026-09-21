@@ -33,19 +33,19 @@ export function ChunkInspector({ documentId }: Props) {
     return (
       <div className="empty-desk">
         <p className="kicker">Select</p>
-        <h3>Pick a file from the dossier.</h3>
-        <p>Chunks show page, section, citation, and whether a vector landed.</p>
+        <h3>Pick a source to inspect.</h3>
+        <p>Passages show page, section, and citation.</p>
       </div>
     );
   }
-  if (loading) return <p className="muted">Loading chunks…</p>;
+  if (loading) return <p className="muted">Loading passages…</p>;
   if (error) return <p className="error">{error}</p>;
   if (chunks.length === 0) {
     return (
       <div className="empty-desk">
-        <p className="kicker">Ingest</p>
-        <h3>No chunks yet.</h3>
-        <p>Ingestion may still be running. Refresh once status stamps ready.</p>
+        <p className="kicker">Reading</p>
+        <h3>Nothing to show yet.</h3>
+        <p>This file may still be processing. Wait until status is ready, then refresh.</p>
       </div>
     );
   }

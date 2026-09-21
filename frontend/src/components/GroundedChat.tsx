@@ -178,6 +178,7 @@ export function GroundedChat() {
                       <span className="source-name">
                         {src.document_title || src.citation}
                       </span>
+                      {isExcluded && <span className="muted"> Left out of this question</span>}
                     </label>
                     {src.is_stale && <span className="stale-badge">Stale</span>}
                   </div>

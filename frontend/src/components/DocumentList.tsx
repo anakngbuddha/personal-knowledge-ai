@@ -24,13 +24,13 @@ export function DocumentList({
   onChanged,
   onError,
 }: Props) {
-  if (loading) return <p className="muted">Reading the dossier…</p>;
+  if (loading) return <p className="muted">Loading sources…</p>;
   if (documents.length === 0) {
     return (
       <div className="empty-desk">
-        <p className="kicker">Empty dossier</p>
-        <h3>No collateral on file.</h3>
-        <p>File a PDF, DOCX, PPTX, XLSX, or TXT. Ingest writes chunks, citations, and provenance before anything is searchable.</p>
+        <p className="kicker">No sources yet</p>
+        <h3>Add your documents.</h3>
+        <p>Upload a PDF, Word, PowerPoint, Excel, or text file. After it is ready, you can ask questions about it.</p>
       </div>
     );
   }
@@ -78,10 +78,12 @@ export function DocumentList({
           <div className="doc-meta">
             <span>{formatSize(doc.file_size)}</span>
             {doc.page_count ? <span>{doc.page_count} pp</span> : null}
-            {doc.chunk_count ? <span>{doc.chunk_count} chunks</span> : null}
+            {doc.ocr_applied ? <span>Read with OCR</span> : null}
             {doc.vendor ? <span>{doc.vendor}</span> : null}
-            {doc.approval_state ? <span>{doc.approval_state}</span> : null}
-            {doc.sensitivity ? <span>{doc.sensitivity}</span> : null}
+            {doc.approval_state && doc.approval_state !== "approved" ? (
+              <span>Not approved yet — left out of answers until you approve it</span>
+            ) : null}
+            {doc.approval_state === "approved" ? <span>Ready</span> : null}
           </div>
           {doc.error_message && <div className="doc-error">{doc.error_message}</div>}
           <div className="doc-actions">
