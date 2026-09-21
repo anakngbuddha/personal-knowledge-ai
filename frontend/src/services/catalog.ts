@@ -1,13 +1,13 @@
 /**
- * Phase 4: Catalog & Graph API client.
+ * Catalog & map API client.
  *
- * Provides typed fetch wrappers for product catalog CRUD,
- * graph queries, integrity checks, and edge curation.
+ * Typed fetch wrappers for the product list, the map, graph queries, integrity checks,
+ * relationship review, and (3.3) importing a product list from a spreadsheet.
  */
 
 import { request } from "./http";
 
-// ── Types ─────────────────────────────────────────────────────────────────
+// ── Types ───────────────────────────────────────────────────
 
 export interface ProductOut {
   id: string;
@@ -197,7 +197,42 @@ export interface ReferenceArchitectureOut {
   products: ReferenceArchitectureProductOut[];
 }
 
-// ── API ───────────────────────────────────────────────────────────────────
+/* ── 3.3 Import my product list ─────────────────────────────────── */
+
+export interface ImportFieldOut {
+  key: string;
+  label: string;
+  required: boolean;
+  note: string;
+}
+
+export interface RowProblem {
+  row: number;
+  reason: string;
+}
+
+export interface ImportPreviewOut {
+  headers: string[];
+  sample_rows: string[][];
+  row_count: number;
+  mapping: Record<string, string>;
+  fields: ImportFieldOut[];
+  sheet_name: string | null;
+  truncated: boolean;
+  ready: number;
+  problems: RowProblem[];
+}
+
+export interface ImportResultOut {
+  created: number;
+  updated: number;
+  unchanged: number;
+  total: number;
+  problems: RowProblem[];
+  truncated: boolean;
+}
+
+// ── API ────────────────────────────────────────────────────
 
 export const catalogApi = {
   // Products
@@ -246,4 +281,27 @@ export const catalogApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason }),
     }),
+
+  /* 3.3 Import my product list. The file is sent twice on purpose: once to read the
+     columns, once with the choices the person confirmed. Nothing is held server-side
+     in between. */
+  previewProductList: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<ImportPreviewOut>("/catalog/import/preview", { method: "POST", body: form });
+  },
+
+  importProductList: (file: File, mapping: Record<string, string>, options?: { overwrite?: boolean }) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("mapping", JSON.stringify(mapping));
+    form.append("overwrite", String(Boolean(options?.overwrite)));
+    return request<ImportResultOut>("/catalog/import", { method: "POST", body: form });
+  },
+
+  sampleCatalogAvailable: () =>
+    request<{ available: boolean; reason: string | null }>("/catalog/sample-available"),
+
+  loadSampleCatalog: () =>
+    request<{ status: string; counts: Record<string, unknown> }>("/catalog/seed", { method: "POST" }),
 };
