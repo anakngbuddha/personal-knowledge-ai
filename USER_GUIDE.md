@@ -8,27 +8,24 @@ The live stack is a Render API, Aiven PostgreSQL, and a Vercel frontend. Point t
 
 ## 1. Sign in
 
-Local development uses `AUTH_MODE=owner_dev` (every request is the default-org owner). Production uses signed JWTs.
+Open the app and sign in with your email and password, or create a workspace. The server issues a signed session token. Production never uses the local-only `owner_dev` shortcut, and it will not start if `JWT_SECRET_KEY` is missing or too short.
 
-1. `POST /auth/token` with optional `org_id`, `user_id`, and `role` (`admin`, `solutions_engineer`, `sales`, `viewer`).
-2. Store `access_token` and send `Authorization: Bearer <token>` on every call.
-3. `GET /auth/me` shows org, role, and what you can read.
+Local tests may still set `AUTH_MODE=owner_dev`. Day-to-day development should use `AUTH_MODE=jwt` (see `.env.example`).
 
-**SSO (Phase 10).** When `SSO_ENABLED=true`:
+**SSO.** When `SSO_ENABLED=true`:
 
-- OIDC: `GET /auth/oidc/start` returns an authorization URL. The IdP posts an ID token to `POST /auth/oidc/callback` (`{ "id_token", "nonce" }`). A valid token (issuer, audience, signature) is exchanged for the same local JWT.
-- SAML: `POST /auth/saml/acs` with `{ "SAMLResponse": "<Assertion>…</Assertion>", "signature": "<hmac hex>" }` (or `X-SAML-Signature`). Attributes `role`, `org_id` / `org_slug`, and `NameID` map onto the local principal.
+- OIDC: `GET /auth/oidc/start` returns an authorization URL. The IdP posts an ID token to `POST /auth/oidc/callback` (`{ "id_token", "nonce" }`). A valid token is exchanged for the same local session.
+- SAML: `POST /auth/saml/acs` with `{ "SAMLResponse": "<Assertion>…</Assertion>", "signature": "<hmac hex>" }` (or `X-SAML-Signature`).
 
 ---
 
-## 2. Collateral (Documents)
+## 2. Sources
 
-Open **06 Dossier**.
+Open **Sources**.
 
-1. Upload PDF, DOCX, PPTX, XLSX, or text. Files are scanned, chunked, embedded, and full-text indexed in the background.
-2. Click a document to inspect citation anchors (page, slide, sheet, heading).
-3. Fill vendor, ownership, products referenced, sensitivity, and approval state before treating a file as customer-facing evidence.
-4. Status path: `uploaded` → `processing` → `ready` (or `failed` / `quarantined`).
+1. Click **Add source** and upload a PDF, Word, PowerPoint, Excel, or text file. Files are read in the background. You do not need to fill vendor or product fields first — those are optional extras.
+2. When a file is ready, ask questions about it. If a PDF was a scan, you will see **Read with OCR**. If a source is not approved, it is left out of answers until you approve it.
+3. Status path: uploaded → processing → ready (or failed). Failed files show a plain-language reason and a Retry button.
 
 ---
 

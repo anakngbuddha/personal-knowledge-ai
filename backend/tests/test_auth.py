@@ -147,5 +147,22 @@ def test_auth_unauthenticated_request_rejected():
         resp = client.get("/auth/me")
         assert resp.status_code == 401
         assert "authentication required" in resp.json()["detail"].lower()
+        ask = client.post("/ask", json={"question": "hello"})
+        assert ask.status_code == 401
     finally:
         settings.auth_mode = prev_mode
+
+
+def test_production_rejects_insecure_auth_defaults():
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError, match="AUTH_MODE"):
+        Settings.model_validate(
+            {"environment": "production", "auth_mode": "owner_dev", "jwt_secret_key": "x" * 40}
+        )
+    with pytest.raises(ValidationError, match="JWT_SECRET_KEY"):
+        Settings.model_validate(
+            {"environment": "production", "auth_mode": "jwt", "jwt_secret_key": "changeme"}
+        )
