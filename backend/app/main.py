@@ -9,6 +9,7 @@ from app.api.routes import (
     catalog,
     documents,
     freshness,
+    graph_review,
     health,
     integrations,
     jobs,
@@ -72,6 +73,7 @@ app.include_router(search.router)
 app.include_router(jobs.router)
 app.include_router(ask.router)
 app.include_router(catalog.router)
+app.include_router(graph_review.router)
 app.include_router(workflows.router)
 app.include_router(phase8.router)
 app.include_router(integrations.router)

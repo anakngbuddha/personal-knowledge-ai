@@ -94,6 +94,12 @@ class Settings(BaseSettings):
     understanding_min_confidence: float = 0.7
     understanding_max_chars: int = 12000
     
+    # 3.1 read the product map out of each source. Everything it finds is a
+    # suggestion: nodes land as suggested, relationships wait for a person.
+    graph_extraction_enabled: bool = True
+    graph_extract_max_chars: int = 16000
+    graph_auto_accept_confidence: float = 0.85
+    
     auth_mode: str = "jwt"
     default_org_slug: str = "default"
     default_org_name: str = "Default Organization"
