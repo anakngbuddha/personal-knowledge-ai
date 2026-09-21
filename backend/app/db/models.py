@@ -36,6 +36,13 @@ EMBEDDING_DIM = settings.gemini_embedding_dimensions
 FTS_CONFIG = settings.fts_config
 
 
+def _sql_in_list(values) -> str:
+    """Render a sorted SQL ``in (...)`` list so a CHECK constraint can never drift
+    from the Python constants it is meant to mirror."""
+
+    return ", ".join(f"'{value}'" for value in sorted(values))
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -408,6 +415,13 @@ class TokenBudget(Base):
 
 
 class RelationType:
+    """How two products relate.
+
+    The first block is the original technical vocabulary. The second block (3.2) is
+    the selling vocabulary: what a salesperson actually needs to say out loud when
+    putting a bundle together.
+    """
+
     INTEGRATES_WITH = "integrates_with"
     REQUIRES = "requires"
     CONFLICTS_WITH = "conflicts_with"
@@ -415,6 +429,15 @@ class RelationType:
     BUNDLES_WITH = "bundles_with"
     ALTERNATIVE_TO = "alternative_to"
     MIGRATES_TO = "migrates_to"
+
+    # --- selling model (3.2) -------------------------------------------------
+    RECOMMENDED_WITH = "recommended_with"
+    CROSS_SELL = "cross_sell"
+    UPSELL_TO = "upsell_to"
+    CERTIFIED_FOR = "certified_for"
+    REQUIRES_LICENSE = "requires_license"
+    BUNDLE_COMPONENT = "bundle_component"
+    SUITS_USE_CASE = "suits_use_case"
 
     ALL = {
         INTEGRATES_WITH,
@@ -424,7 +447,48 @@ class RelationType:
         BUNDLES_WITH,
         ALTERNATIVE_TO,
         MIGRATES_TO,
+        RECOMMENDED_WITH,
+        CROSS_SELL,
+        UPSELL_TO,
+        CERTIFIED_FOR,
+        REQUIRES_LICENSE,
+        BUNDLE_COMPONENT,
+        SUITS_USE_CASE,
     }
+
+    # Relations worth walking when we expand a question to nearby products (3.5).
+    EXPANDABLE = {
+        INTEGRATES_WITH,
+        REQUIRES,
+        CONFLICTS_WITH,
+        BUNDLES_WITH,
+        RECOMMENDED_WITH,
+        CROSS_SELL,
+        UPSELL_TO,
+        BUNDLE_COMPONENT,
+    }
+
+    # Plain words for every relation, so no screen has to invent its own wording.
+    WORDS = {
+        INTEGRATES_WITH: "works with",
+        REQUIRES: "needs",
+        CONFLICTS_WITH: "clashes with",
+        REPLACES: "replaces",
+        BUNDLES_WITH: "is sold together with",
+        ALTERNATIVE_TO: "is an alternative to",
+        MIGRATES_TO: "moves customers to",
+        RECOMMENDED_WITH: "is recommended with",
+        CROSS_SELL: "pairs well with",
+        UPSELL_TO: "is a step up to",
+        CERTIFIED_FOR: "is certified for",
+        REQUIRES_LICENSE: "needs a licence for",
+        BUNDLE_COMPONENT: "is part of",
+        SUITS_USE_CASE: "suits",
+    }
+
+    @classmethod
+    def words(cls, relation_type: str) -> str:
+        return cls.WORDS.get(relation_type, relation_type.replace("_", " "))
 
 
 class EdgeStatus:
@@ -433,6 +497,110 @@ class EdgeStatus:
     REJECTED = "rejected"
 
     ALL = {APPROVED, PENDING_REVIEW, REJECTED}
+
+
+class CurationStatus:
+    """Whether a node on the map was put there by a person or proposed by a read."""
+
+    CONFIRMED = "confirmed"
+    SUGGESTED = "suggested"
+
+    ALL = {CONFIRMED, SUGGESTED}
+
+
+class ContextKind:
+    """The non-product things a product can be sold against (3.2)."""
+
+    USE_CASE = "use_case"
+    ROOM_TYPE = "room_type"
+    PLATFORM = "platform"
+
+    ALL = {USE_CASE, ROOM_TYPE, PLATFORM}
+
+    WORDS = {
+        USE_CASE: "use case",
+        ROOM_TYPE: "room type",
+        PLATFORM: "platform",
+    }
+
+
+class CapabilityCategory:
+    """Canonical buckets for what a product can do.
+
+    ``Capability.category`` stays a free string so nothing breaks, but these are the
+    names the read step and the map UI use, which keeps the map from sprouting five
+    spellings of "headset".
+    """
+
+    AUDIO = "audio"
+    VIDEO = "video"
+    HEADSETS = "headsets"
+    CONFERENCING = "conferencing"
+    CLOUD = "cloud"
+    NETWORKING = "networking"
+    MANAGEMENT = "management"
+    SECURITY = "security"
+    OTHER = "other"
+
+    ALL = {AUDIO, VIDEO, HEADSETS, CONFERENCING, CLOUD, NETWORKING, MANAGEMENT, SECURITY, OTHER}
+
+    # Words we have actually seen in vendor material, mapped to a bucket.
+    ALIASES = {
+        "audio": AUDIO,
+        "sound": AUDIO,
+        "speakerphone": AUDIO,
+        "microphone": AUDIO,
+        "mics": AUDIO,
+        "ceiling microphone": AUDIO,
+        "dsp": AUDIO,
+        "video": VIDEO,
+        "camera": VIDEO,
+        "cameras": VIDEO,
+        "display": VIDEO,
+        "headset": HEADSETS,
+        "headsets": HEADSETS,
+        "earbuds": HEADSETS,
+        "contact centre": HEADSETS,
+        "contact center": HEADSETS,
+        "conferencing": CONFERENCING,
+        "meeting room": CONFERENCING,
+        "meeting rooms": CONFERENCING,
+        "room system": CONFERENCING,
+        "uc": CONFERENCING,
+        "unified communications": CONFERENCING,
+        "cloud": CLOUD,
+        "huawei cloud": CLOUD,
+        "public cloud": CLOUD,
+        "private cloud": CLOUD,
+        "iaas": CLOUD,
+        "paas": CLOUD,
+        "saas": CLOUD,
+        "network": NETWORKING,
+        "networking": NETWORKING,
+        "switching": NETWORKING,
+        "wifi": NETWORKING,
+        "wi-fi": NETWORKING,
+        "management": MANAGEMENT,
+        "device management": MANAGEMENT,
+        "analytics": MANAGEMENT,
+        "monitoring": MANAGEMENT,
+        "security": SECURITY,
+        "compliance": SECURITY,
+    }
+
+    @classmethod
+    def normalize(cls, raw: str | None) -> str:
+        if not raw:
+            return cls.OTHER
+        cleaned = raw.strip().lower()
+        if cleaned in cls.ALL:
+            return cleaned
+        if cleaned in cls.ALIASES:
+            return cls.ALIASES[cleaned]
+        for alias, bucket in cls.ALIASES.items():
+            if alias in cleaned:
+                return bucket
+        return cls.OTHER
 
 
 class LifecycleStatus:
@@ -478,6 +646,18 @@ class Product(Base):
     description: Mapped[str | None] = mapped_column(Text)
     collateral_document_ids: Mapped[list | None] = mapped_column(JSONB)
 
+    # Where this product came from (3.1). A product read out of a source starts as
+    # `suggested` and only joins the real product list once a person says so.
+    curation_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=CurationStatus.CONFIRMED, index=True
+    )
+    is_ai_suggested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    aliases: Mapped[list | None] = mapped_column(JSONB)
+    source_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), index=True
+    )
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     # Resold-specific governance fields
     partner_tier: Mapped[str | None] = mapped_column(String(128))
     margin_band: Mapped[str | None] = mapped_column(String(64))
@@ -508,6 +688,9 @@ class Product(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    context_links: Mapped[list["ProductContextLink"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan", passive_deletes=True
+    )
     reference_architectures: Mapped[list["ReferenceArchitectureProduct"]] = relationship(
         back_populates="product", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -521,6 +704,10 @@ class Product(Base):
         CheckConstraint(
             "deployment_model in ('cloud', 'on-prem', 'hybrid')",
             name="ck_products_deployment_model",
+        ),
+        CheckConstraint(
+            "curation_status in (" + _sql_in_list(CurationStatus.ALL) + ")",
+            name="ck_products_curation_status",
         ),
     )
 
@@ -591,6 +778,7 @@ class ProductEdge(Base):
     document_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("documents.id", ondelete="SET NULL"), index=True
     )
+    page_number: Mapped[int | None] = mapped_column(Integer)
     is_ai_suggested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=EdgeStatus.APPROVED, index=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text)
@@ -613,7 +801,7 @@ class ProductEdge(Base):
             "source_product_id", "target_product_id", "relation_type", name="uq_product_edge_source_target_type"
         ),
         CheckConstraint(
-            "relation_type in ('integrates_with', 'requires', 'conflicts_with', 'replaces', 'bundles_with', 'alternative_to', 'migrates_to')",
+            "relation_type in (" + _sql_in_list(RelationType.ALL) + ")",
             name="ck_product_edges_relation_type",
         ),
         CheckConstraint(
@@ -621,6 +809,124 @@ class ProductEdge(Base):
             name="ck_product_edges_status",
         ),
         CheckConstraint("length(trim(evidence)) > 0", name="ck_product_edges_evidence_required"),
+    )
+
+
+class SellingContext(Base):
+    """A use case, room type, or platform a product can be sold against (3.2).
+
+    One table instead of three: the three kinds carry exactly the same fields, and a
+    single table keeps the map queries, the review queue, and the import path from
+    being written three times.
+    """
+
+    __tablename__ = "selling_contexts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    aliases: Mapped[list | None] = mapped_column(JSONB)
+    curation_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=CurationStatus.CONFIRMED, index=True
+    )
+    is_ai_suggested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), index=True
+    )
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    product_links: Mapped[list["ProductContextLink"]] = relationship(
+        back_populates="context", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "kind", "slug", name="uq_selling_contexts_workspace_kind_slug"),
+        CheckConstraint(
+            "kind in (" + _sql_in_list(ContextKind.ALL) + ")",
+            name="ck_selling_contexts_kind",
+        ),
+        CheckConstraint(
+            "curation_status in (" + _sql_in_list(CurationStatus.ALL) + ")",
+            name="ck_selling_contexts_curation_status",
+        ),
+    )
+
+
+class ProductContextLink(Base):
+    """Product to use case / room type / platform, reviewed the same way as an edge."""
+
+    __tablename__ = "product_context_links"
+
+    # The relations that make sense against a context rather than another product.
+    CONTEXT_RELATIONS = {
+        RelationType.SUITS_USE_CASE,
+        RelationType.CERTIFIED_FOR,
+        RelationType.REQUIRES_LICENSE,
+    }
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    context_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("selling_contexts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    relation_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=RelationType.SUITS_USE_CASE, index=True
+    )
+    evidence: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), index=True
+    )
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    is_ai_suggested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=EdgeStatus.APPROVED, index=True
+    )
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    product: Mapped[Product] = relationship(back_populates="context_links")
+    context: Mapped[SellingContext] = relationship(back_populates="product_links")
+    document: Mapped[Document | None] = relationship("Document")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "product_id", "context_id", "relation_type", name="uq_product_context_link"
+        ),
+        CheckConstraint(
+            "relation_type in ('suits_use_case', 'certified_for', 'requires_license')",
+            name="ck_product_context_links_relation_type",
+        ),
+        CheckConstraint(
+            "status in ('approved', 'pending_review', 'rejected')",
+            name="ck_product_context_links_status",
+        ),
+        CheckConstraint(
+            "length(trim(evidence)) > 0", name="ck_product_context_links_evidence_required"
+        ),
     )
 
 
