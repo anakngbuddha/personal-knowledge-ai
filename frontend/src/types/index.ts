@@ -118,6 +118,14 @@ export interface TokenUsage {
   total_tokens: number;
 }
 
+export interface ToolCallInfo {
+  id: string;
+  name: string;
+  arguments?: Record<string, unknown>;
+  error?: string | null;
+  content?: Record<string, unknown> | null;
+}
+
 export interface AskResponse {
   answer: string;
   citations: SourceMetadata[];
@@ -128,6 +136,7 @@ export interface AskResponse {
   usage?: TokenUsage | null;
   conversation_id?: string | null;
   message_id?: string | null;
+  tool_calls?: ToolCallInfo[];
 }
 
 export interface Message {
@@ -274,4 +283,127 @@ export interface WorkflowRun {
   tasks: WorkflowTask[];
   created_at: string;
   updated_at: string;
+}
+
+export interface McpIntegration {
+  id?: string | null;
+  server_slug: string;
+  enabled: boolean;
+  status: string;
+  last_error?: string | null;
+  has_secret: boolean;
+  allowed_hosts: string[];
+  http_url?: string | null;
+  allowed_tools: string[];
+}
+
+export interface McpIntegrationList {
+  mcp_enabled: boolean;
+  integrations: McpIntegration[];
+}
+
+export interface McpPingResult {
+  server: string;
+  status: string;
+  tools: string[];
+}
+
+export interface NoteLink {
+  target_kind: string;
+  target_ref: string;
+  display_text?: string | null;
+  resolved: boolean;
+  resolved_id?: string | null;
+}
+
+export interface NoteRecord {
+  id: string;
+  title: string;
+  slug: string;
+  body: string;
+  workspace_id: string;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  links: NoteLink[];
+}
+
+export interface NoteList {
+  notes: NoteRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface VendorSource {
+  id: string;
+  label: string;
+  url: string;
+  status: string;
+  enabled: boolean;
+  last_hash?: string | null;
+  last_checked_at?: string | null;
+  next_check_at?: string | null;
+  last_error?: string | null;
+  product_id?: string | null;
+}
+
+export interface VendorSourceList {
+  sources: VendorSource[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface FreshnessAlert {
+  id: string;
+  vendor_source_id: string;
+  kind: string;
+  previous_hash?: string | null;
+  new_hash?: string | null;
+  created_at?: string | null;
+  acknowledged_at?: string | null;
+}
+
+export interface FreshnessAlertList {
+  alerts: FreshnessAlert[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface FreshnessCheck {
+  source_id: string;
+  status: string;
+  hash?: string | null;
+  changed: boolean;
+  alert_id?: string | null;
+  error?: string | null;
+}
+
+export interface RestoreDrill {
+  id: string;
+  status: string;
+  sla_seconds: number;
+  duration_seconds?: number | null;
+  within_sla?: boolean | null;
+  error_message?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+}
+
+export interface RestoreDrillList {
+  drills: RestoreDrill[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface SsoStatus {
+  sso_enabled: boolean;
+  oidc_configured: boolean;
+  saml_configured: boolean;
+  oidc_issuer?: string | null;
+  saml_issuer?: string | null;
+  oidc_client_id?: string | null;
 }

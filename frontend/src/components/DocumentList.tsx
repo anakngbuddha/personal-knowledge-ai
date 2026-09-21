@@ -24,8 +24,16 @@ export function DocumentList({
   onChanged,
   onError,
 }: Props) {
-  if (loading) return <p className="muted">Loading documents...</p>;
-  if (documents.length === 0) return <p className="muted">No documents yet. Upload a PDF, TXT, or DOCX.</p>;
+  if (loading) return <p className="muted">Reading the dossier…</p>;
+  if (documents.length === 0) {
+    return (
+      <div className="empty-desk">
+        <p className="kicker">Empty dossier</p>
+        <h3>No collateral on file.</h3>
+        <p>File a PDF, DOCX, PPTX, XLSX, or TXT. Ingest writes chunks, citations, and provenance before anything is searchable.</p>
+      </div>
+    );
+  }
 
   async function remove(id: string) {
     try {
@@ -52,6 +60,14 @@ export function DocumentList({
           key={doc.id}
           className={doc.id === selectedId ? "doc selected" : "doc"}
           onClick={() => onSelect(doc.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onSelect(doc.id);
+            }
+          }}
+          role="button"
+          tabIndex={0}
         >
           <div className="doc-row">
             <span className="doc-name" title={doc.original_filename}>
@@ -60,16 +76,35 @@ export function DocumentList({
             <span className={`badge ${doc.status}`}>{doc.status}</span>
           </div>
           <div className="doc-meta">
-            {formatSize(doc.file_size)}
-            {doc.page_count ? ` · ${doc.page_count} pages` : ""}
-            {doc.chunk_count ? ` · ${doc.chunk_count} chunks` : ""}
+            <span>{formatSize(doc.file_size)}</span>
+            {doc.page_count ? <span>{doc.page_count} pp</span> : null}
+            {doc.chunk_count ? <span>{doc.chunk_count} chunks</span> : null}
+            {doc.vendor ? <span>{doc.vendor}</span> : null}
+            {doc.approval_state ? <span>{doc.approval_state}</span> : null}
+            {doc.sensitivity ? <span>{doc.sensitivity}</span> : null}
           </div>
           {doc.error_message && <div className="doc-error">{doc.error_message}</div>}
           <div className="doc-actions">
             {doc.status === "failed" && (
-              <button onClick={(e) => { e.stopPropagation(); void reprocess(doc.id); }}>Retry</button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void reprocess(doc.id);
+                }}
+              >
+                Retry
+              </button>
             )}
-            <button onClick={(e) => { e.stopPropagation(); void remove(doc.id); }}>Delete</button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void remove(doc.id);
+              }}
+            >
+              Delete
+            </button>
           </div>
         </li>
       ))}

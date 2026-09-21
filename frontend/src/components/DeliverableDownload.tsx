@@ -36,7 +36,7 @@ export function DeliverableDownload({ run }: Props) {
   return (
     <div className="deliverable-download">
       <button className="primary" disabled={!ready || busy} onClick={() => void download()}>
-        {busy ? "Downloading…" : ready ? "Download .docx" : "Deliverable not ready"}
+        {busy ? "Pulling…" : ready ? "Download .docx" : "Deliverable not ready"}
       </button>
       {error && <p className="doc-error">{error}</p>}
     </div>

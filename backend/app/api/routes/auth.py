@@ -5,16 +5,19 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.errors import AppError
 from app.db.session import get_db
 from app.security.deps import get_or_create_default_org, resolve_principal
-from app.security.jwt import mint_token
+from app.security.jwt import InvalidTokenError, mint_token
 from app.security.labels import Role, normalize
 from app.security.principal import Principal
+from app.sso.oidc import authorization_url
+from app.sso.service import exchange_oidc_token, exchange_saml_assertion
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -88,3 +91,81 @@ def get_current_principal_profile(
         }
     )
     return info
+
+
+class OidcStartOut(BaseModel):
+    authorization_url: str
+    state: str
+    nonce: str
+    redirect_uri: str
+
+
+class OidcCallbackIn(BaseModel):
+    id_token: str
+    nonce: str | None = None
+
+
+class SamlAcsIn(BaseModel):
+    SAMLResponse: str
+    signature: str | None = None
+
+
+@router.get("/oidc/start", response_model=OidcStartOut)
+def start_oidc() -> OidcStartOut:
+    if not (settings.sso_enabled and settings.oidc_issuer and settings.oidc_client_id):
+        raise HTTPException(status_code=404, detail="OIDC is not configured")
+    import secrets
+
+    state = secrets.token_urlsafe(16)
+    nonce = secrets.token_urlsafe(16)
+    return OidcStartOut(
+        authorization_url=authorization_url(
+            issuer=settings.oidc_issuer,
+            client_id=settings.oidc_client_id,
+            redirect_uri=settings.oidc_redirect_uri,
+            state=state,
+            nonce=nonce,
+        ),
+        state=state,
+        nonce=nonce,
+        redirect_uri=settings.oidc_redirect_uri,
+    )
+
+
+@router.post("/oidc/callback")
+def oidc_callback(
+    payload: OidcCallbackIn,
+    db: Session = Depends(get_db),
+) -> dict:
+    org = get_or_create_default_org(db)
+    try:
+        return exchange_oidc_token(
+            db,
+            id_token=payload.id_token,
+            nonce=payload.nonce,
+            fallback_org_id=org.id,
+        )
+    except InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except AppError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/saml/acs")
+def saml_acs(
+    payload: SamlAcsIn,
+    db: Session = Depends(get_db),
+    x_saml_signature: str | None = Header(default=None, alias="X-SAML-Signature"),
+) -> dict:
+    org = get_or_create_default_org(db)
+    try:
+        return exchange_saml_assertion(
+            db,
+            assertion=payload.SAMLResponse,
+            signature=payload.signature or x_saml_signature,
+            fallback_org_id=org.id,
+        )
+    except InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except AppError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

@@ -29,17 +29,34 @@ export function ChunkInspector({ documentId }: Props) {
       .finally(() => setLoading(false));
   }, [documentId]);
 
-  if (!documentId) return <p className="muted">Select a document to inspect its chunks.</p>;
-  if (loading) return <p className="muted">Loading chunks...</p>;
+  if (!documentId) {
+    return (
+      <div className="empty-desk">
+        <p className="kicker">Select</p>
+        <h3>Pick a file from the dossier.</h3>
+        <p>Chunks show page, section, citation, and whether a vector landed.</p>
+      </div>
+    );
+  }
+  if (loading) return <p className="muted">Loading chunks…</p>;
   if (error) return <p className="error">{error}</p>;
-  if (chunks.length === 0) return <p className="muted">No chunks yet. Ingestion may still be running.</p>;
+  if (chunks.length === 0) {
+    return (
+      <div className="empty-desk">
+        <p className="kicker">Ingest</p>
+        <h3>No chunks yet.</h3>
+        <p>Ingestion may still be running. Refresh once status stamps ready.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="chunks">
       {chunks.map((chunk) => (
         <article key={chunk.id} className="chunk">
           <header>
-            <span className="chunk-index">#{chunk.chunk_index}</span>
+            <span className="chunk-index">#{String(chunk.chunk_index).padStart(2, "0")}</span>
+            {chunk.citation && <span className="tag">{chunk.citation}</span>}
             {chunk.page_number !== null && <span className="tag">p. {chunk.page_number}</span>}
             {chunk.section_title && <span className="tag">{chunk.section_title}</span>}
             <span className={chunk.has_embedding ? "tag ok" : "tag warn"}>

@@ -21,6 +21,8 @@ os.environ.setdefault("MALWARE_SCANNER", "heuristic")
 os.environ.setdefault("OCR_PROVIDER", "none")
 os.environ.setdefault("WORKER_ENABLED", "false")
 os.environ.setdefault("WORKFLOW_WORKER_ENABLED", "false")
+os.environ.setdefault("FRESHNESS_WORKER_ENABLED", "false")
+os.environ.setdefault("SSO_ENABLED", "false")
 os.environ.setdefault("AUTH_MODE", "owner_dev")
 
 import pytest  # noqa: E402

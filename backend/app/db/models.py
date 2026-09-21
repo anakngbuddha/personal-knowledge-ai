@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -739,5 +740,242 @@ class TaskExecution(Base):
     __table_args__ = (
         UniqueConstraint("workflow_run_id", "task_slug", name="uq_task_exec_run_slug"),
         Index("ix_task_executions_claim", "status", "created_at"),
+    )
+
+
+class McpIntegration(Base):
+    """Per-tenant MCP server enablement and encrypted credentials (Phase 9)."""
+
+    __tablename__ = "mcp_integrations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    server_slug: Mapped[str] = mapped_column(String(32), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    config: Mapped[dict | None] = mapped_column(JSONB)
+    secret_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="disconnected")
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "server_slug", name="uq_mcp_integrations_org_slug"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 10: Notes, Freshness & Enterprise Hardening
+# ---------------------------------------------------------------------------
+
+
+class NoteLinkKind:
+    PRODUCT = "product"
+    ACCOUNT = "account"
+    NOTE = "note"
+
+    ALL = {PRODUCT, ACCOUNT, NOTE}
+
+
+class FreshnessStatus:
+    PENDING = "pending"
+    FRESH = "fresh"
+    STALE = "stale"
+    ERROR = "error"
+
+    ALL = {PENDING, FRESH, STALE, ERROR}
+
+
+class RestoreDrillStatus:
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+    ALL = {RUNNING, SUCCEEDED, FAILED}
+
+
+class SsoProtocol:
+    OIDC = "oidc"
+    SAML = "saml"
+
+    ALL = {OIDC, SAML}
+
+
+class Note(Base):
+    """SE tribal knowledge. Markdown body with [[wikilinks]] to products, accounts, notes."""
+
+    __tablename__ = "notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    links: Mapped[list["NoteLink"]] = relationship(
+        back_populates="note", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (UniqueConstraint("workspace_id", "slug", name="uq_notes_workspace_slug"),)
+
+
+class NoteLink(Base):
+    """A [[wikilink]] extracted from a note body on save."""
+
+    __tablename__ = "note_links"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    note_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("notes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    target_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    target_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_text: Mapped[str | None] = mapped_column(String(512))
+    resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    resolved_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+    note: Mapped[Note] = relationship(back_populates="links")
+
+    __table_args__ = (
+        Index("ix_note_links_target", "org_id", "target_kind", "target_ref"),
+        CheckConstraint(
+            "target_kind in ('product', 'account', 'note')",
+            name="ck_note_links_target_kind",
+        ),
+    )
+
+
+class VendorSource(Base):
+    """Upstream vendor URL monitored for datasheet / collateral changes."""
+
+    __tablename__ = "vendor_sources"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    product_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("products.id", ondelete="SET NULL"), index=True
+    )
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    check_interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=86400)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=FreshnessStatus.PENDING)
+    last_hash: Mapped[str | None] = mapped_column(String(64))
+    last_etag: Mapped[str | None] = mapped_column(String(255))
+    last_modified_header: Mapped[str | None] = mapped_column(String(255))
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_check_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_error: Mapped[str | None] = mapped_column(Text)
+    locked_by: Mapped[str | None] = mapped_column(String(128))
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    alerts: Mapped[list["FreshnessAlert"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "url", name="uq_vendor_sources_workspace_url"),
+        Index("ix_vendor_sources_claim", "enabled", "status", "next_check_at"),
+    )
+
+
+class FreshnessAlert(Base):
+    """Staleness alert raised when an upstream vendor document changes."""
+
+    __tablename__ = "freshness_alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    vendor_source_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vendor_sources.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="content_changed")
+    previous_hash: Mapped[str | None] = mapped_column(String(64))
+    new_hash: Mapped[str | None] = mapped_column(String(64))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    details: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    source: Mapped[VendorSource] = relationship(back_populates="alerts")
+
+    __table_args__ = (Index("ix_freshness_alerts_open", "org_id", "acknowledged_at"),)
+
+
+class RestoreDrill(Base):
+    """Record of an automated disaster-recovery restore drill."""
+
+    __tablename__ = "restore_drills"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=RestoreDrillStatus.RUNNING)
+    sla_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=300.0)
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    within_sla: Mapped[bool | None] = mapped_column(Boolean)
+    row_counts_before: Mapped[dict | None] = mapped_column(JSONB)
+    row_counts_after: Mapped[dict | None] = mapped_column(JSONB)
+    triggered_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SsoProvider(Base):
+    """Per-tenant OIDC or SAML identity provider configuration."""
+
+    __tablename__ = "sso_providers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    protocol: Mapped[str] = mapped_column(String(16), nullable=False, default=SsoProtocol.OIDC)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    issuer: Mapped[str] = mapped_column(String(512), nullable=False)
+    client_id: Mapped[str | None] = mapped_column(String(255))
+    audience: Mapped[str | None] = mapped_column(String(255))
+    secret_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
+    idp_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "protocol", name="uq_sso_providers_org_protocol"),
+        CheckConstraint("protocol in ('oidc', 'saml')", name="ck_sso_providers_protocol"),
     )
 

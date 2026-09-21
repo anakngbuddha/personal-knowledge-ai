@@ -32,4 +32,9 @@ def test_ensure_schema_creates_workflow_tables(database):
     names = inspect(database).get_table_names()
     assert "task_executions" in names
     assert "workflow_runs" in names
+    assert "mcp_integrations" in names
+    assert "notes" in names
+    assert "vendor_sources" in names
+    assert "restore_drills" in names
+    assert "sso_providers" in names
     assert "schema_migrations" in names

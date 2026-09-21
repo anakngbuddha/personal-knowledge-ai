@@ -12,6 +12,8 @@ export function GroundedChat() {
   const [selectedCitation, setSelectedCitation] = useState<SourceMetadata | null>(null);
   const [excludedDocIds, setExcludedDocIds] = useState<string[]>([]);
   const [activeSources, setActiveSources] = useState<SourceMetadata[]>([]);
+  const [enableTools, setEnableTools] = useState(false);
+  const [lastToolCalls, setLastToolCalls] = useState<string[]>([]);
 
   useEffect(() => {
     loadConversations();
@@ -69,7 +71,9 @@ export function GroundedChat() {
         question: q,
         conversation_id: selectedConvId,
         exclude_document_ids: excludedDocIds,
+        enable_tools: enableTools,
       });
+      setLastToolCalls((answer.tool_calls || []).map((c) => c.name));
 
       if (!selectedConvId && answer.conversation_id) {
         setSelectedConvId(answer.conversation_id);
@@ -105,35 +109,42 @@ export function GroundedChat() {
 
   return (
     <div className="grounded-chat">
-      {/* Sidebar: Conversations & Source Toggling */}
       <aside className="chat-sidebar">
         <div className="sidebar-head">
-          <h3>Conversations</h3>
+          <h3>Thread log</h3>
           <button
+            type="button"
             className="new-conv-btn"
             onClick={() => {
               setSelectedConvId(null);
               setCurrentConv(null);
             }}
           >
-            + New
+            New thread
           </button>
         </div>
 
         <div className="conv-list">
           {conversations.length === 0 ? (
-            <div className="empty-conv">No past conversations</div>
+            <div className="empty-conv">No threads on this desk yet. Open one with a grounded question.</div>
           ) : (
             conversations.map((c) => (
               <div
                 key={c.id}
                 className={`conv-item ${selectedConvId === c.id ? "active" : ""}`}
-                onClick={() => setSelectedConvId(c.id)}
               >
-                <div className="conv-title">{c.title || "Untitled conversation"}</div>
                 <button
+                  type="button"
+                  className="conv-open"
+                  onClick={() => setSelectedConvId(c.id)}
+                >
+                  <span className="conv-title">{c.title || "Untitled thread"}</span>
+                </button>
+                <button
+                  type="button"
                   className="conv-delete"
                   title="Delete thread"
+                  aria-label="Delete thread"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleDelete(c.id);
@@ -146,10 +157,9 @@ export function GroundedChat() {
           )}
         </div>
 
-        {/* Source Toggling Panel */}
         {activeSources.length > 0 && (
           <div className="source-toggle-panel">
-            <h4>Collateral Sources ({activeSources.length})</h4>
+            <h4>Collateral in play ({activeSources.length})</h4>
             <div className="source-list">
               {activeSources.map((src) => {
                 const isExcluded = excludedDocIds.includes(src.document_id);
@@ -176,17 +186,17 @@ export function GroundedChat() {
         )}
       </aside>
 
-      {/* Main Chat Area */}
       <main className="chat-main">
         {error && <div className="banner error">{error}</div>}
 
         <div className="messages-stream">
           {!currentConv || currentConv.messages.length === 0 ? (
             <div className="chat-welcome">
-              <h3>Ask Grounded Solution Engineering Questions</h3>
+              <p className="kicker">04 · Grounded desk</p>
+              <h3>Ask against approved collateral only.</h3>
               <p>
-                Answers are synthesized strictly from approved collateral, with every assertion
-                accompanied by a citation anchor (page, slide, sheet) and provenance flags.
+                Every assertion must carry a citation — page, slide, or sheet. Uncited claims are
+                refused. Treat this like a live deal room, not a chat toy.
               </p>
             </div>
           ) : (
@@ -194,7 +204,7 @@ export function GroundedChat() {
               <div key={msg.id} className={`chat-message ${msg.role}`}>
                 <div className="message-header">
                   <span className="role-label">
-                    {msg.role === "user" ? "You" : "Personal Knowledge AI"}
+                    {msg.role === "user" ? "Query" : "Grounded"}
                   </span>
                   {msg.model_id && (
                     <span className="model-label">
@@ -205,23 +215,31 @@ export function GroundedChat() {
 
                 {msg.refused && (
                   <div className="refusal-banner">
-                    Insufficient evidence in collateral to answer this query definitively.
+                    Insufficient evidence in collateral — claim withheld.
                   </div>
                 )}
 
                 <div className="message-body">{msg.content}</div>
 
+                {msg.role === "assistant" && lastToolCalls.length > 0 && (
+                  <div className="tool-calls-tray">
+                    Tools dispatched: {lastToolCalls.join(", ")}
+                  </div>
+                )}
+
                 {msg.citations && msg.citations.length > 0 && (
                   <div className="citations-tray">
-                    <span className="citations-label">Sources:</span>
+                    <span className="citations-label">Cited</span>
                     {msg.citations.map((c, i) => (
                       <button
                         key={i}
+                        type="button"
                         className={`citation-tag ${selectedCitation?.chunk_id === c.chunk_id ? "active" : ""}`}
                         onClick={() => setSelectedCitation(c)}
                       >
                         [{i + 1}] {c.citation}
-                        {c.vendor && ` (${c.vendor})`}
+                        {c.vendor && ` · ${c.vendor}`}
+                        {c.approval_state ? ` · ${c.approval_state}` : ""}
                         {c.is_stale && <span className="stale-dot" title="Stale document">●</span>}
                       </button>
                     ))}
@@ -233,43 +251,74 @@ export function GroundedChat() {
 
           {loading && (
             <div className="chat-message assistant loading">
-              <div className="role-label">Synthesizing Grounded Answer...</div>
-              <div className="loading-indicator">Searching collateral, enforcing permissions, and citing claims...</div>
+              <div className="role-label">Synthesizing</div>
+              <div className="loading-indicator">
+                Searching collateral, enforcing permissions, citing claims…
+              </div>
             </div>
           )}
         </div>
 
-        {/* Selected Citation Drawer */}
         {selectedCitation && (
           <div className="citation-drawer">
             <div className="drawer-head">
-              <h4>Citation Detail: {selectedCitation.citation}</h4>
-              <button onClick={() => setSelectedCitation(null)}>×</button>
+              <h4>{selectedCitation.citation}</h4>
+              <button type="button" onClick={() => setSelectedCitation(null)} aria-label="Close citation">
+                ×
+              </button>
             </div>
             <div className="drawer-content">
-              <div><strong>Document:</strong> {selectedCitation.document_title || "Unknown"}</div>
-              <div><strong>Vendor:</strong> {selectedCitation.vendor || "Internal"}</div>
-              <div><strong>Approval:</strong> {selectedCitation.approval_state || "Draft"}</div>
-              <div><strong>Freshness:</strong> {selectedCitation.is_stale ? "Overdue / Stale" : "Fresh"}</div>
-              {selectedCitation.page_number && <div><strong>Page:</strong> {selectedCitation.page_number}</div>}
-              {selectedCitation.slide_number && <div><strong>Slide:</strong> {selectedCitation.slide_number}</div>}
-              {selectedCitation.sheet_name && <div><strong>Sheet:</strong> {selectedCitation.sheet_name} ({selectedCitation.cell_range})</div>}
+              <strong>Document</strong>
+              <span>{selectedCitation.document_title || "Unknown"}</span>
+              <strong>Vendor</strong>
+              <span>{selectedCitation.vendor || "Internal"}</span>
+              <strong>Approval</strong>
+              <span>{selectedCitation.approval_state || "Draft"}</span>
+              <strong>Freshness</strong>
+              <span>{selectedCitation.is_stale ? "Overdue / stale" : "Fresh"}</span>
+              {selectedCitation.page_number && (
+                <>
+                  <strong>Page</strong>
+                  <span>{selectedCitation.page_number}</span>
+                </>
+              )}
+              {selectedCitation.slide_number && (
+                <>
+                  <strong>Slide</strong>
+                  <span>{selectedCitation.slide_number}</span>
+                </>
+              )}
+              {selectedCitation.sheet_name && (
+                <>
+                  <strong>Sheet</strong>
+                  <span>
+                    {selectedCitation.sheet_name} ({selectedCitation.cell_range})
+                  </span>
+                </>
+              )}
             </div>
           </div>
         )}
 
-        {/* Prompt Input */}
         <form onSubmit={handleSend} className="chat-input-form">
+          <label className="tools-toggle">
+            <input
+              type="checkbox"
+              checked={enableTools}
+              onChange={(e) => setEnableTools(e.target.checked)}
+            />
+            Tools (catalog + MCP)
+          </label>
           <input
             type="text"
             className="chat-input"
-            placeholder="Ask a question about products, compatibility, or RFP requirements..."
+            placeholder="Compatibility, SLA, RFP clause, upgrade path…"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             disabled={loading}
           />
           <button type="submit" className="primary" disabled={loading || !question.trim()}>
-            Send
+            Dispatch
           </button>
         </form>
       </main>

@@ -101,11 +101,18 @@ export function WorkflowWorkspace() {
             void gallery.refresh();
           }}
         >
-          ← Gallery
+          Index
         </button>
         <div>
+          <p className="kicker">Active run</p>
           <strong>{run?.playbook_slug ?? "Loading run"}</strong>
-          {run && <span className={`badge ${run.status === "succeeded" ? "ready" : run.status === "failed" ? "failed" : "processing"}`}>{run.status.replace("_", " ")}</span>}
+          {run && (
+            <span
+              className={`badge ${run.status === "succeeded" ? "ready" : run.status === "failed" ? "failed" : "processing"}`}
+            >
+              {run.status === "waiting_approval" ? "Waiting approval" : run.status.replace("_", " ")}
+            </span>
+          )}
         </div>
         <button onClick={() => void refresh()} disabled={loading}>
           Refresh
@@ -114,7 +121,7 @@ export function WorkflowWorkspace() {
       </div>
       {(error || gallery.error) && <div className="banner error">{error || gallery.error}</div>}
       {run?.error_message && <div className="banner error">{run.error_message}</div>}
-      {loading && !run && <p className="muted">Loading task tree…</p>}
+      {loading && !run && <p className="muted">Loading the run sheet…</p>}
       {run && (
         <TaskTree
           tasks={run.tasks}
@@ -124,7 +131,7 @@ export function WorkflowWorkspace() {
       )}
       {waiting && !hitlOpen && (
         <button className="primary" onClick={() => setHitlOpen(true)}>
-          Open HITL review
+          Open waiting-approval review
         </button>
       )}
       {hitlOpen && waiting && (

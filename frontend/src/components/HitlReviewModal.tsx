@@ -56,10 +56,10 @@ export function HitlReviewModal({ answers, canApprove, busy, onApprove, onReject
       <div className="modal-backdrop" onClick={onClose}>
         <div className="modal-card hitl-modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
-            <h3>HITL review</h3>
+            <h3>Waiting approval</h3>
             <button onClick={onClose}>Close</button>
           </div>
-          <p className="muted">No drafted answers to review.</p>
+          <p className="muted">No drafted answers on this gate.</p>
         </div>
       </div>
     );
@@ -70,7 +70,7 @@ export function HitlReviewModal({ answers, canApprove, busy, onApprove, onReject
       <div className="modal-card hitl-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>
-            HITL review {index + 1} / {drafts.length}
+            Waiting approval {index + 1} / {drafts.length}
           </h3>
           <button onClick={onClose} disabled={busy}>
             Close
@@ -162,7 +162,7 @@ export function HitlReviewModal({ answers, canApprove, busy, onApprove, onReject
             </button>
           </div>
         ) : (
-          <p className="hint">View only — solutions engineer role required to approve.</p>
+          <p className="hint">View only — solutions engineer stamp required to approve.</p>
         )}
       </div>
     </div>

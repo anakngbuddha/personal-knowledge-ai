@@ -54,6 +54,37 @@ class Settings(BaseSettings):
     tool_max_rounds: int = 1
     tool_max_calls_per_round: int = 4
 
+    # ------------------------------------------------------------- Phase 9 MCP
+    mcp_enabled: bool = False
+    mcp_credentials_key: str = ""
+    brave_api_key: str = ""
+    mcp_playwright_enabled: bool = False
+    mcp_ms365_enabled: bool = False
+    ms365_mcp_token: str = ""
+    mcp_call_timeout_seconds: float = 45.0
+    mcp_max_result_bytes: int = 32768
+    mcp_tool_max_rounds: int = 8
+
+    # ------------------------------------------------------------- Phase 10
+    notes_max_body_chars: int = 200_000
+    freshness_worker_enabled: bool = True
+    freshness_poll_seconds: float = 30.0
+    freshness_default_interval_seconds: int = 86_400
+    freshness_max_bytes: int = 2_000_000
+    restore_drill_sla_seconds: float = 300.0
+    sso_enabled: bool = False
+    sso_credentials_key: str = ""
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_audience: str = ""
+    oidc_redirect_uri: str = "http://localhost:8000/auth/oidc/callback"
+    saml_entity_id: str = ""
+    saml_acs_url: str = "http://localhost:8000/auth/saml/acs"
+    saml_idp_issuer: str = ""
+    saml_idp_secret: str = ""
+    saml_allow_unsigned: bool = False
+
     # Retrieval / ingestion knobs
     top_k: int = 8
     rrf_k: int = 60

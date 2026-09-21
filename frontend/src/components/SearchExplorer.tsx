@@ -36,23 +36,30 @@ export function SearchExplorer() {
 
   return (
     <div className="search-explorer">
+      <div className="stage-head">
+        <div>
+          <p className="kicker">05 · Evidence</p>
+          <h2>Hybrid search</h2>
+        </div>
+      </div>
+
       <form onSubmit={handleSearch} className="search-form">
         <div className="search-input-row">
           <input
             type="text"
             className="search-input"
-            placeholder="Search collateral across vector & keyword indices (e.g. 'hybrid cloud SLA')..."
+            placeholder="SLA clause, SKU conflict, upgrade path…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
           <button type="submit" className="primary" disabled={loading || !query.trim()}>
-            {loading ? "Searching..." : "Search"}
+            {loading ? "Searching…" : "Search"}
           </button>
         </div>
 
         <div className="search-controls">
           <div className="control-group">
-            <span className="control-label">Mode:</span>
+            <span className="control-label">Mode</span>
             <label className="radio-label">
               <input
                 type="radio"
@@ -69,7 +76,7 @@ export function SearchExplorer() {
                 checked={mode === "vector"}
                 onChange={() => setMode("vector")}
               />
-              Vector Only
+              Vector only
             </label>
             <label className="radio-label">
               <input
@@ -89,7 +96,7 @@ export function SearchExplorer() {
                 checked={approvedOnly}
                 onChange={(e) => setApprovedOnly(e.target.checked)}
               />
-              Approved Collateral Only
+              Approved collateral only
             </label>
             <label className="checkbox-label">
               <input
@@ -97,7 +104,7 @@ export function SearchExplorer() {
                 checked={excludeInjection}
                 onChange={(e) => setExcludeInjection(e.target.checked)}
               />
-              Exclude Injection-Flagged
+              Exclude injection-flagged
             </label>
           </div>
         </div>
@@ -105,27 +112,41 @@ export function SearchExplorer() {
 
       {error && <div className="banner error">{error}</div>}
 
+      {!result && !error && (
+        <div className="empty-desk">
+          <p className="kicker">Index</p>
+          <h3>Pull passages from the live index.</h3>
+          <p>
+            Approved-only is on by default — as it should be on a live deal. Expand a hit for the
+            full chunk, citation, and rank split.
+          </p>
+        </div>
+      )}
+
       {result && (
         <div className="search-results">
           <div className="search-stats">
             <span>
-              Found <strong>{result.candidate_count}</strong> candidates · Showing top{" "}
-              <strong>{result.hits.length}</strong> hits
+              {result.candidate_count} candidates · top {result.hits.length} shown
             </span>
             <div className="timing-badges">
-              <span className="timing-tag">Total: {result.timings_ms.total_ms}ms</span>
+              <span className="timing-tag">Total {result.timings_ms.total_ms}ms</span>
               {result.timings_ms.vector_ms !== undefined && (
-                <span className="timing-tag">Vector: {result.timings_ms.vector_ms}ms</span>
+                <span className="timing-tag">Vector {result.timings_ms.vector_ms}ms</span>
               )}
               {result.timings_ms.keyword_ms !== undefined && (
-                <span className="timing-tag">Keyword: {result.timings_ms.keyword_ms}ms</span>
+                <span className="timing-tag">Keyword {result.timings_ms.keyword_ms}ms</span>
               )}
-              <span className="timing-tag">RRF Fuse: {result.timings_ms.fuse_ms}ms</span>
+              <span className="timing-tag">RRF fuse {result.timings_ms.fuse_ms}ms</span>
             </div>
           </div>
 
           {result.hits.length === 0 ? (
-            <div className="empty-state">No matching passages found.</div>
+            <div className="empty-desk">
+              <p className="kicker">No match</p>
+              <h3>No passages survived the filter set.</h3>
+              <p>Widen the query, or drop approved-only if you are hunting drafts — knowing they are drafts.</p>
+            </div>
           ) : (
             <div className="hits-list">
               {result.hits.map((hit: SearchHit, idx: number) => {
@@ -135,15 +156,23 @@ export function SearchExplorer() {
                     key={hit.chunk_id}
                     className={`hit-card ${isExpanded ? "expanded" : ""}`}
                     onClick={() => setExpandedChunkId(isExpanded ? null : hit.chunk_id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setExpandedChunkId(isExpanded ? null : hit.chunk_id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
                   >
                     <div className="hit-header">
                       <div className="hit-title">
-                        <span className="rank-num">#{idx + 1}</span>
+                        <span className="rank-num">#{String(idx + 1).padStart(2, "0")}</span>
                         <strong>{hit.document_title || hit.original_filename}</strong>
                         <span className="citation-badge">{hit.citation}</span>
                       </div>
                       <div className="hit-scores">
-                        <span className="score-pill">RRF: {hit.rrf_score.toFixed(4)}</span>
+                        <span className="score-pill">RRF {hit.rrf_score.toFixed(4)}</span>
                         {hit.ranks.vector !== undefined && (
                           <span className="rank-pill">Vec #{hit.ranks.vector}</span>
                         )}
@@ -154,11 +183,9 @@ export function SearchExplorer() {
                     </div>
 
                     <div className="hit-provenance">
-                      {hit.vendor && <span className="prov-tag">Vendor: {hit.vendor}</span>}
+                      {hit.vendor && <span className="prov-tag">Vendor {hit.vendor}</span>}
                       {hit.approval_state && (
-                        <span className={`prov-tag ${hit.approval_state}`}>
-                          {hit.approval_state}
-                        </span>
+                        <span className={`prov-tag ${hit.approval_state}`}>{hit.approval_state}</span>
                       )}
                       {hit.is_stale ? (
                         <span className="prov-tag stale">Stale</span>
@@ -166,12 +193,11 @@ export function SearchExplorer() {
                         <span className="prov-tag fresh">Fresh</span>
                       )}
                       {hit.file_type && <span className="prov-tag">{hit.file_type}</span>}
+                      {hit.sensitivity && <span className="prov-tag">{hit.sensitivity}</span>}
                     </div>
 
                     <p className={`hit-snippet ${isExpanded ? "full" : ""}`}>{hit.text}</p>
-                    <div className="expand-hint">
-                      {isExpanded ? "Click to collapse" : "Click to view full passage"}
-                    </div>
+                    <div className="expand-hint">{isExpanded ? "Collapse passage" : "Expand passage"}</div>
                   </div>
                 );
               })}

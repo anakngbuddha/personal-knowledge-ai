@@ -36,7 +36,9 @@ export function TaskTree({ tasks, selectedSlug, onSelect }: Props) {
                 <span className="task-index">{index + 1}</span>
                 <span className="task-body">
                   <span className="task-name">{label(task.slug)}</span>
-                  <span className={`badge ${statusClass(task.status)}`}>{task.status.replace("_", " ")}</span>
+                  <span className={`badge ${statusClass(task.status)}`}>
+                    {task.status === "waiting_approval" ? "Waiting approval" : task.status.replace("_", " ")}
+                  </span>
                 </span>
               </button>
             </li>

@@ -229,7 +229,7 @@ def ask(
             context_chunks,
             system_prompt=prompt,
             history=history,
-            tools=default_definitions(),
+            tools=default_definitions(ctx),
             execute=_execute,
         )
     else:

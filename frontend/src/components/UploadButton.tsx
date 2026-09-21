@@ -34,8 +34,8 @@ export function UploadButton({ onUploaded, onError }: Props) {
 
   return (
     <>
-      <button className="primary" disabled={uploading} onClick={() => inputRef.current?.click()}>
-        {uploading ? "Uploading..." : "+ Upload File"}
+      <button type="button" className="primary" disabled={uploading} onClick={() => inputRef.current?.click()}>
+        {uploading ? "Filing…" : "File document"}
       </button>
       <input
         ref={inputRef}

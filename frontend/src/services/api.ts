@@ -1,7 +1,9 @@
 import type {
   AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk,
-  KnowledgeDocument, PlaybookListResponse, PrincipalProfile, RfpAnswerEdit, SearchResponse,
-  SourceMetadata, WorkflowRun, WorkflowRunListResponse,
+  FreshnessAlert, FreshnessAlertList, FreshnessCheck, KnowledgeDocument, McpIntegration,
+  McpIntegrationList, McpPingResult, NoteList, NoteRecord, PlaybookListResponse, PrincipalProfile,
+  RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus,
+  VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse,
 } from "../types";
 import { request, requestBlob } from "./http";
 
@@ -24,7 +26,7 @@ export const api = {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, mode: options?.mode ?? "hybrid", top_k: options?.top_k ?? 8, filters: options?.filters ?? {} }),
   }),
-  ask: (payload: { question: string; conversation_id?: string | null; exclude_document_ids?: string[]; filters?: Record<string, unknown> }) => request<AskResponse>("/ask", {
+  ask: (payload: { question: string; conversation_id?: string | null; exclude_document_ids?: string[]; filters?: Record<string, unknown>; enable_tools?: boolean }) => request<AskResponse>("/ask", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, stream: false }),
   }),
   listConversations: (limit = 20, offset = 0) => request<ConversationListResponse>(`/conversations?limit=${limit}&offset=${offset}`),
@@ -48,6 +50,12 @@ export const api = {
   startUpgradeImpact: (product: string, proposedVersion?: string) => request<WorkflowRun>("/workflows/upgrade-impact/run", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product, proposed_version: proposedVersion || null }),
   }),
+  listMcpIntegrations: () => request<McpIntegrationList>("/integrations/mcp"),
+  upsertMcpIntegration: (slug: string, body: { enabled: boolean; secret?: string; allowed_hosts?: string[]; http_url?: string | null }) =>
+    request<McpIntegration>(`/integrations/mcp/${encodeURIComponent(slug)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }),
+  testMcpIntegration: (slug: string) => request<McpPingResult>(`/integrations/mcp/${encodeURIComponent(slug)}/test`, { method: "POST" }),
   approveTask: (runId: string, slug: string, answers: RfpAnswerEdit[]) => request<WorkflowRun>(`/workflows/runs/${runId}/tasks/${encodeURIComponent(slug)}/approve`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers }),
   }),
@@ -55,4 +63,18 @@ export const api = {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
   }),
   downloadDeliverable: (runId: string) => requestBlob(`/workflows/runs/${runId}/deliverable`),
+  listNotes: (limit = 50, offset = 0) => request<NoteList>(`/notes?limit=${limit}&offset=${offset}`),
+  createNote: (body: { title: string; body: string; slug?: string }) =>
+    request<NoteRecord>("/notes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  updateNote: (id: string, body: { title?: string; body?: string }) =>
+    request<NoteRecord>(`/notes/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  listVendorSources: () => request<VendorSourceList>("/freshness/sources"),
+  createVendorSource: (body: { label: string; url: string }) =>
+    request<VendorSource>("/freshness/sources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  checkVendorSource: (id: string) => request<FreshnessCheck>(`/freshness/sources/${id}/check`, { method: "POST" }),
+  listFreshnessAlerts: () => request<FreshnessAlertList>("/freshness/alerts"),
+  ackFreshnessAlert: (id: string) => request<FreshnessAlert>(`/freshness/alerts/${id}/ack`, { method: "POST" }),
+  listRestoreDrills: () => request<RestoreDrillList>("/ops/restore-drills"),
+  runRestoreDrill: () => request<RestoreDrill>("/ops/restore-drills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }),
+  ssoStatus: () => request<SsoStatus>("/ops/sso"),
 };

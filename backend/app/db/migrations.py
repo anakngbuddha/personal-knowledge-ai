@@ -379,6 +379,147 @@ MIGRATIONS: list[tuple[str, list[str]]] = [
             "CREATE POLICY tenant_isolation_policy ON task_executions AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
         ],
     ),
+    (
+        "0013_mcp_integrations",
+        [
+            "CREATE TABLE IF NOT EXISTS mcp_integrations ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "server_slug varchar(32) NOT NULL, "
+            "enabled boolean NOT NULL DEFAULT false, "
+            "config jsonb, "
+            "secret_ciphertext bytea, "
+            "status varchar(32) NOT NULL DEFAULT 'disconnected', "
+            "last_error text, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "updated_at timestamptz NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_mcp_integrations_org_slug ON mcp_integrations (org_id, server_slug)",
+            "CREATE INDEX IF NOT EXISTS ix_mcp_integrations_org_id ON mcp_integrations (org_id)",
+            "ALTER TABLE mcp_integrations ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE mcp_integrations FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON mcp_integrations",
+            "CREATE POLICY tenant_isolation_policy ON mcp_integrations AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+        ],
+    ),
+    (
+        "0014_phase10_notes_freshness_sso",
+        [
+            "CREATE TABLE IF NOT EXISTS notes ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, "
+            "title varchar(512) NOT NULL, "
+            "slug varchar(128) NOT NULL, "
+            "body text NOT NULL DEFAULT '', "
+            "created_by uuid, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "updated_at timestamptz NOT NULL DEFAULT now(), "
+            "CONSTRAINT uq_notes_workspace_slug UNIQUE (workspace_id, slug))",
+            "CREATE INDEX IF NOT EXISTS ix_notes_org_id ON notes (org_id)",
+            "CREATE INDEX IF NOT EXISTS ix_notes_workspace_id ON notes (workspace_id)",
+            "CREATE TABLE IF NOT EXISTS note_links ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "note_id uuid NOT NULL REFERENCES notes(id) ON DELETE CASCADE, "
+            "target_kind varchar(16) NOT NULL, "
+            "target_ref varchar(255) NOT NULL, "
+            "display_text varchar(512), "
+            "resolved boolean NOT NULL DEFAULT false, "
+            "resolved_id uuid, "
+            "CONSTRAINT ck_note_links_target_kind CHECK (target_kind IN ('product', 'account', 'note')))",
+            "CREATE INDEX IF NOT EXISTS ix_note_links_note_id ON note_links (note_id)",
+            "CREATE INDEX IF NOT EXISTS ix_note_links_target ON note_links (org_id, target_kind, target_ref)",
+            "CREATE TABLE IF NOT EXISTS vendor_sources ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, "
+            "product_id uuid REFERENCES products(id) ON DELETE SET NULL, "
+            "label varchar(255) NOT NULL, "
+            "url text NOT NULL, "
+            "enabled boolean NOT NULL DEFAULT true, "
+            "check_interval_seconds integer NOT NULL DEFAULT 86400, "
+            "status varchar(16) NOT NULL DEFAULT 'pending', "
+            "last_hash varchar(64), "
+            "last_etag varchar(255), "
+            "last_modified_header varchar(255), "
+            "last_checked_at timestamptz, "
+            "next_check_at timestamptz NOT NULL DEFAULT now(), "
+            "last_error text, "
+            "locked_by varchar(128), "
+            "locked_at timestamptz, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "updated_at timestamptz NOT NULL DEFAULT now(), "
+            "CONSTRAINT uq_vendor_sources_workspace_url UNIQUE (workspace_id, url))",
+            "CREATE INDEX IF NOT EXISTS ix_vendor_sources_org_id ON vendor_sources (org_id)",
+            "CREATE INDEX IF NOT EXISTS ix_vendor_sources_claim ON vendor_sources (enabled, status, next_check_at)",
+            "CREATE TABLE IF NOT EXISTS freshness_alerts ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "vendor_source_id uuid NOT NULL REFERENCES vendor_sources(id) ON DELETE CASCADE, "
+            "kind varchar(32) NOT NULL DEFAULT 'content_changed', "
+            "previous_hash varchar(64), "
+            "new_hash varchar(64), "
+            "acknowledged_at timestamptz, "
+            "acknowledged_by uuid, "
+            "details jsonb, "
+            "created_at timestamptz NOT NULL DEFAULT now())",
+            "CREATE INDEX IF NOT EXISTS ix_freshness_alerts_org_id ON freshness_alerts (org_id)",
+            "CREATE INDEX IF NOT EXISTS ix_freshness_alerts_open ON freshness_alerts (org_id, acknowledged_at)",
+            "CREATE TABLE IF NOT EXISTS restore_drills ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "status varchar(16) NOT NULL DEFAULT 'running', "
+            "sla_seconds float NOT NULL DEFAULT 300.0, "
+            "duration_seconds float, "
+            "within_sla boolean, "
+            "row_counts_before jsonb, "
+            "row_counts_after jsonb, "
+            "triggered_by uuid, "
+            "error_message text, "
+            "started_at timestamptz NOT NULL DEFAULT now(), "
+            "finished_at timestamptz)",
+            "CREATE INDEX IF NOT EXISTS ix_restore_drills_org_id ON restore_drills (org_id)",
+            "CREATE TABLE IF NOT EXISTS sso_providers ("
+            "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, "
+            "protocol varchar(16) NOT NULL DEFAULT 'oidc', "
+            "enabled boolean NOT NULL DEFAULT false, "
+            "issuer varchar(512) NOT NULL, "
+            "client_id varchar(255), "
+            "audience varchar(255), "
+            "secret_ciphertext bytea, "
+            "metadata jsonb, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "updated_at timestamptz NOT NULL DEFAULT now(), "
+            "CONSTRAINT uq_sso_providers_org_protocol UNIQUE (org_id, protocol), "
+            "CONSTRAINT ck_sso_providers_protocol CHECK (protocol IN ('oidc', 'saml')))",
+            "CREATE INDEX IF NOT EXISTS ix_sso_providers_org_id ON sso_providers (org_id)",
+            "ALTER TABLE notes ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE notes FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON notes",
+            "CREATE POLICY tenant_isolation_policy ON notes AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            "ALTER TABLE note_links ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE note_links FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON note_links",
+            "CREATE POLICY tenant_isolation_policy ON note_links AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            "ALTER TABLE vendor_sources ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE vendor_sources FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON vendor_sources",
+            "CREATE POLICY tenant_isolation_policy ON vendor_sources AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            "ALTER TABLE freshness_alerts ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE freshness_alerts FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON freshness_alerts",
+            "CREATE POLICY tenant_isolation_policy ON freshness_alerts AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            "ALTER TABLE restore_drills ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE restore_drills FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON restore_drills",
+            "CREATE POLICY tenant_isolation_policy ON restore_drills AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+            "ALTER TABLE sso_providers ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE sso_providers FORCE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS tenant_isolation_policy ON sso_providers",
+            "CREATE POLICY tenant_isolation_policy ON sso_providers AS PERMISSIVE FOR ALL USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)",
+        ],
+    ),
 ]
 
 
@@ -413,6 +554,8 @@ def run_migrations(engine: Engine) -> list[str]:
                         continue
                     if "GEN_RANDOM_UUID()" in upper:
                         statement = statement.replace("gen_random_uuid()", "lower(hex(randomblob(16)))")
+                    if "BYTEA" in upper:
+                        statement = statement.replace("bytea", "BLOB").replace("BYTEA", "BLOB")
                 conn.execute(text(statement))
             conn.execute(
                 text("INSERT INTO schema_migrations (name) VALUES (:name) "

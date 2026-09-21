@@ -8,7 +8,7 @@ conversational, **citable** knowledge base.
 **Current state: V1 / Phase 1 complete (project setup + document ingestion).**
 Upload a PDF, TXT, or DOCX and it becomes structured, embedded, full-text-indexed chunks
 with page and section metadata intact. Retrieval, grounded generation, and evaluation are
-next. See **[STATUS.md](STATUS.md)** for the exact done / not-done line.
+next. See **[STATUS.md](STATUS.md)** for the exact done / not-done line, and **[USER_GUIDE.md](USER_GUIDE.md)** for how to use the Field Desk.
 
 ---
 

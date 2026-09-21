@@ -13,18 +13,18 @@ import {
 
 /* ── Colour Palette ──────────────────────────────────────────────────── */
 const EDGE_COLORS: Record<string, string> = {
-  requires: "#f59e0b",
-  integrates_with: "#34d399",
-  conflicts_with: "#ef4444",
-  replaces: "#a78bfa",
-  bundles_with: "#60a5fa",
-  alternative_to: "#22d3ee",
-  migrates_to: "#fb923c",
+  requires: "#d4a056",
+  integrates_with: "#4f8a62",
+  conflicts_with: "#d64532",
+  replaces: "#c4b89d",
+  bundles_with: "#8a8170",
+  alternative_to: "#7a9e8a",
+  migrates_to: "#c47a3a",
 };
 
 const OWNERSHIP_COLORS: Record<string, string> = {
-  own: "#818cf8",
-  resold: "#34d399",
+  own: "#c9a227",
+  resold: "#4f8a62",
 };
 
 /* ── Force-simulation helpers ────────────────────────────────────────── */
@@ -224,7 +224,8 @@ export function GraphExplorer() {
       const px = panRef.current.x;
       const py = panRef.current.y;
       ctx.save();
-      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = "#0c0a07";
+      ctx.fillRect(0, 0, W, H);
       ctx.translate(px, py);
       ctx.scale(z, z);
 
@@ -264,49 +265,42 @@ export function GraphExplorer() {
         ctx.stroke();
       }
 
-      // Nodes
+      // Nodes — square stamps, not bubbles
       for (const n of sim) {
         const isSelected = n.id === selectedNodeId;
-        const radius = isSelected ? 20 : 14;
-        const color = OWNERSHIP_COLORS[n.ownership] ?? "#818cf8";
+        const radius = isSelected ? 16 : 11;
+        const color = OWNERSHIP_COLORS[n.ownership] ?? "#c9a227";
 
-        // Glow
         if (isSelected) {
-          ctx.beginPath();
-          ctx.arc(n.x, n.y, radius + 6, 0, Math.PI * 2);
-          const grad = ctx.createRadialGradient(n.x, n.y, radius, n.x, n.y, radius + 6);
-          grad.addColorStop(0, color + "80");
-          grad.addColorStop(1, color + "00");
-          ctx.fillStyle = grad;
-          ctx.fill();
+          ctx.strokeStyle = "#ece4d4";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(n.x - radius - 4, n.y - radius - 4, (radius + 4) * 2, (radius + 4) * 2);
         }
 
-        // Circle
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = isSelected ? color : color + "cc";
-        ctx.fill();
-        ctx.strokeStyle = isSelected ? "#fff" : color;
-        ctx.lineWidth = isSelected ? 2 : 1;
-        ctx.stroke();
+        ctx.fillStyle = color;
+        ctx.fillRect(n.x - radius, n.y - radius, radius * 2, radius * 2);
+        ctx.strokeStyle = isSelected ? "#ece4d4" : "#0e0c09";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(n.x - radius, n.y - radius, radius * 2, radius * 2);
 
-        // Label
-        ctx.fillStyle = "#e6e8ee";
-        ctx.font = `${isSelected ? "bold " : ""}${isSelected ? 11 : 9}px ui-sans-serif, system-ui, sans-serif`;
+        ctx.fillStyle = "#ece4d4";
+        ctx.font = `${isSelected ? "500 " : "400 "}${isSelected ? 11 : 9}px "IBM Plex Mono", ui-monospace, monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         const label = n.name.length > 18 ? n.name.slice(0, 16) + "…" : n.name;
-        ctx.fillText(label, n.x, n.y + radius + 4);
+        ctx.fillText(label, n.x, n.y + radius + 5);
 
-        // Ownership badge for resold
         if (n.ownership === "resold") {
-          ctx.fillStyle = "#065f46";
-          const bw = 24;
-          const bh = 10;
-          ctx.fillRect(n.x - bw / 2, n.y - radius - 12, bw, bh);
-          ctx.fillStyle = "#34d399";
-          ctx.font = "bold 7px ui-sans-serif, sans-serif";
-          ctx.fillText("resold", n.x, n.y - radius - 11);
+          ctx.fillStyle = "#0e0c09";
+          const bw = 36;
+          const bh = 11;
+          ctx.fillRect(n.x - bw / 2, n.y - radius - 14, bw, bh);
+          ctx.strokeStyle = "#4f8a62";
+          ctx.strokeRect(n.x - bw / 2, n.y - radius - 14, bw, bh);
+          ctx.fillStyle = "#4f8a62";
+          ctx.font = "500 8px \"IBM Plex Mono\", ui-monospace, monospace";
+          ctx.textBaseline = "middle";
+          ctx.fillText("RESOLD", n.x, n.y - radius - 8);
         }
       }
 
@@ -462,8 +456,9 @@ export function GraphExplorer() {
   if (loading) {
     return (
       <div className="graph-loading">
+        <p className="kicker">03 · Catalog</p>
         <div className="graph-spinner" />
-        <p>Loading Product Graph…</p>
+        <p>Loading product graph…</p>
       </div>
     );
   }
@@ -471,7 +466,11 @@ export function GraphExplorer() {
   if (error) {
     return (
       <div className="graph-error">
-        <p>{error}</p>
+        <div className="empty-desk">
+          <p className="kicker">03 · Catalog</p>
+          <h3>Graph unreachable.</h3>
+          <p>{error}</p>
+        </div>
         <button className="primary" onClick={fetchGraph}>
           Retry
         </button>
@@ -517,11 +516,11 @@ export function GraphExplorer() {
         </div>
 
         <div className="toolbar-actions">
-          <button onClick={runHealthCheck}>
-            <span className="btn-icon">🩺</span> Graph Health
+          <button type="button" onClick={runHealthCheck}>
+            Integrity check
           </button>
-          <button onClick={() => setShowCuration(!showCuration)}>
-            <span className="btn-icon">🤖</span> AI Curation ({pendingEdges.length})
+          <button type="button" onClick={() => setShowCuration(!showCuration)}>
+            Curation queue ({pendingEdges.length})
           </button>
         </div>
       </div>
@@ -542,7 +541,7 @@ export function GraphExplorer() {
             onWheel={handleWheel}
           />
           <div className="graph-legend">
-            <span className="legend-title">Legend</span>
+            <span className="legend-title">Key</span>
             <span className="legend-item">
               <span className="legend-circle" style={{ background: OWNERSHIP_COLORS.own }} /> Own
             </span>
@@ -677,7 +676,7 @@ export function GraphExplorer() {
 
             <div className="drawer-section">
               <button className="primary" onClick={() => runImpactQuery(selectedNodeId!)}>
-                🔍 What does this require &amp; break?
+                Trace impact
               </button>
             </div>
 
@@ -727,7 +726,7 @@ export function GraphExplorer() {
         <div className="modal-backdrop" onClick={() => setShowHealth(false)}>
           <div className="modal-card health-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Graph Health &amp; Coverage</h3>
+              <h3>Graph integrity</h3>
               <button className="drawer-close" onClick={() => setShowHealth(false)}>
                 ✕
               </button>
@@ -737,7 +736,7 @@ export function GraphExplorer() {
                 <h4>
                   Integrity{" "}
                   <span className={`health-badge ${integrity.is_valid ? "pass" : "fail"}`}>
-                    {integrity.is_valid ? "✓ Valid" : "✗ Issues Found"}
+                    {integrity.is_valid ? "Valid" : "Issues found"}
                   </span>
                 </h4>
                 {integrity.cycle_detected && (
@@ -786,7 +785,7 @@ export function GraphExplorer() {
                   </div>
                 )}
                 <div className={`exit-badge ${coverage.exit_criteria_met ? "met" : ""}`}>
-                  Exit Criteria: {coverage.exit_criteria_met ? "✓ Met" : "✗ Not Met"}
+                  Exit criteria: {coverage.exit_criteria_met ? "Met" : "Not met"}
                 </div>
               </div>
             )}
@@ -798,7 +797,7 @@ export function GraphExplorer() {
       {showCuration && (
         <div className="curation-drawer">
           <div className="curation-header">
-            <h3>AI Edge Curation</h3>
+            <h3>Edge curation</h3>
             <div className="curation-actions">
               <button onClick={triggerSuggest}>Suggest Edges</button>
               <button className="drawer-close" onClick={() => setShowCuration(false)}>
@@ -807,7 +806,7 @@ export function GraphExplorer() {
             </div>
           </div>
           {pendingEdges.length === 0 ? (
-            <p className="curation-empty">No pending suggestions.</p>
+            <p className="curation-empty">No edges waiting a stamp. Suggest from catalog evidence, then approve or reject.</p>
           ) : (
             <div className="curation-list">
               {pendingEdges.map((edge) => (
@@ -827,10 +826,10 @@ export function GraphExplorer() {
                   </div>
                   <div className="curation-btns">
                     <button className="approve-btn" onClick={() => approveEdge(edge.id)}>
-                      ✓ Approve
+                      Approve
                     </button>
                     <button className="reject-btn" onClick={() => rejectEdge(edge.id)}>
-                      ✗ Reject
+                      Reject
                     </button>
                   </div>
                 </div>

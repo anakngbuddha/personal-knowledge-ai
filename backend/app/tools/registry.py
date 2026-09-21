@@ -145,12 +145,21 @@ _TOOLS: dict[str, RegisteredTool] = {
 }
 
 
-def default_definitions() -> list[ToolDefinition]:
-    return [_definition(tool) for tool in _TOOLS.values()]
+def default_definitions(ctx: ToolContext | None = None) -> list[ToolDefinition]:
+    native = [_definition(tool) for tool in _TOOLS.values()]
+    if ctx is None:
+        return native
+    from app.mcp.registry_bridge import mcp_definitions_for
+
+    return native + mcp_definitions_for(ctx)
 
 
 def execute_tool(call: ToolCall, ctx: ToolContext) -> ToolResult:
     """Execute one allowlisted tool. Unknown names and invalid args become errors."""
+    if call.name.startswith("mcp_"):
+        from app.mcp.registry_bridge import execute_mcp_tool
+
+        return execute_mcp_tool(call, ctx)
     tool = _TOOLS.get(call.name)
     if tool is None:
         return ToolResult(

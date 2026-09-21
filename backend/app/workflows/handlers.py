@@ -70,3 +70,23 @@ def fixture_gate(ctx: HandlerContext, payload: dict[str, Any]) -> dict[str, Any]
 
 import app.playbooks.rfp  # noqa: E402,F401 - register rfp.* handlers
 import app.playbooks.phase8  # noqa: E402,F401 - register phase 8 handlers
+
+
+@register("mcp.web_search")
+def mcp_web_search(ctx: HandlerContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """Optional playbook step: Brave Search via the MCP allowlist."""
+    from app.mcp.registry_bridge import execute_mcp_tool
+    from app.tools.registry import ToolContext
+    from app.tools.schema import ToolCall
+
+    query = str(payload.get("query") or "").strip()
+    if not query:
+        return {"error": "query is required"}
+    tool_ctx = ToolContext(db=ctx.db, principal=ctx.principal, workspace_id=ctx.run.workspace_id)
+    result = execute_mcp_tool(
+        ToolCall(id="wf-brave", name="mcp_brave_web_search", arguments={"query": query}),
+        tool_ctx,
+    )
+    if result.error:
+        return {"error": result.error}
+    return result.content or {}

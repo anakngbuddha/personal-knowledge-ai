@@ -3,25 +3,126 @@ import { ChunkInspector } from "./components/ChunkInspector";
 import { DocumentList } from "./components/DocumentList";
 import { GraphExplorer } from "./components/GraphExplorer";
 import { GroundedChat } from "./components/GroundedChat";
+import { IntegrationsPanel } from "./components/IntegrationsPanel";
+import { NotesPanel } from "./components/NotesPanel";
+import { OpsPanel } from "./components/OpsPanel";
 import { SearchExplorer } from "./components/SearchExplorer";
 import { UploadButton } from "./components/UploadButton";
 import { WorkflowWorkspace } from "./components/WorkflowWorkspace";
 import { useDocuments } from "./hooks/useDocuments";
+import { usePrincipal } from "./hooks/useWorkflows";
 import { apiPointsAtLocalhostFromRemote } from "./services/http";
 
+type Tab = "documents" | "search" | "chat" | "graph" | "workflows" | "integrations" | "notes" | "ops";
+
+const TABS: { id: Tab; num: string; kicker: string; name: string }[] = [
+  { id: "workflows", num: "01", kicker: "Playbooks", name: "Field runs" },
+  { id: "integrations", num: "02", kicker: "Connectors", name: "MCP stations" },
+  { id: "graph", num: "03", kicker: "Catalog", name: "Product graph" },
+  { id: "chat", num: "04", kicker: "Desk", name: "Grounded ask" },
+  { id: "search", num: "05", kicker: "Evidence", name: "Hybrid search" },
+  { id: "documents", num: "06", kicker: "Dossier", name: "Collateral" },
+  { id: "notes", num: "07", kicker: "Ledger", name: "Field notes" },
+  { id: "ops", num: "08", kicker: "Watch", name: "Freshness & drills" },
+];
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"documents" | "search" | "chat" | "graph" | "workflows">("workflows");
+  const [activeTab, setActiveTab] = useState<Tab>("workflows");
   const { documents, loading, error, refresh, setError } = useDocuments();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  return <div className="app">
-    <header className="topbar"><div className="brand"><h1>Solution Engineering Knowledge Workspace</h1><span className="phase">Phase 8 · HLD/BOM, incident triage &amp; upgrade impact</span></div><nav className="nav-tabs">
-      {(["workflows", "graph", "chat", "search", "documents"] as const).map((tab) => <button key={tab} className={`tab-btn ${activeTab === tab ? "active" : ""}`} onClick={() => setActiveTab(tab)}>{tab === "workflows" ? "Workflows (P8)" : tab === "graph" ? "Product Graph (P4)" : tab === "chat" ? "Grounded Chat (P3)" : tab === "search" ? "Hybrid Search (P2)" : "Documents (P1)"}</button>)}
-    </nav></header>
-    {apiPointsAtLocalhostFromRemote() && <div className="banner error">This build is not pointed at the backend. Set <code>VITE_API_BASE_URL</code> and <code>CORS_ORIGINS</code>, then redeploy.</div>}
-    {error && activeTab === "documents" && <div className="banner error">{error}</div>}
-    <main className="content-container">
-      {activeTab === "workflows" && <WorkflowWorkspace />}{activeTab === "graph" && <GraphExplorer />}{activeTab === "chat" && <GroundedChat />}{activeTab === "search" && <SearchExplorer />}
-      {activeTab === "documents" && <div className="layout"><section className="panel documents"><div className="panel-head"><h2>Documents ({documents.length})</h2><UploadButton onUploaded={refresh} onError={setError} /></div><DocumentList documents={documents} loading={loading} selectedId={selectedId} onSelect={setSelectedId} onChanged={refresh} onError={setError} /></section><section className="panel workspace"><div className="panel-head"><h2>Chunks &amp; Metadata</h2></div><ChunkInspector documentId={selectedId} /></section></div>}
-    </main>
-  </div>;
+  const principal = usePrincipal();
+  const active = TABS.find((t) => t.id === activeTab) ?? TABS[0];
+
+  return (
+    <div className="app">
+      <header className="masthead">
+        <div className="brand">
+          <span className="brand-kicker">Solutions engineering</span>
+          <h1>Field Desk</h1>
+        </div>
+        <div className="mast-meta">
+          <span className="stamp">P10 · Notes · Watch · SSO</span>
+          <span className="org-chip">
+            Org <strong>{principal?.org_id || "—"}</strong>
+          </span>
+          <span className="org-chip">
+            Role <strong>{principal?.role || "pending"}</strong>
+          </span>
+        </div>
+      </header>
+
+      <div className="desk">
+        <nav className="field-index" aria-label="Field kit">
+          <span className="index-label">Index</span>
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`index-item ${activeTab === tab.id ? "active" : ""}`}
+              aria-current={activeTab === tab.id ? "page" : undefined}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <span className="index-num">{tab.num}</span>
+              <span className="index-copy">
+                <span className="index-kicker">{tab.kicker}</span>
+                <span className="index-name">{tab.name}</span>
+              </span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="desk-body">
+          {apiPointsAtLocalhostFromRemote() && (
+            <div className="banner error">
+              This build is not pointed at the backend. Set <code>VITE_API_BASE_URL</code> and{" "}
+              <code>CORS_ORIGINS</code>, then redeploy.
+            </div>
+          )}
+          {error && activeTab === "documents" && <div className="banner error">{error}</div>}
+
+          <main className="content-container">
+            {activeTab === "workflows" && <WorkflowWorkspace />}
+            {activeTab === "integrations" && <IntegrationsPanel />}
+            {activeTab === "graph" && <GraphExplorer />}
+            {activeTab === "chat" && <GroundedChat />}
+            {activeTab === "search" && <SearchExplorer />}
+            {activeTab === "notes" && <NotesPanel />}
+            {activeTab === "ops" && <OpsPanel />}
+            {activeTab === "documents" && (
+              <div className="layout">
+                <section className="panel documents">
+                  <div className="panel-head">
+                    <div>
+                      <p className="kicker">
+                        {active.num} · {active.kicker}
+                      </p>
+                      <h2>Collateral ({documents.length})</h2>
+                    </div>
+                    <UploadButton onUploaded={refresh} onError={setError} />
+                  </div>
+                  <DocumentList
+                    documents={documents}
+                    loading={loading}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                    onChanged={refresh}
+                    onError={setError}
+                  />
+                </section>
+                <section className="panel workspace">
+                  <div className="panel-head">
+                    <div>
+                      <p className="kicker">Inspect</p>
+                      <h2>Chunks &amp; metadata</h2>
+                    </div>
+                  </div>
+                  <ChunkInspector documentId={selectedId} />
+                </section>
+              </div>
+            )}
+          </main>
+        </div>
+      </div>
+    </div>
+  );
 }

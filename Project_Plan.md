@@ -18,7 +18,7 @@ Rev 4 grounds the architecture directly in the codebase following a comprehensiv
 | **Scale, Year One** | **~20 products, ~50 documents, ~50 users** | Dense, high-accuracy bar. One PostgreSQL instance with pgvector. Focus on graph accuracy and workflow precision rather than distributed cluster engineering. |
 | **Task Execution Engine** | **Durable PostgreSQL Queue Substrate** | Generalize `app/jobs/queue.py` into a dependency-aware `task_executions` table using `SELECT FOR UPDATE SKIP LOCKED`. No in-process async DAG runner; crash and restart survival come free. |
 | **Human-in-the-Loop (HITL)** | **Database Status (`waiting_approval`)** | Pausing at approval gates is a row state, not an in-memory process. Resume is an `UPDATE` endpoint. Runs survive server restarts and multi-day pauses by construction. |
-| **Tool Calling Standard** | **Native Python Tool Functions (Phases 5–8)** | Implement tool calling in `LLMProvider` directly using Python functions (`python-docx`, existing SSRF-safe fetcher, catalog graph queries). Defer MCP JSON-RPC protocol overhead until external 3rd-party servers justify it (Phase 9). |
+| **Tool Calling Standard** | **Native Python tools (Phases 5–8) + MCP client (Phase 9)** | Catalog/retrieval stay in-process Python functions. Phase 9 adds a sandboxed MCP client for Playwright, Microsoft 365 Graph, and Brave Search. |
 
 ---
 
@@ -80,8 +80,8 @@ A high-assurance **Agentic Operating System and Knowledge Workspace** for enterp
 | **6.5**| **Golden Scenario Evaluation Set** | Planned | 6 | 20 real past RFPs scored against known-good solutions (the ultimate trust gate) |
 | **7** | **Workflow Workspace UI & Task Tree** | Planned | 6 | Execution cockpit, task progress visualizer, step logs, HITL decision modal |
 | **8** | **Solution Composer & Post-Sales Playbooks** | Planned | 6.5, 7 | Discovery-to-HLD composer, BOM generator, incident triage runbook |
-| **9** | **Model Context Protocol (MCP) Integration** | Deferred | 8 | Add MCP client when external third-party servers (Jira, ServiceNow, GitHub) justify it |
-| **10**| **Notes, Freshness & Enterprise Hardening** | Planned | 8 | SE tribal notes (`[[wikilinks]]`), upstream vendor doc monitoring, capacity drills |
+| **9** | **Model Context Protocol (MCP) Integration** | **Done** | 8 | First-party MCP client for Playwright, Microsoft 365 Graph, and Brave Search (not Jira/ServiceNow/GitHub) |
+| **10**| **Notes, Freshness & Enterprise Hardening** | **Done** | 8 | SE tribal notes (`[[wikilinks]]`), upstream vendor doc monitoring, capacity drills |
 
 *\*Note: Phases 2 and 3 code is fully implemented, but formal sign-off requires the empirical baseline in Phase 4.5.*
 
@@ -267,13 +267,19 @@ Extending the proven engine to High-Level Design (HLD) generation and post-sales
 
 ## Phase 9: Model Context Protocol (MCP) Integration
 
-Adding external tool protocol support when justified by external systems.
+First-party MCP client for SE-relevant external tools, wired into the Phase 5a Python tool loop.
 
 **Scope**
-- Integrate standard JSON-RPC MCP client to connect external servers maintained by third parties (e.g. Jira issue tracking, ServiceNow CMDB, GitHub repo search).
-- Tool sandboxing and tenant-scoped credential management.
+- JSON-RPC MCP client (official Python SDK) with stdio (`npx`) and Streamable HTTP transports.
+- Starting servers (not Jira / ServiceNow / GitHub):
+  1. Playwright (`@playwright/mcp`) — public documentation sites, vendor portals, web forms (headless, SSRF-gated).
+  2. Microsoft 365 / Graph (`@softeria/ms-365-mcp-server`, read-only) — Outlook, OneDrive/SharePoint, Excel, calendar, contacts.
+  3. Brave Search (`@brave/brave-search-mcp-server`) — live web and news search.
+- Tool sandbox: name allowlists, result size caps, `wrap_untrusted`, Playwright URL checks via `app/net/ssrf.py`.
+- Tenant-scoped `mcp_integrations` rows with Fernet-encrypted secrets and PostgreSQL RLS.
+- Admin Integrations API/UI; Grounded Chat `enable_tools` toggle.
 
-**Exit:** agent executes a task that queries an external Jira MCP server for open escalation tickets during incident triage.
+**Exit:** `/ask` with tools can Brave-search, Playwright-snapshot a public docs page, and Graph-search files. Unit tests use a Fake MCP client and never spawn browsers.
 
 ---
 

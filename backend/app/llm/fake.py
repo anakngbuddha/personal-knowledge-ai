@@ -26,6 +26,7 @@ from app.llm.prompts import PROMPT_VERSION
 from app.tools.schema import ToolCall, ToolDefinition, ToolResult
 
 _TOOL_KEYWORDS = ("prerequisite", "conflict", "deploy", "requires")
+_MCP_KEYWORDS = ("search the web", "brave", "vendor docs", "playwright")
 
 
 class FakeLLMProvider(LLMProvider):
@@ -188,7 +189,7 @@ class FakeLLMProvider(LLMProvider):
 
 def _wants_tools(question: str) -> bool:
     lowered = question.lower()
-    return any(keyword in lowered for keyword in _TOOL_KEYWORDS)
+    return any(keyword in lowered for keyword in _TOOL_KEYWORDS + _MCP_KEYWORDS)
 
 
 def _extract_product(question: str) -> str:
@@ -225,6 +226,12 @@ def _fake_tool_calls(question: str, tools: list[ToolDefinition]) -> list[ToolCal
                 arguments={"product": product},
             )
         )
+    if not calls and any(keyword in lowered for keyword in _MCP_KEYWORDS):
+        for candidate in ("mcp_brave_web_search", "mcp_playwright_browser_navigate"):
+            if candidate in offered:
+                args = {"query": question[:500]} if "brave" in candidate else {"url": "https://example.com"}
+                calls.append(ToolCall(id=f"call_{candidate}", name=candidate, arguments=args))
+                break
     if not calls and "tool_hybrid_search" in offered:
         calls.append(
             ToolCall(
