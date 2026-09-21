@@ -10,7 +10,22 @@ Rules kept intentionally simple until the evaluation set says otherwise:
 
 Changed from the previous build: the grouping key was `(page_number, section_title)`,
 which collapsed every slide, sheet range, and heading path into "no page, no
-section" for the formats added in this phase. It is now the full anchor.
+section" for the formats added in that phase. It is now the full anchor.
+
+Added in 2.3, three things that all come from the same observation: a chunk that lost
+its surroundings answers badly.
+
+1. **Tables stay whole.** A spec sheet or price table split mid-row produces chunks
+   where the header says one thing and the numbers belong to something else, which is
+   the single worst failure mode for a salesperson quoting a spec. A table-shaped
+   anchor group is emitted as one chunk up to `chunk_table_max_multiple` x chunk size,
+   and only falls back to windowing past that.
+2. **Every child names its section.** The heading is prefixed to the child text, so
+   keyword search can match "Licensing" even when the sentence never repeats the word.
+3. **Parent and child.** The child is what gets embedded and matched; the parent is the
+   whole anchor group, carried alongside so generation can prompt with the full section
+   after matching on the narrow piece. The parent lives in chunk metadata rather than a
+   new column, which keeps this change migration-free.
 """
 
 from __future__ import annotations
@@ -30,6 +45,12 @@ class Chunk:
     start_offset: int
     end_offset: int
     anchor: Anchor = Anchor()
+    # 2.3: the whole anchor group this child came from. Empty when parent/child is off
+    # or when the child already is the whole group.
+    parent_text: str = ""
+    parent_index: int = 0
+    is_table: bool = False
+    heading: str | None = None
 
     # Flat accessors so callers (and the ORM mapping) do not have to reach through
     # the anchor for the two fields that existed before this phase.
@@ -75,6 +96,7 @@ def chunk_blocks(
     chunks: list[Chunk] = []
     offset = 0
     index = 0
+    group_index = 0
 
     for _, group in groupby(blocks, key=lambda block: block.anchor.key()):
         members = list(group)
@@ -82,23 +104,87 @@ def chunk_blocks(
         text = "\n\n".join(block.text.strip() for block in members if block.text.strip())
         if not text:
             continue
-        for start, end in _windows(text, size, overlap):
+
+        heading = _heading_for(anchor)
+        table_like = _looks_like_table(anchor, text)
+        keep_whole = (
+            table_like
+            and settings.chunk_keep_tables_whole
+            and len(text) <= size * max(1, settings.chunk_table_max_multiple)
+        )
+        windows = [(0, len(text))] if keep_whole else _windows(text, size, overlap)
+
+        for start, end in windows:
             piece = text[start:end].strip()
             if not piece:
                 continue
+            body = _with_heading(heading, piece)
+            # A child that already is the whole group has no parent to add.
+            parent = "" if (start, end) == (0, len(text)) else text
             chunks.append(
                 Chunk(
-                    text=piece,
+                    text=body,
                     chunk_index=index,
                     start_offset=offset + start,
                     end_offset=offset + end,
                     anchor=anchor,
+                    parent_text=parent if settings.chunk_parent_child_enabled else "",
+                    parent_index=group_index,
+                    is_table=table_like,
+                    heading=heading,
                 )
             )
             index += 1
+
         offset += len(text) + 2  # the "\n\n" joiner between groups
+        group_index += 1
 
     return chunks
+
+
+def _heading_for(anchor: Anchor) -> str | None:
+    if anchor.heading_path:
+        return " > ".join(anchor.heading_path)
+    if anchor.section_title:
+        return anchor.section_title
+    if anchor.sheet_name:
+        return anchor.sheet_name
+    return None
+
+
+def _with_heading(heading: str | None, piece: str) -> str:
+    """Prefix the section heading so the child can be matched on it.
+
+    Skipped when there is no heading, when the feature is off, or when the text already
+    opens with the heading, so a document whose body repeats its own headings is not
+    doubled up.
+    """
+    if not heading or not settings.chunk_prepend_heading:
+        return piece
+    if piece.lstrip().lower().startswith(heading.lower()):
+        return piece
+    return f"{heading}\n\n{piece}"
+
+
+# A row-shaped line: pipes, tabs, or two or more columns separated by run-on spaces.
+def _is_row(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if "|" in stripped or "\t" in stripped:
+        return True
+    return len([part for part in stripped.split("  ") if part.strip()]) >= 3
+
+
+def _looks_like_table(anchor: Anchor, text: str) -> bool:
+    """Spreadsheet ranges are tables by construction; everything else is shape-tested."""
+    if anchor.sheet_name or anchor.cell_range:
+        return True
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) < 3:
+        return False
+    rows = sum(1 for line in lines if _is_row(line))
+    return rows >= max(3, (len(lines) * 2) // 3)
 
 
 def _windows(text: str, size: int, overlap: int) -> list[tuple[int, int]]:

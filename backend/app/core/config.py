@@ -82,6 +82,18 @@ class Settings(BaseSettings):
     max_upload_mb: int = 25
     fts_config: str = "english"
     
+    # 2.3 structure-aware chunking. Retrieve the narrow child, prompt with the parent
+    # section, and never cut a table in half.
+    chunk_parent_child_enabled: bool = True
+    chunk_keep_tables_whole: bool = True
+    chunk_prepend_heading: bool = True
+    chunk_table_max_multiple: int = 4
+    
+    # 2.2 understand step. Only a confident reading is allowed to fill curated fields.
+    document_understanding_enabled: bool = True
+    understanding_min_confidence: float = 0.7
+    understanding_max_chars: int = 12000
+    
     auth_mode: str = "jwt"
     default_org_slug: str = "default"
     default_org_name: str = "Default Organization"
