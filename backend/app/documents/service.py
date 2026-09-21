@@ -3,6 +3,7 @@
     upload -> sniff -> scan -> hash -> dedup / version -> object storage
            -> document row -> queued job
            -> extract -> understand -> chunk -> injection flags -> embed -> persist (+ FTS)
+           -> read for the product map
 
 A document is only `ready` when the source file is in object storage and its chunks,
 embeddings, and full-text data all exist in PostgreSQL.
@@ -18,6 +19,9 @@ Changes from the previous build, all of them Phase 1 requirements:
 Added in 2.2: one understand pass per source, between extraction and ready. It is
 advisory by construction. It cannot fail an upload, and only a confident reading is
 allowed to fill vendor, products, or validity.
+
+Added in 3.1: one map read per source, after ready. Also advisory. It only ever
+proposes: new products arrive as suggestions and relationships wait for a person.
 """
 
 from __future__ import annotations
@@ -302,6 +306,11 @@ def process_document(document_id: uuid.UUID) -> None:
         document.status = DocumentStatus.READY
         document.processed_at = datetime.now(timezone.utc)
         db.commit()
+
+        # 3.1 map read. Runs after ready on purpose: the source is already searchable,
+        # so a failure here costs suggestions, never the upload.
+        _read_for_map(db, document)
+
         if flagged:
             # Flagged is not blocked: a vendor PDF may legitimately contain the word
             # "ignore". It is surfaced so a human can look.
@@ -325,6 +334,24 @@ def process_document(document_id: uuid.UUID) -> None:
         raise
     finally:
         db.close()
+
+
+def _read_for_map(db: Session, document: Document) -> None:
+    """Propose products and relationships from a source that is already ready."""
+    if not settings.graph_extraction_enabled or document.org_id is None:
+        return
+    try:
+        from app.catalog.graph_ingest import GraphIngestor
+
+        summary = GraphIngestor(db).ingest_document(document)
+        if summary.total_suggestions or summary.products_created:
+            extra = dict(document.doc_metadata or {})
+            extra["map_read"] = summary.as_dict()
+            document.doc_metadata = extra
+            db.commit()
+    except Exception:  # noqa: BLE001 - suggestions are never worth failing an upload
+        db.rollback()
+        logger.warning("map read failed for document %s", document.id, exc_info=True)
 
 
 def set_approval_state(db: Session, document: Document, state: str) -> Document:
