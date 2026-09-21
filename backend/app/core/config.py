@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     generation_max_history_turns: int = 10
     generation_stream_enabled: bool = True
     generation_max_output_tokens: int = 4096
+    generation_rerank_enabled: bool = True
+    generation_rerank_candidates: int = 30
     tool_max_rounds: int = 1
     tool_max_calls_per_round: int = 4
     

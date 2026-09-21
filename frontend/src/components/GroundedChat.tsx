@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AssistantMarkdown } from "./AssistantMarkdown";
 import { api } from "../services/api";
-import type { AskResponse, Conversation, SourceMetadata } from "../types";
+import type { Conversation, SourceMetadata } from "../types";
 
 export function GroundedChat() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -14,9 +13,10 @@ export function GroundedChat() {
   const [selectedCitation, setSelectedCitation] = useState<SourceMetadata | null>(null);
   const [excludedDocIds, setExcludedDocIds] = useState<string[]>([]);
   const [activeSources, setActiveSources] = useState<SourceMetadata[]>([]);
-  const [enableTools, setEnableTools] = useState(false);
+  const [enableTools, setEnableTools] = useState(true);
   const [strictMode, setStrictMode] = useState(false);
   const [lastToolCalls, setLastToolCalls] = useState<string[]>([]);
+  const [streamText, setStreamText] = useState("");
 
   useEffect(() => {
     loadConversations();
@@ -68,15 +68,19 @@ export function GroundedChat() {
     setLoading(true);
     setError(null);
     setSelectedCitation(null);
+    setStreamText("");
 
     try {
-      const answer: AskResponse = await api.ask({
-        question: q,
-        conversation_id: selectedConvId,
-        exclude_document_ids: excludedDocIds,
-        enable_tools: enableTools,
-        strict_mode: strictMode,
-      });
+      const answer = await api.askStream(
+        {
+          question: q,
+          conversation_id: selectedConvId,
+          exclude_document_ids: excludedDocIds,
+          enable_tools: enableTools,
+          strict_mode: strictMode,
+        },
+        setStreamText
+      );
       setLastToolCalls((answer.tool_calls || []).map((c) => c.name));
 
       if (!selectedConvId && answer.conversation_id) {
@@ -86,6 +90,7 @@ export function GroundedChat() {
         await loadConversationDetails(selectedConvId);
         await loadConversationSources(selectedConvId);
       }
+      setStreamText("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -215,14 +220,20 @@ export function GroundedChat() {
                 </div>
 
                 <div className="message-body markdown-body">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {msg.content}
-                  </ReactMarkdown>
+                  {msg.role === "assistant" ? (
+                    <AssistantMarkdown
+                      text={msg.content}
+                      citations={msg.citations || []}
+                      onSelect={setSelectedCitation}
+                    />
+                  ) : (
+                    <p>{msg.content}</p>
+                  )}
                 </div>
 
-                {msg.role === "assistant" && lastToolCalls.length > 0 && (
-                  <div className="tool-calls-tray">
-                    Used: {lastToolCalls.join(", ")}
+                {msg.role === "assistant" && (
+                  <div className="sources-used">
+                    Sources used: {sourceKinds(msg.citations || [], lastToolCalls).join(" / ") || "none yet"}
                   </div>
                 )}
 
@@ -249,8 +260,12 @@ export function GroundedChat() {
 
           {loading && (
             <div className="chat-message assistant loading">
-              <div className="role-label">Thinking…</div>
-              <div className="loading-indicator">Searching sources and generating answer…</div>
+              <div className="role-label">Writing…</div>
+              {streamText ? (
+                <AssistantMarkdown text={streamText} citations={[]} onSelect={() => undefined} />
+              ) : (
+                <div className="loading-indicator">Searching sources and writing an answer…</div>
+              )}
             </div>
           )}
         </div>
@@ -304,7 +319,7 @@ export function GroundedChat() {
                 checked={strictMode}
                 onChange={(e) => setStrictMode(e.target.checked)}
               />
-              Strict mode (sources only)
+              {strictMode ? "From my sources only" : "Sources + expert knowledge"}
             </label>
             <label className="checkbox-option">
               <input
@@ -313,7 +328,7 @@ export function GroundedChat() {
                 onChange={(e) => setEnableTools(e.target.checked)}
                 disabled={loading}
               />
-              Enable tools & web search
+              Enable live web and mailbox search
             </label>
           </div>
           <div className="input-group">
@@ -333,4 +348,23 @@ export function GroundedChat() {
       </main>
     </div>
   );
+}
+
+function sourceKinds(citations: SourceMetadata[], toolCalls: string[]): string[] {
+  const kinds: string[] = [];
+  if (citations.some((c) => (c.document_title || c.citation || "").startsWith("note:"))) {
+    kinds.push("notes");
+  }
+  if (citations.length) kinds.push("documents");
+  const names = toolCalls.join(" ").toLowerCase();
+  if (names.includes("catalog") || names.includes("graph") || names.includes("prerequisite")) {
+    kinds.push("graph");
+  }
+  if (names.includes("brave") || names.includes("web") || names.includes("playwright")) {
+    kinds.push("web");
+  }
+  if (names.includes("mail") || names.includes("outlook") || names.includes("365")) {
+    kinds.push("email");
+  }
+  return [...new Set(kinds)];
 }

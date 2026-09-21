@@ -133,6 +133,9 @@ def create_note(
     sync_links(db, note)
     db.commit()
     db.refresh(note)
+    from app.notes.index import index_note
+
+    index_note(db, note)
     return get_note(db, org_id=org_id, note_id=note.id)
 
 
@@ -158,10 +161,12 @@ def update_note(
                 message=f"note body exceeds {settings.notes_max_body_chars} characters",
             )
         note.body = body
-    note.updated_at = _now()
     sync_links(db, note)
     db.commit()
     db.refresh(note)
+    from app.notes.index import index_note
+
+    index_note(db, note)
     return get_note(db, org_id=org_id, note_id=note.id)
 
 
@@ -178,6 +183,9 @@ def get_note(db: Session, *, org_id: uuid.UUID, note_id: uuid.UUID) -> Note:
 
 def delete_note(db: Session, *, org_id: uuid.UUID, note_id: uuid.UUID) -> None:
     note = get_note(db, org_id=org_id, note_id=note_id)
+    from app.notes.index import drop_note_index
+
+    drop_note_index(db, note.id, note.workspace_id)
     db.delete(note)
     db.commit()
 

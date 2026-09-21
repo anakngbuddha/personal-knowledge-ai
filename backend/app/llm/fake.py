@@ -61,17 +61,31 @@ class FakeLLMProvider(LLMProvider):
             )
 
         if not context_chunks:
+            if "Answer ONLY from the provided context" in (system_prompt or ""):
+                return GroundedAnswer(
+                    text=(
+                        "The available sources do not contain sufficient "
+                        "information to answer this question. Upload a datasheet "
+                        "or notes that cover this topic and ask again."
+                    ),
+                    citations=[],
+                    model_id=self.model_id,
+                    prompt_version=PROMPT_VERSION,
+                    refused=True,
+                    refusal_reason="insufficient_context",
+                    usage=TokenUsage(prompt_tokens=100, completion_tokens=30, total_tokens=130),
+                )
             return GroundedAnswer(
                 text=(
-                    "The available sources do not contain sufficient "
-                    "information to answer this question."
+                    "No matching documents were found. From general product knowledge: "
+                    "I can still outline typical options at a high level. "
+                    "Upload the vendor datasheet so I can cite specifics."
                 ),
                 citations=[],
                 model_id=self.model_id,
                 prompt_version=PROMPT_VERSION,
-                refused=True,
-                refusal_reason="insufficient_context",
-                usage=TokenUsage(prompt_tokens=100, completion_tokens=30, total_tokens=130),
+                refused=False,
+                usage=TokenUsage(prompt_tokens=100, completion_tokens=40, total_tokens=140),
             )
 
         return self._cited_answer(question, context_chunks)

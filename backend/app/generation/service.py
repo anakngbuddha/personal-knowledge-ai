@@ -47,6 +47,7 @@ from app.llm.prompts import (
 )
 from app.retrieval.search import search as run_search
 from app.retrieval.spec import RetrievalFilters
+from app.retrieval.rewrite import expand_queries, keyword_overlap_score, rewrite_query
 from app.security.principal import Principal
 
 logger = get_logger(__name__)
@@ -78,28 +79,54 @@ def _prepare_context(
     question: str,
     filters: dict | None = None,
     exclude_document_ids: list[str] | None = None,
+    history: list[dict] | None = None,
 ) -> tuple[list[dict], list[SourceMetadata]]:
     """Retrieve and prepare context chunks for the LLM.
 
-    Returns:
-        (context_chunks for the LLM, source_metadata for the response)
+    Rewrites follow-ups using conversation history, expands broad questions
+    into a few sub-queries, and optionally reranks the fused hits.
     """
     retrieval_filters = _build_retrieval_filters(filters, exclude_document_ids)
     max_chunks = settings.generation_max_context_chunks
-
-    search_result = run_search(
-        db,
-        principal=principal,
-        query=question,
-        filters=retrieval_filters,
-        mode="hybrid",
-        top_k=max_chunks,
+    search_query = rewrite_query(question, history)
+    queries = expand_queries(search_query)
+    candidate_k = (
+        settings.generation_rerank_candidates
+        if settings.generation_rerank_enabled
+        else max_chunks
     )
+
+    merged: dict[str, object] = {}
+    for query in queries:
+        search_result = run_search(
+            db,
+            principal=principal,
+            query=query,
+            filters=retrieval_filters,
+            mode="hybrid",
+            top_k=candidate_k,
+        )
+        for hit in search_result.hits:
+            previous = merged.get(hit.chunk_id)
+            score = float(getattr(hit, "rrf_score", 0) or 0)
+            if previous is None or score > float(getattr(previous, "rrf_score", 0) or 0):
+                merged[hit.chunk_id] = hit
+
+    hits = list(merged.values())
+    if settings.generation_rerank_enabled and hits:
+        hits.sort(
+            key=lambda hit: (
+                keyword_overlap_score(search_query, getattr(hit, "text", "") or ""),
+                float(getattr(hit, "rrf_score", 0) or 0),
+            ),
+            reverse=True,
+        )
+    hits = hits[:max_chunks]
 
     context_chunks: list[dict] = []
     source_metadata: list[SourceMetadata] = []
 
-    for i, hit in enumerate(search_result.hits):
+    for i, hit in enumerate(hits):
         # Source toggling: skip excluded documents
         if exclude_document_ids and hit.document_id in exclude_document_ids:
             continue
@@ -169,7 +196,9 @@ def ask(
     filters: dict | None = None,
     exclude_document_ids: list[str] | None = None,
     workspace_id: uuid.UUID | None = None,
-    enable_tools: bool = False,
+    enable_tools: bool = True,
+    strict_mode: bool = False,
+    persist: bool = True,
 ) -> GroundedAnswer:
     """Generate a grounded answer (synchronous).
 
@@ -202,13 +231,13 @@ def ask(
 
     # Retrieve and prepare context
     context_chunks, all_sources = _prepare_context(
-        db, principal, question, filters, exclude_document_ids
+        db, principal, question, filters, exclude_document_ids, history
     )
 
     # Build the full prompt
-    context_block = build_context_block(context_chunks)
+    context_block = build_context_block(context_chunks, strict_mode=strict_mode)
     user_message = build_user_message(question, context_block)
-    prompt = system_prompt_for(enable_tools=enable_tools)
+    prompt = system_prompt_for(enable_tools=enable_tools, strict_mode=strict_mode)
 
     # Generate
     provider = get_llm_provider()
@@ -251,22 +280,23 @@ def ask(
 
     # Persist messages
     if conv_uuid:
-        add_message(db, conversation_id=conv_uuid, role="user", content=question)
-        assistant_msg = add_message(
-            db,
-            conversation_id=conv_uuid,
-            role="assistant",
-            content=answer.text,
-            citations=[c.as_dict() for c in answer.citations],
-            sources=[s.as_dict() for s in all_sources],
-            usage=_usage_with_tools(answer),
-            prompt_version=answer.prompt_version,
-            refused=answer.refused,
-            model_id=answer.model_id,
-        )
-        auto_title(db, conversation_id=conv_uuid, question=question)
         answer.conversation_id = str(conv_uuid)
-        answer.message_id = str(assistant_msg.id)
+        if persist:
+            add_message(db, conversation_id=conv_uuid, role="user", content=question)
+            assistant_msg = add_message(
+                db,
+                conversation_id=conv_uuid,
+                role="assistant",
+                content=answer.text,
+                citations=[c.as_dict() for c in answer.citations],
+                sources=[s.as_dict() for s in all_sources],
+                usage=_usage_with_tools(answer),
+                prompt_version=answer.prompt_version,
+                refused=answer.refused,
+                model_id=answer.model_id,
+            )
+            auto_title(db, conversation_id=conv_uuid, question=question)
+            answer.message_id = str(assistant_msg.id)
 
     logger.info(
         "ask model=%s refused=%s citations=%d prompt_v=%s conv=%s",
@@ -289,13 +319,59 @@ def ask_stream(
     filters: dict | None = None,
     exclude_document_ids: list[str] | None = None,
     workspace_id: uuid.UUID | None = None,
+    enable_tools: bool = True,
+    strict_mode: bool = False,
 ) -> Iterator[GroundedAnswerChunk]:
     """Generate a grounded answer with streaming.
 
-    Yields GroundedAnswerChunk objects. The final chunk has done=True and
-    contains citations and usage. Token usage is recorded after the stream
-    completes.
+    If tools are enabled, the tool loop runs first and the final prose is streamed.
     """
+    if enable_tools:
+        answer = ask(
+            db,
+            principal=principal,
+            question=question,
+            conversation_id=conversation_id,
+            filters=filters,
+            exclude_document_ids=exclude_document_ids,
+            workspace_id=workspace_id,
+            enable_tools=True,
+            strict_mode=strict_mode,
+            persist=False,
+        )
+        words = (answer.text or "").split()
+        for i, word in enumerate(words):
+            yield GroundedAnswerChunk(delta=word if i == 0 else f" {word}")
+        done = GroundedAnswerChunk(
+            delta="",
+            done=True,
+            citations=answer.citations,
+            usage=answer.usage,
+            refused=answer.refused,
+            refusal_reason=answer.refusal_reason,
+            conversation_id=answer.conversation_id,
+        )
+        conv_uuid = uuid.UUID(answer.conversation_id) if answer.conversation_id else None
+        if conv_uuid:
+            add_message(db, conversation_id=conv_uuid, role="user", content=question)
+            assistant_msg = add_message(
+                db,
+                conversation_id=conv_uuid,
+                role="assistant",
+                content=answer.text,
+                citations=[c.as_dict() for c in answer.citations],
+                sources=[s.as_dict() for s in answer.citations],
+                usage=_usage_with_tools(answer),
+                prompt_version=answer.prompt_version,
+                refused=answer.refused,
+                model_id=answer.model_id,
+            )
+            auto_title(db, conversation_id=conv_uuid, question=question)
+            done.conversation_id = str(conv_uuid)
+            done.message_id = str(assistant_msg.id)
+        yield done
+        return
+
     # Cost controls
     check_rate_limit(principal.user_id)
     check_token_budget(db, principal.org_id)
@@ -317,12 +393,13 @@ def ask_stream(
 
     # Retrieve and prepare context
     context_chunks, all_sources = _prepare_context(
-        db, principal, question, filters, exclude_document_ids
+        db, principal, question, filters, exclude_document_ids, history
     )
 
     # Build the full prompt
-    context_block = build_context_block(context_chunks)
+    context_block = build_context_block(context_chunks, strict_mode=strict_mode)
     user_message = build_user_message(question, context_block)
+    prompt = system_prompt_for(enable_tools=False, strict_mode=strict_mode)
 
     # Stream generation
     provider = get_llm_provider()
@@ -331,7 +408,7 @@ def ask_stream(
     for chunk in provider.stream_grounded_answer(
         user_message,
         context_chunks,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=prompt,
         history=history,
     ):
         accumulated_text += chunk.delta

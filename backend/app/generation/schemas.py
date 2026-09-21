@@ -71,7 +71,7 @@ class AskIn(BaseModel):
     stream: bool = False
     # Source toggling: exclude specific documents from context
     exclude_document_ids: list[str] = Field(default_factory=list)
-    enable_tools: bool = False
+    enable_tools: bool = True
     # Knowledge mode: False = expert (sources + general knowledge), True = strict (sources only)
     strict_mode: bool = False
 

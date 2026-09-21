@@ -82,12 +82,6 @@ def ask_endpoint(
     """
     workspace_id = _workspace_id_from_principal(db, principal)
 
-    if payload.enable_tools and payload.stream:
-        raise HTTPException(
-            status_code=400,
-            detail="enable_tools cannot be combined with stream=true",
-        )
-
     if payload.stream:
         return _stream_response(db, principal, payload, workspace_id)
 
@@ -101,6 +95,7 @@ def ask_endpoint(
             exclude_document_ids=payload.exclude_document_ids,
             workspace_id=workspace_id,
             enable_tools=payload.enable_tools,
+            strict_mode=payload.strict_mode,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -138,6 +133,8 @@ def _stream_response(
                 filters=payload.filters.model_dump() if payload.filters else None,
                 exclude_document_ids=payload.exclude_document_ids,
                 workspace_id=workspace_id,
+                enable_tools=payload.enable_tools,
+                strict_mode=payload.strict_mode,
             ):
                 event_data = {
                     "delta": chunk.delta,
@@ -268,12 +265,6 @@ def ask_in_conversation_endpoint(
     # Override conversation_id in the payload
     payload.conversation_id = conversation_id
 
-    if payload.enable_tools and payload.stream:
-        raise HTTPException(
-            status_code=400,
-            detail="enable_tools cannot be combined with stream=true",
-        )
-
     if payload.stream:
         return _stream_response(db, principal, payload, workspace_id)
 
@@ -287,6 +278,7 @@ def ask_in_conversation_endpoint(
             exclude_document_ids=payload.exclude_document_ids,
             workspace_id=workspace_id,
             enable_tools=payload.enable_tools,
+            strict_mode=payload.strict_mode,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc

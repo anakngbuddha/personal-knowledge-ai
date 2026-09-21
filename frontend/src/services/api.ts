@@ -1,5 +1,5 @@
 import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, FreshnessAlert, FreshnessAlertList, FreshnessCheck, KnowledgeDocument, McpIntegration, McpIntegrationList, McpPingResult, NoteList, NoteRecord, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
-import { request, requestBlob } from "./http";
+import { apiBaseUrl, getAccessToken, request, requestBlob } from "./http";
 
 export const api = {
   login: (email: string, password: string) => 
@@ -41,6 +41,63 @@ export const api = {
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({...payload, stream:false})
     }),
+  askStream: async (
+    payload: {question:string; conversation_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean},
+    onDelta: (text: string) => void
+  ): Promise<Partial<AskResponse>> => {
+    const headers = new Headers({"Content-Type":"application/json"});
+    const token = getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120000);
+    try {
+      const res = await fetch(`${apiBaseUrl()}/ask`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({...payload, stream: true}),
+        signal: controller.signal
+      });
+      if (res.status === 401) throw new Error("Your session expired. Please sign in again.");
+      if (!res.ok) throw new Error(`Ask failed (${res.status})`);
+      if (!res.body) throw new Error("No response from the server");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let assembled = "";
+      let donePayload: Partial<AskResponse> = {answer: ""};
+      while (true) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, {stream: true});
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() ?? "";
+        for (const block of blocks) {
+          const line = block.split("\n").find((l) => l.startsWith("data: "));
+          if (!line) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
+          const event = JSON.parse(data) as {delta?: string; done?: boolean; error?: string; citations?: SourceMetadata[]; conversation_id?: string; message_id?: string; refused?: boolean};
+          if (event.error) throw new Error(event.error);
+          if (event.delta) {
+            assembled += event.delta;
+            onDelta(assembled);
+          }
+          if (event.done) {
+            donePayload = {
+              answer: assembled,
+              citations: event.citations || [],
+              conversation_id: event.conversation_id,
+              message_id: event.message_id,
+              refused: Boolean(event.refused)
+            };
+          }
+        }
+      }
+      return donePayload;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
   listConversations: (limit=20, offset=0) => request<ConversationListResponse>(`/conversations?limit=${limit}&offset=${offset}`),
   getConversation: (id:string) => request<Conversation>(`/conversations/${id}`),
   deleteConversation: (id:string) => request<void>(`/conversations/${id}`, {method:"DELETE"}),
