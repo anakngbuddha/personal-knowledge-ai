@@ -1,4 +1,16 @@
-export type DocumentStatus = "uploading" | "uploaded" | "processing" | "ready" | "failed";
+export type DocumentStatus =
+  | "uploading"
+  | "uploaded"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "quarantined";
+
+/** One fact the understand step pulled out of a source. */
+export interface DocumentKeyFact {
+  label: string;
+  value: string;
+}
 
 export interface KnowledgeDocument {
   id: string;
@@ -14,6 +26,7 @@ export interface KnowledgeDocument {
   error_message: string | null;
   vendor?: string | null;
   ownership?: string | null;
+  products_referenced?: string[] | null;
   approval_state?: string | null;
   sensitivity?: string | null;
   valid_until?: string | null;
@@ -22,6 +35,38 @@ export interface KnowledgeDocument {
   metadata_missing?: string[] | null;
   version: number;
   is_current: boolean;
+
+  // What the understand step read out of the source (2.2).
+  summary?: string | null;
+  key_facts?: DocumentKeyFact[] | null;
+  topic_tags?: string[] | null;
+  detected_doc_type?: string | null;
+  detected_vendors?: string[] | null;
+  detected_products?: string[] | null;
+  detected_version_label?: string | null;
+  understanding_confidence?: number | null;
+  understood_at?: string | null;
+}
+
+/** Plain-language state of one file while it is being added. */
+export type UploadPhase = "queued" | "reading" | "understanding" | "ready" | "failed";
+
+export interface TrackedUpload {
+  key: string;
+  filename: string;
+  file: File;
+  phase: UploadPhase;
+  documentId?: string | null;
+  detail?: string | null;
+}
+
+export interface DocumentStatusReport {
+  id: string;
+  status: DocumentStatus;
+  chunk_count: number;
+  error_message?: string | null;
+  job_status?: string | null;
+  attempts?: number | null;
 }
 
 export interface DocumentChunk {
@@ -284,6 +329,23 @@ export interface WorkflowRun {
   tasks: WorkflowTask[];
   created_at: string;
   updated_at: string;
+}
+
+/** One relationship on the product map. */
+export interface GraphEdge {
+  id: string;
+  source_product_id: string;
+  source_product_name: string;
+  target_product_id: string;
+  target_product_name: string;
+  relation_type: string;
+  evidence: string;
+  confidence: number;
+  document_id?: string | null;
+  is_ai_suggested: boolean;
+  status: string;
+  rejection_reason?: string | null;
+  created_at?: string | null;
 }
 
 export interface McpIntegration {

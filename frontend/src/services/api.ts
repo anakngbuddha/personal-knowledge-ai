@@ -1,4 +1,4 @@
-import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, FreshnessAlert, FreshnessAlertList, FreshnessCheck, KnowledgeDocument, McpIntegration, McpIntegrationList, McpPingResult, NoteList, NoteRecord, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
+import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, McpIntegration, McpIntegrationList, McpPingResult, NoteList, NoteRecord, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
 import { apiBaseUrl, getAccessToken, request, requestBlob } from "./http";
 
 export const api = {
@@ -21,11 +21,27 @@ export const api = {
     const s = q.toString();
     return request<KnowledgeDocument[]>(`/documents${s ? `?${s}` : ""}`);
   },
+  getDocument: (id:string) => request<KnowledgeDocument>(`/documents/${id}`),
   uploadDocument: (file: File) => {
     const f = new FormData();
     f.append("files", file);
     return request<BulkUploadOut>("/documents", {method:"POST", body:f});
   },
+  /** Many files (or a whole folder drop) in one request. One bad file never sinks the batch. */
+  uploadDocuments: (files: File[], shared?: {vendor?:string; account_ref?:string}) => {
+    const f = new FormData();
+    files.forEach((file) => f.append("files", file));
+    if(shared?.vendor) f.append("vendor", shared.vendor);
+    if(shared?.account_ref) f.append("account_ref", shared.account_ref);
+    return request<BulkUploadOut>("/documents", {method:"POST", body:f});
+  },
+  documentStatus: (id:string) => request<DocumentStatusReport>(`/documents/${id}/status`),
+  updateDocument: (id:string, body:{title?:string|null; vendor?:string|null; products_referenced?:string[]|null; valid_until?:string|null; summary?:string|null; account_ref?:string|null; ownership?:string|null}) =>
+    request<KnowledgeDocument>(`/documents/${id}`, {
+      method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)
+    }),
   deleteDocument: (id:string) => request<void>(`/documents/${id}`, {method:"DELETE"}),
   reprocessDocument: (id:string) => request<{status:string}>(`/documents/${id}/process`, {method:"POST"}),
   listChunks: (id:string) => request<DocumentChunk[]>(`/documents/${id}/chunks?limit=50`),
@@ -104,6 +120,21 @@ export const api = {
   getConversationSources: (id:string) => request<SourceMetadata[]>(`/conversations/${id}/sources`),
   me: () => request<PrincipalProfile>("/auth/me"),
   listPlaybooks: () => request<PlaybookListResponse>("/playbooks"),
+  listEdges: (params?: {status?:string; relation_type?:string; product_id?:string}) => {
+    const q = new URLSearchParams();
+    if(params?.status) q.set("status", params.status);
+    if(params?.relation_type) q.set("relation_type", params.relation_type);
+    if(params?.product_id) q.set("product_id", params.product_id);
+    const s = q.toString();
+    return request<GraphEdge[]>(`/graph/edges${s ? `?${s}` : ""}`);
+  },
+  approveEdge: (id:string) => request<GraphEdge>(`/graph/edges/${id}/approve`, {method:"POST"}),
+  rejectEdge: (id:string, reason:string) =>
+    request<GraphEdge>(`/graph/edges/${id}/reject`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({reason})
+    }),
   listWorkflowRuns: (limit=20, offset=0) => request<WorkflowRunListResponse>(`/workflows/runs?limit=${limit}&offset=${offset}`),
   getWorkflowRun: (id:string) => request<WorkflowRun>(`/workflows/runs/${id}`),
   startRfpRun: (file:File, accountRef?:string) => {
