@@ -71,14 +71,25 @@ def test_corpus_predicates_exclude_superseded_and_unfinished_documents():
     assert all(p.origin == Origin.CORPUS for p in corpus_predicates())
 
 
+def test_corpus_predicates_exclude_sample_material():
+    """3.3: the sample catalog fills the screens; it must never answer a question.
+
+    This lives in the corpus predicates rather than in a caller's filter on purpose:
+    a filter can be forgotten, and every search shares this set.
+    """
+    demo = next(p for p in corpus_predicates() if p.field == "is_demo")
+    assert demo.op is Op.IS_FALSE
+    assert demo.origin == Origin.CORPUS
+
+
 def test_predicate_set_partitions_by_origin():
     predicate_set = PredicateSet()
     predicate_set.add(Predicate("org_id", Op.EQ, 1, Origin.PERMISSION))
     predicate_set.extend(corpus_predicates())
     predicate_set.extend(RetrievalFilters(vendor="X").to_predicates())
-    assert len(predicate_set) == 4
+    assert len(predicate_set) == 5
     assert len(predicate_set.by_origin(Origin.PERMISSION)) == 1
-    assert len(predicate_set.by_origin(Origin.CORPUS)) == 2
+    assert len(predicate_set.by_origin(Origin.CORPUS)) == 3
     assert len(predicate_set.by_origin(Origin.FILTER)) == 1
     assert predicate_set.has_permission_predicates
 

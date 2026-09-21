@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.catalog.curation import EdgeSuggestionEngine
+from app.catalog.demo import DISABLED_MESSAGE, demo_catalog_enabled, seed_demo_catalog
 from app.catalog.models import (
     CapabilityIn,
     CapabilityOut,
@@ -31,7 +32,6 @@ from app.catalog.models import (
     ReferenceArchitectureOut,
     ReferenceArchitectureProductOut,
 )
-from app.catalog.seeds import seed_phase4_catalog
 from app.catalog.service import CatalogService
 from app.core.errors import AppError
 from app.core.logging import get_logger
@@ -424,7 +424,7 @@ def suggest_edges(
     deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
     db: Session = Depends(get_db),
 ) -> list[EdgeSuggestionOut]:
-    """Scan ingested collateral documents for implied product relationships."""
+    """Scan ingested source documents for implied product relationships."""
     service, org_id, workspace_id = deps
     engine = EdgeSuggestionEngine(db)
     suggestions = engine.suggest_edges_from_documents(workspace_id, org_id)
@@ -687,8 +687,17 @@ def audit_graph_coverage(
 
 
 # ---------------------------------------------------------------------------
-# Catalog Seed Endpoint
+# Sample catalog (3.3)
 # ---------------------------------------------------------------------------
+#
+# The product list starts empty. This endpoint exists for demos and for a first look
+# at the screens, so it is off unless DEMO_SEED_CATALOG says otherwise, and everything
+# it creates is stamped as sample material that retrieval will not answer from.
+
+
+@router.get("/catalog/sample-available")
+def sample_catalog_available() -> dict[str, Any]:
+    return {"available": demo_catalog_enabled(), "reason": None if demo_catalog_enabled() else DISABLED_MESSAGE}
 
 
 @router.post("/catalog/seed")
@@ -697,5 +706,10 @@ def seed_catalog(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     _, org_id, workspace_id = deps
-    counts = seed_phase4_catalog(db, org_id, workspace_id)
+    if not demo_catalog_enabled():
+        raise HTTPException(status_code=404, detail=DISABLED_MESSAGE)
+    try:
+        counts = seed_demo_catalog(db, org_id, workspace_id)
+    except AppError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return {"status": "seeded", "counts": counts}
