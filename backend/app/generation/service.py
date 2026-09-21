@@ -1,4 +1,4 @@
-"""RAG orchestration: retrieval → injection containment → LLM → cited answer.
+"""RAG orchestration: retrieval -> injection containment -> LLM -> cited answer.
 
 This is the heart of Phase 3. The service:
 1. Receives a question + optional conversation context + optional filters
@@ -12,6 +12,10 @@ This is the heart of Phase 3. The service:
 Tool access is opt-in via enable_tools. Document content reaches the LLM only
 through wrap_untrusted(), and the system prompt states that document content
 can never issue instructions.
+
+2.3 adds one step between search and prompt: when the matched chunk is a child of a
+larger section, the parent passage is prompted instead of the child. The citation still
+points at the child, so provenance does not get vaguer as context gets wider.
 """
 
 from __future__ import annotations
@@ -19,10 +23,12 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.db.models import DocumentChunk
 from app.documents.injection import wrap_untrusted
 from app.generation.conversations import (
     add_message,
@@ -45,9 +51,9 @@ from app.llm.prompts import (
     build_user_message,
     system_prompt_for,
 )
+from app.retrieval.rewrite import expand_queries, keyword_overlap_score, rewrite_query
 from app.retrieval.search import search as run_search
 from app.retrieval.spec import RetrievalFilters
-from app.retrieval.rewrite import expand_queries, keyword_overlap_score, rewrite_query
 from app.security.principal import Principal
 
 logger = get_logger(__name__)
@@ -73,6 +79,43 @@ def _build_retrieval_filters(
     )
 
 
+def _parent_passages(db: Session, chunk_ids: list[str]) -> dict[str, str]:
+    """Fetch the stored parent section for each matched child chunk.
+
+    Best effort on purpose. A chunk written before 2.3 has no parent, and a lookup
+    failure must never cost the user an answer.
+    """
+    if not settings.chunk_parent_child_enabled or not chunk_ids:
+        return {}
+
+    ids: list[uuid.UUID] = []
+    for chunk_id in chunk_ids:
+        try:
+            ids.append(uuid.UUID(str(chunk_id)))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return {}
+
+    ceiling = settings.chunk_size * max(1, settings.chunk_table_max_multiple)
+    passages: dict[str, str] = {}
+    try:
+        rows = db.execute(
+            select(DocumentChunk.id, DocumentChunk.chunk_metadata).where(
+                DocumentChunk.id.in_(ids)
+            )
+        ).all()
+    except Exception:  # noqa: BLE001 - never fail an answer over extra context
+        logger.debug("parent passage lookup failed", exc_info=True)
+        return {}
+
+    for row_id, metadata in rows:
+        parent = (metadata or {}).get("parent_text")
+        if isinstance(parent, str) and parent.strip() and len(parent) <= ceiling:
+            passages[str(row_id)] = parent
+    return passages
+
+
 def _prepare_context(
     db: Session,
     principal: Principal,
@@ -84,7 +127,8 @@ def _prepare_context(
     """Retrieve and prepare context chunks for the LLM.
 
     Rewrites follow-ups using conversation history, expands broad questions
-    into a few sub-queries, and optionally reranks the fused hits.
+    into a few sub-queries, optionally reranks the fused hits, and widens each
+    surviving hit to its parent section.
     """
     retrieval_filters = _build_retrieval_filters(filters, exclude_document_ids)
     max_chunks = settings.generation_max_context_chunks
@@ -123,6 +167,8 @@ def _prepare_context(
         )
     hits = hits[:max_chunks]
 
+    parents = _parent_passages(db, [hit.chunk_id for hit in hits])
+
     context_chunks: list[dict] = []
     source_metadata: list[SourceMetadata] = []
 
@@ -134,9 +180,12 @@ def _prepare_context(
         index = i + 1
         citation = hit.citation
 
+        # Prompt the parent section when there is one; cite the child either way.
+        prompt_text = parents.get(hit.chunk_id) or hit.text
+
         # Wrap the text through injection containment
         fenced_text = wrap_untrusted(
-            hit.text,
+            prompt_text,
             source=citation,
         )
 
