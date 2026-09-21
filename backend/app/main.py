@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
+    advisor,
     ask,
     auth,
     catalog,
@@ -80,6 +81,7 @@ app.include_router(map_edit.router)
 app.include_router(graph_review.router)
 app.include_router(workflows.router)
 app.include_router(phase8.router)
+app.include_router(advisor.router)
 app.include_router(integrations.router)
 app.include_router(notes.router)
 app.include_router(freshness.router)

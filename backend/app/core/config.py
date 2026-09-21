@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     auto_migrate: bool = False
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/pka"
-    
+
     @field_validator("database_url", mode="before")
     @classmethod
     def normalize_database_url(cls, v: str) -> str:
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
             if v.startswith("postgres://"): return "postgresql+psycopg://" + v[11:]
             if v.startswith("postgresql://") and not v.startswith("postgresql+"): return "postgresql+psycopg://" + v[13:]
         return v
-    
+
     storage_backend: str = "r2"
     local_storage_dir: str = "./.storage"
     r2_account_id: str = ""
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     r2_secret_access_key: str = ""
     r2_bucket_name: str = ""
     r2_endpoint_url: str = ""
-    
+
     embedding_provider: str = "gemini"
     gemini_api_key: str = ""
     gemini_api_base: str = "https://generativelanguage.googleapis.com/v1beta"
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     gemini_embedding_dimensions: int = 768
     gemini_generation_model: str = "gemini-2.5-flash"
     llm_provider: str = "gemini"
-    
+
     generation_rate_limit_rpm: int = 20
     generation_rate_limit_tpd: int = 100000
     generation_max_context_chunks: int = 12
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     generation_rerank_candidates: int = 30
     tool_max_rounds: int = 1
     tool_max_calls_per_round: int = 4
-    
+
     mcp_enabled: bool = False
     mcp_credentials_key: str = ""
     brave_api_key: str = ""
@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     mcp_call_timeout_seconds: float = 45.0
     mcp_max_result_bytes: int = 32768
     mcp_tool_max_rounds: int = 8
-    
+
     notes_max_body_chars: int = 200000
     freshness_worker_enabled: bool = True
     freshness_poll_seconds: float = 30.0
@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     saml_idp_issuer: str = ""
     saml_idp_secret: str = ""
     saml_allow_unsigned: bool = False
-    
+
     top_k: int = 8
     rrf_k: int = 60
     candidate_k: int = 50
@@ -81,39 +81,45 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 16
     max_upload_mb: int = 25
     fts_config: str = "english"
-    
+
     # 2.3 structure-aware chunking. Retrieve the narrow child, prompt with the parent
     # section, and never cut a table in half.
     chunk_parent_child_enabled: bool = True
     chunk_keep_tables_whole: bool = True
     chunk_prepend_heading: bool = True
     chunk_table_max_multiple: int = 4
-    
+
     # 2.2 understand step. Only a confident reading is allowed to fill curated fields.
     document_understanding_enabled: bool = True
     understanding_min_confidence: float = 0.7
     understanding_max_chars: int = 12000
-    
+
     # 3.1 read the product map out of each source. Everything it finds is a
     # suggestion: nodes land as suggested, relationships wait for a person.
     graph_extraction_enabled: bool = True
     graph_extract_max_chars: int = 16000
     graph_auto_accept_confidence: float = 0.85
-    
+
     # 3.3 the product list starts empty. The sample catalog is a demo, not a default:
     # it only loads when this is on, and everything it creates is stamped as demo
     # material so it can never be quoted back in an answer.
     demo_seed_catalog: bool = False
     catalog_import_max_rows: int = 2000
     catalog_import_max_bytes: int = 5242880
-    
+
     # 3.5 answer with the map, not only with passages. When a question names a product
     # we know, walk a hop or two and bring the neighbours' best passages along.
     graph_expansion_enabled: bool = True
     graph_expansion_hops: int = 2
     graph_expansion_max_neighbours: int = 6
     graph_expansion_chunks_per_neighbour: int = 1
-    
+
+    # 4.1 the customer brief. Requirement text is read once into a structured brief and
+    # kept as a note, so the rest of the conversation can use it. Off falls back to the
+    # deterministic reader, which is also what the offline test suite exercises.
+    advisor_brief_extraction_enabled: bool = True
+    advisor_brief_max_chars: int = 12000
+
     auth_mode: str = "jwt"
     default_org_slug: str = "default"
     default_org_name: str = "Default Organization"
@@ -121,7 +127,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 1440
     allow_legacy_token_endpoint: bool = True
-    
+
     parse_timeout_seconds: float = 120.0
     max_archive_entries: int = 2000
     max_uncompressed_mb: int = 400
@@ -142,7 +148,7 @@ class Settings(BaseSettings):
     url_fetch_timeout_seconds: float = 20.0
     url_fetch_max_redirects: int = 3
     url_fetch_allow_private_ips: bool = False
-    
+
     worker_enabled: bool = True
     worker_poll_seconds: float = 2.0
     worker_concurrency: int = 1
@@ -155,26 +161,26 @@ class Settings(BaseSettings):
     workflow_task_stale_seconds: float = 1800.0
     workflow_task_max_attempts: int = 4
     cors_origins: str = "http://localhost:5173"
-    
+
     @model_validator(mode="after")
     def production_security(self):
         if self.environment.lower() == "production":
             if self.auth_mode != "jwt": raise ValueError("AUTH_MODE must be jwt in production")
             if not self.jwt_secret_key or len(self.jwt_secret_key) < 32: raise ValueError("JWT_SECRET_KEY must be at least 32 characters in production")
         return self
-    
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
-    
+
     @property
     def r2_endpoint(self) -> str:
         return self.r2_endpoint_url or f"https://{self.r2_account_id}.r2.cloudflarestorage.com"
-    
+
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
-    
+
     @property
     def max_uncompressed_bytes(self) -> int:
         return self.max_uncompressed_mb * 1024 * 1024
