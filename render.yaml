@@ -1,18 +1,4 @@
-# Free-tier Blueprint. `plan` MUST be `free`.
-# Omitting it defaults to `starter` (paid) and Render will refuse the Blueprint
-# unless a payment method is on file.
-#
-# Dashboard → New → Blueprint → this repo.
-# You will be prompted for every `sync: false` secret below.
-#
-# After the first deploy the API bootstraps the Aiven schema itself
-# (ENVIRONMENT=production). You do not need to run scripts/init_db.py unless
-# CREATE EXTENSION vector is denied — then enable pgvector in the Aiven console
-# and restart the Render service.
-#
-# CORS_ORIGINS must be the exact Vercel origin, e.g.
-#   https://deepatlas-nine.vercel.app
-
+# Free-tier deployment blueprint
 services:
   - type: web
     name: personal-knowledge-ai-api
@@ -31,21 +17,18 @@ services:
         value: "true"
       - key: LOG_LEVEL
         value: INFO
-
-      # Aiven URI: rewrite postgres:// or postgresql:// → postgresql+psycopg://
-      # and keep ?sslmode=require
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS
         sync: false
-
       - key: AUTH_MODE
-        value: owner_dev
+        value: jwt
       - key: JWT_SECRET_KEY
         sync: false
+      - key: ALLOW_LEGACY_TOKEN_ENDPOINT
+        value: "false"
       - key: DEFAULT_ORG_SLUG
         value: default
-
       - key: STORAGE_BACKEND
         value: r2
       - key: R2_ACCOUNT_ID
@@ -56,7 +39,6 @@ services:
         sync: false
       - key: R2_BUCKET_NAME
         sync: false
-
       - key: EMBEDDING_PROVIDER
         value: gemini
       - key: LLM_PROVIDER
@@ -69,7 +51,6 @@ services:
         value: "768"
       - key: GEMINI_GENERATION_MODEL
         value: gemini-2.5-flash
-
       - key: WORKER_ENABLED
         value: "true"
       - key: WORKFLOW_WORKER_ENABLED
@@ -78,7 +59,6 @@ services:
         value: "1"
       - key: WORKFLOW_WORKER_CONCURRENCY
         value: "1"
-
       - key: MALWARE_SCANNER
         value: heuristic
       - key: OCR_PROVIDER
