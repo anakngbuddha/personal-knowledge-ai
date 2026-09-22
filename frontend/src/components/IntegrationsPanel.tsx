@@ -87,24 +87,22 @@ export function IntegrationsPanel() {
     <div className="integrations-panel">
       <div className="panel-head">
         <div>
-          <p className="kicker">02 · Connectors</p>
-          <h2>MCP stations</h2>
+          <h2>Connections</h2>
         </div>
         <span className={`stamp ${data?.mcp_enabled ? "live" : "cold"}`}>
-          {data?.mcp_enabled ? "MCP live" : "MCP disabled in env"}
+          {data?.mcp_enabled ? "Live tools on" : "Live tools off"}
         </span>
       </div>
       <p className="integrations-lead">
-        Wire Playwright, Microsoft 365, and Brave Search into the desk. Secrets are encrypted at rest
-        and never returned. Catalog tools stay on even when MCP is cold.
+        Connect web search, a browser for public pages, and Microsoft 365. Secrets stay on the server
+        and are never shown again. Product answers keep working when these are off.
       </p>
       {error && <div className="banner error">{error}</div>}
       {message && <div className="banner info">{message}</div>}
       {data && data.integrations.length === 0 && (
         <div className="empty-desk">
-          <p className="kicker">Stations</p>
-          <h3>No connectors on this desk.</h3>
-          <p>Enable MCP in the environment, then stamp a station live.</p>
+          <h3>No connections yet.</h3>
+          <p>Ask an administrator to turn on web search, the browser, or mailbox access.</p>
         </div>
       )}
       <div className="integration-grid">

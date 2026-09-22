@@ -37,6 +37,7 @@ class NoteOut(BaseModel):
     slug: str
     body: str
     workspace_id: str
+    notebook_id: str | None = None
     created_by: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -56,6 +57,7 @@ class NoteIn(BaseModel):
     title: str = Field(..., min_length=1, max_length=512)
     body: str = Field("", max_length=200_000)
     slug: str | None = Field(None, max_length=128)
+    notebook_id: uuid.UUID | None = None
 
 
 class NoteUpdateIn(BaseModel):
@@ -111,6 +113,7 @@ def _serialize(note: Note) -> NoteOut:
         slug=note.slug,
         body=note.body,
         workspace_id=str(note.workspace_id),
+        notebook_id=str(note.notebook_id) if note.notebook_id else None,
         created_by=str(note.created_by) if note.created_by else None,
         created_at=note.created_at.isoformat() if note.created_at else None,
         updated_at=note.updated_at.isoformat() if note.updated_at else None,
@@ -132,18 +135,23 @@ def list_notes_endpoint(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     search: str | None = Query(None, max_length=200),
+    notebook_id: uuid.UUID | None = Query(None),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> NoteListOut:
     workspace = get_or_create_default_workspace(db, principal.org_id)
-    rows, total = notes.list_notes(
-        db,
-        org_id=principal.org_id,
-        workspace_id=workspace.id,
-        limit=limit,
-        offset=offset,
-        search=search,
-    )
+    try:
+        rows, total = notes.list_notes(
+            db,
+            org_id=principal.org_id,
+            workspace_id=workspace.id,
+            limit=limit,
+            offset=offset,
+            search=search,
+            notebook_id=notebook_id,
+        )
+    except AppError as exc:
+        raise _http(exc) from exc
     return NoteListOut(
         notes=[_serialize(row) for row in rows],
         total=total,
@@ -170,6 +178,7 @@ def create_note_endpoint(
             body=payload.body,
             slug=payload.slug,
             created_by=principal.user_id,
+            notebook_id=payload.notebook_id,
         )
     except AppError as exc:
         raise _http(exc) from exc

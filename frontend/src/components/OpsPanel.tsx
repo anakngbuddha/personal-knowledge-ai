@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../services/api";
 import type { FreshnessAlert, RestoreDrill, SsoStatus, VendorSource } from "../types";
 
-export function OpsPanel() {
+export function OpsPanel({ mode = "all" }: { mode?: "watches" | "admin" | "all" }) {
   const [sources, setSources] = useState<VendorSource[]>([]);
   const [alerts, setAlerts] = useState<FreshnessAlert[]>([]);
   const [drills, setDrills] = useState<RestoreDrill[]>([]);
@@ -96,16 +96,19 @@ export function OpsPanel() {
     }
   }
 
+  const showWatches = mode !== "admin";
+  const showAdmin = mode !== "watches";
+
   return (
     <div className="ops-desk">
       {error && <div className="banner error">{error}</div>}
       {message && <div className="banner info">{message}</div>}
 
+      {showWatches && (
       <section className="panel">
         <div className="panel-head">
           <div>
-            <p className="kicker">08 · Watch</p>
-            <h2>Vendor datasheets</h2>
+            <h2>Watch a web page</h2>
           </div>
         </div>
         <p className="muted">
@@ -148,12 +151,13 @@ export function OpsPanel() {
           </ul>
         )}
       </section>
+      )}
 
+      {showWatches && (
       <section className="panel">
         <div className="panel-head">
           <div>
-            <p className="kicker">Alerts</p>
-            <h2>Stale collateral</h2>
+            <h2>Sources that may be out of date</h2>
           </div>
         </div>
         {alerts.length === 0 ? (
@@ -176,7 +180,9 @@ export function OpsPanel() {
           </ul>
         )}
       </section>
+      )}
 
+      {showAdmin && (
       <div className="layout">
         <section className="panel">
           <div className="panel-head">
@@ -216,7 +222,7 @@ export function OpsPanel() {
               {sso?.sso_enabled ? "armed" : "local JWT"}
             </span>
           </div>
-          <p className="muted">OIDC ID tokens and HMAC-signed SAML assertions mint the same local bearer JWT.</p>
+          <p className="muted">Sign-in with your company identity, when an administrator has turned it on.</p>
           <dl className="ops-dl">
             <dt>OIDC</dt>
             <dd>{sso?.oidc_configured ? sso.oidc_issuer || "configured" : "not configured"}</dd>
@@ -225,6 +231,7 @@ export function OpsPanel() {
           </dl>
         </section>
       </div>
+      )}
     </div>
   );
 }

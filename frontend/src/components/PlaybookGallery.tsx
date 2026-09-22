@@ -52,11 +52,10 @@ export function PlaybookGallery(props: Props) {
     <div className="workflow-gallery">
       <div className="stage-head">
         <div>
-          <p className="kicker">01 · Playbooks</p>
-          <h2>Field runs</h2>
+          <h2>Suggested actions</h2>
           <p className="lede">
-            Numbered instruments for RFP, compose, triage, and upgrade. Start a run, wait the
-            approval gate, export the deliverable.
+            Turn a spreadsheet, a discovery note, a support log, or an upgrade question into a
+            document you can review and download.
           </p>
         </div>
       </div>
@@ -196,7 +195,7 @@ export function PlaybookGallery(props: Props) {
       </section>
 
       {!props.canStart && props.authReady && (
-        <p className="hint">Solutions engineer role required to start a playbook.</p>
+        <p className="hint">You need permission to start one of these. Ask an administrator if this stays disabled.</p>
       )}
 
       <section className="panel recent-runs">

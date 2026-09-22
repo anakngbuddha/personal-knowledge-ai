@@ -328,6 +328,11 @@ class Conversation(Base):
         ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str | None] = mapped_column(String(512))
+    # 4.4 A thread belongs to one notebook. Null threads predate notebooks and stay
+    # visible at the workspace level.
+    notebook_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("notebooks.id", ondelete="SET NULL"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -1102,6 +1107,59 @@ class McpIntegration(Base):
 # ---------------------------------------------------------------------------
 
 
+class Notebook(Base):
+    """A named deal or customer inside a workspace.
+
+    Sources stay owned by the workspace. A notebook only remembers which of them
+    are switched on, plus the notes and chats that belong to this deal.
+    """
+
+    __tablename__ = "notebooks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    sources: Mapped[list["NotebookSource"]] = relationship(
+        back_populates="notebook", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (UniqueConstraint("workspace_id", "name", name="uq_notebooks_workspace_name"),)
+
+
+class NotebookSource(Base):
+    """Whether a workspace source is included when asking inside a notebook."""
+
+    __tablename__ = "notebook_sources"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    notebook_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("notebooks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    notebook: Mapped[Notebook] = relationship(back_populates="sources")
+
+    __table_args__ = (
+        UniqueConstraint("notebook_id", "document_id", name="uq_notebook_sources_pair"),
+    )
+
+
 class NoteLinkKind:
     PRODUCT = "product"
     ACCOUNT = "account"
@@ -1145,6 +1203,9 @@ class Note(Base):
     )
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    notebook_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("notebooks.id", ondelete="SET NULL"), index=True
     )
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     slug: Mapped[str] = mapped_column(String(128), nullable=False)

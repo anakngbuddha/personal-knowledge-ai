@@ -25,9 +25,13 @@ def create_conversation(
     *,
     workspace_id: uuid.UUID,
     title: str | None = None,
+    notebook_id: uuid.UUID | None = None,
+    org_id: uuid.UUID | None = None,
 ) -> Conversation:
     """Create a new conversation in the given workspace."""
-    conv = Conversation(workspace_id=workspace_id, title=title)
+    conv = Conversation(
+        workspace_id=workspace_id, title=title, notebook_id=notebook_id, org_id=org_id
+    )
     db.add(conv)
     db.commit()
     db.refresh(conv)
@@ -56,18 +60,18 @@ def list_conversations(
     workspace_id: uuid.UUID,
     limit: int = 20,
     offset: int = 0,
+    notebook_id: uuid.UUID | None = None,
 ) -> tuple[list[Conversation], int]:
     """List conversations in a workspace with pagination."""
-    total = db.scalar(
-        select(func.count()).select_from(Conversation).where(
-            Conversation.workspace_id == workspace_id
-        )
-    ) or 0
+    filters = [Conversation.workspace_id == workspace_id]
+    if notebook_id is not None:
+        filters.append(Conversation.notebook_id == notebook_id)
+    total = db.scalar(select(func.count()).select_from(Conversation).where(*filters)) or 0
 
     conversations = list(
         db.scalars(
             select(Conversation)
-            .where(Conversation.workspace_id == workspace_id)
+            .where(*filters)
             .order_by(Conversation.updated_at.desc())
             .limit(limit)
             .offset(offset)

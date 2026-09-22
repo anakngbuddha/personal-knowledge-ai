@@ -415,6 +415,7 @@ def save_brief_as_note(
     brief: CustomerBrief,
     created_by=None,
     account: str | None = None,
+    notebook_id=None,
 ):
     """Store the brief as a note, so it is searchable and editable like any other."""
     from app.notes import service as notes
@@ -429,6 +430,7 @@ def save_brief_as_note(
         title=brief.note_title(),
         body=body,
         created_by=created_by,
+        notebook_id=notebook_id,
     )
 
 

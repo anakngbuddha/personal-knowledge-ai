@@ -456,9 +456,8 @@ export function GraphExplorer() {
   if (loading) {
     return (
       <div className="graph-loading">
-        <p className="kicker">03 · Catalog</p>
         <div className="graph-spinner" />
-        <p>Loading product graph…</p>
+        <p>Loading your map…</p>
       </div>
     );
   }
@@ -467,8 +466,7 @@ export function GraphExplorer() {
     return (
       <div className="graph-error">
         <div className="empty-desk">
-          <p className="kicker">03 · Catalog</p>
-          <h3>Graph unreachable.</h3>
+          <h3>The map could not be loaded.</h3>
           <p>{error}</p>
         </div>
         <button className="primary" onClick={fetchGraph}>

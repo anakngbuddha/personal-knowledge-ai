@@ -25,7 +25,7 @@ export function ChunkInspector({ documentId }: Props) {
     api
       .listChunks(documentId)
       .then(setChunks)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "could not load chunks"))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load passages"))
       .finally(() => setLoading(false));
   }, [documentId]);
 
@@ -60,7 +60,7 @@ export function ChunkInspector({ documentId }: Props) {
             {chunk.page_number !== null && <span className="tag">p. {chunk.page_number}</span>}
             {chunk.section_title && <span className="tag">{chunk.section_title}</span>}
             <span className={chunk.has_embedding ? "tag ok" : "tag warn"}>
-              {chunk.has_embedding ? "embedded" : "no vector"}
+              {chunk.has_embedding ? "Ready to search" : "Still reading"}
             </span>
           </header>
           <p>{chunk.text}</p>

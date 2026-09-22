@@ -1,4 +1,4 @@
-import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, McpIntegration, McpIntegrationList, McpPingResult, NoteList, NoteRecord, NotebookList, NotebookRecord, NotebookSource, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, StudioResult, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
+import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, LinkTargetOut, McpIntegration, McpIntegrationList, McpPingResult, NoteGraphOut, NoteList, NoteRecord, NotebookList, NotebookRecord, NotebookSource, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, StudioResult, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
 import { fetchResponse, request, requestBlob } from "./http";
 
 export const api = {
@@ -244,6 +244,9 @@ export const api = {
     body:JSON.stringify({})
   }),
   ssoStatus: () => request<SsoStatus>("/ops/sso"),
+  getNotesGraph: () => request<NoteGraphOut>("/notes/graph"),
+  autocompleteWikilinks: (q: string) => request<LinkTargetOut[]>(`/notes/link-targets?q=${encodeURIComponent(q)}`),
+  getBacklinks: (kind: string, ref: string) => request<NoteList>(`/notes/by-link/${encodeURIComponent(kind)}/${encodeURIComponent(ref)}`),
   healthDependencies: () =>
     request<{
       ok: boolean;

@@ -281,6 +281,7 @@ def ask(
     enable_tools: bool = True,
     strict_mode: bool = False,
     persist: bool = True,
+    notebook_id: uuid.UUID | None = None,
 ) -> GroundedAnswer:
     """Generate a grounded answer (synchronous).
 
@@ -306,9 +307,20 @@ def ask(
             conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
             if conv is None:
                 raise ValueError(f"Conversation {conversation_id} not found")
+            if notebook_id is not None and conv.notebook_id not in (None, notebook_id):
+                raise ValueError(f"Conversation {conversation_id} not found")
+            if notebook_id is not None and conv.notebook_id is None:
+                conv.notebook_id = notebook_id
+                db.commit()
         history = get_history(db, conversation_id=conv_uuid)
     elif workspace_id:
-        conv = create_conversation(db, workspace_id=workspace_id, title=question[:200])
+        conv = create_conversation(
+            db,
+            workspace_id=workspace_id,
+            title=question[:200],
+            notebook_id=notebook_id,
+            org_id=principal.org_id,
+        )
         conv_uuid = conv.id
 
     # Retrieve and prepare context
@@ -409,6 +421,7 @@ def ask_stream(
     workspace_id: uuid.UUID | None = None,
     enable_tools: bool = True,
     strict_mode: bool = False,
+    notebook_id: uuid.UUID | None = None,
 ) -> Iterator[GroundedAnswerChunk]:
     """Generate a grounded answer with streaming.
 
@@ -426,6 +439,7 @@ def ask_stream(
             enable_tools=True,
             strict_mode=strict_mode,
             persist=False,
+            notebook_id=notebook_id,
         )
         words = (answer.text or "").split()
         for i, word in enumerate(words):
@@ -474,9 +488,20 @@ def ask_stream(
             conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
             if conv is None:
                 raise ValueError(f"Conversation {conversation_id} not found")
+            if notebook_id is not None and conv.notebook_id not in (None, notebook_id):
+                raise ValueError(f"Conversation {conversation_id} not found")
+            if notebook_id is not None and conv.notebook_id is None:
+                conv.notebook_id = notebook_id
+                db.commit()
         history = get_history(db, conversation_id=conv_uuid)
     elif workspace_id:
-        conv = create_conversation(db, workspace_id=workspace_id, title=question[:200])
+        conv = create_conversation(
+            db,
+            workspace_id=workspace_id,
+            title=question[:200],
+            notebook_id=notebook_id,
+            org_id=principal.org_id,
+        )
         conv_uuid = conv.id
 
     # Retrieve and prepare context

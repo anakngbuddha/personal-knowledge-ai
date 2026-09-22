@@ -24,6 +24,7 @@ One endpoint per action the salesperson actually takes:
 from __future__ import annotations
 
 import io
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -44,12 +45,22 @@ from app.security.principal import Principal
 router = APIRouter(prefix="/advisor", tags=["advisor"])
 
 
+def _notebook_uuid(value: str | None) -> uuid.UUID | None:
+    if not value:
+        return None
+    try:
+        return uuid.UUID(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="That notebook id is not valid.") from exc
+
+
 class BriefIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     requirements: str = Field(..., min_length=1, max_length=200_000)
     account: str | None = Field(None, max_length=255)
     save_as_note: bool = True
+    notebook_id: str | None = Field(None, max_length=64)
 
 
 class BriefOut(BaseModel):
@@ -66,6 +77,7 @@ class RecommendIn(BaseModel):
     requirements: str = Field(..., min_length=1, max_length=200_000)
     account: str | None = Field(None, max_length=255)
     save_as_note: bool = False
+    notebook_id: str | None = Field(None, max_length=64)
 
 
 class RecommendOut(BaseModel):
@@ -104,6 +116,7 @@ def read_brief(
                 brief=brief,
                 created_by=principal.user_id,
                 account=payload.account,
+                notebook_id=_notebook_uuid(payload.notebook_id),
             )
         except AppError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -149,6 +162,7 @@ def recommend(
                 title=result.note_title(),
                 body=body,
                 created_by=principal.user_id,
+                notebook_id=_notebook_uuid(payload.notebook_id),
             )
         except AppError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

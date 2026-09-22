@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import { AssistantMarkdown } from "./AssistantMarkdown";
+import { NotebookPicker } from "./NotebookPicker";
+import { WorkflowWorkspace } from "./WorkflowWorkspace";
 import { api } from "../services/api";
-import type { Conversation, SourceMetadata } from "../types";
+import type { Conversation, NoteRecord, NotebookSource, SourceMetadata, StudioResult } from "../types";
 
-export function GroundedChat() {
+interface Props {
+  sourceCount: number;
+  onNavigate: (tab: "sources" | "map") => void;
+}
+
+export function GroundedChat({ sourceCount, onNavigate }: Props) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [currentConv, setCurrentConv] = useState<Conversation | null>(null);
@@ -11,33 +18,48 @@ export function GroundedChat() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedCitation, setSelectedCitation] = useState<SourceMetadata | null>(null);
-  const [excludedDocIds, setExcludedDocIds] = useState<string[]>([]);
-  const [activeSources, setActiveSources] = useState<SourceMetadata[]>([]);
-  const [enableTools, setEnableTools] = useState(true);
   const [strictMode, setStrictMode] = useState(false);
   const [lastToolCalls, setLastToolCalls] = useState<string[]>([]);
   const [streamText, setStreamText] = useState("");
+  const [notebookId, setNotebookId] = useState<string | null>(null);
+  const [sources, setSources] = useState<NotebookSource[]>([]);
+  const [savedNotes, setSavedNotes] = useState<NoteRecord[]>([]);
+  const [studio, setStudio] = useState<StudioResult | null>(null);
+  const [studioBusy, setStudioBusy] = useState(false);
 
   useEffect(() => {
-    loadConversations();
-  }, []);
+    void loadConversations(notebookId);
+    void loadSaved(notebookId);
+    if (!notebookId) {
+      setSources([]);
+      return;
+    }
+    void api.listNotebookSources(notebookId).then(setSources).catch(() => setSources([]));
+  }, [notebookId]);
 
   useEffect(() => {
     if (selectedConvId) {
-      loadConversationDetails(selectedConvId);
-      loadConversationSources(selectedConvId);
+      void loadConversationDetails(selectedConvId);
     } else {
       setCurrentConv(null);
-      setActiveSources([]);
     }
   }, [selectedConvId]);
 
-  async function loadConversations() {
+  async function loadConversations(id: string | null) {
     try {
-      const res = await api.listConversations(30, 0);
+      const res = await api.listConversations(30, 0, id ?? undefined);
       setConversations(res.conversations);
     } catch {
-      /* ignore background error */
+      /* keep the previous list */
+    }
+  }
+
+  async function loadSaved(id: string | null) {
+    try {
+      const listed = await api.listNotes(20, 0, id ?? undefined);
+      setSavedNotes(listed.notes);
+    } catch {
+      setSavedNotes([]);
     }
   }
 
@@ -46,53 +68,63 @@ export function GroundedChat() {
       const conv = await api.getConversation(id);
       setCurrentConv(conv);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load conversation");
+      setError(err instanceof Error ? err.message : "Could not open that conversation");
     }
   }
 
-  async function loadConversationSources(id: string) {
+  function enabledIds() {
+    return sources.filter((row) => row.enabled).map((row) => row.document_id);
+  }
+
+  async function toggleSource(documentId: string) {
+    if (!notebookId) return;
+    const next = sources.map((row) =>
+      row.document_id === documentId ? { ...row, enabled: !row.enabled } : row
+    );
+    setSources(next);
     try {
-      const sources = await api.getConversationSources(id);
-      setActiveSources(sources);
-    } catch {
-      /* non-critical */
+      const saved = await api.setNotebookSources(
+        notebookId,
+        next.filter((row) => row.enabled).map((row) => row.document_id)
+      );
+      setSources(saved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update sources");
+      setSources(sources);
     }
   }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if (!question.trim() || loading) return;
-
     const q = question.trim();
     setQuestion("");
     setLoading(true);
     setError(null);
     setSelectedCitation(null);
     setStreamText("");
-
     try {
       const answer = await api.askStream(
         {
           question: q,
           conversation_id: selectedConvId,
-          exclude_document_ids: excludedDocIds,
-          enable_tools: enableTools,
+          notebook_id: notebookId,
+          filters: { document_ids: enabledIds() },
+          enable_tools: true,
           strict_mode: strictMode,
         },
         setStreamText
       );
       setLastToolCalls((answer.tool_calls || []).map((c) => c.name));
-
       if (!selectedConvId && answer.conversation_id) {
         setSelectedConvId(answer.conversation_id);
-        await loadConversations();
+        await loadConversations(notebookId);
       } else if (selectedConvId) {
         await loadConversationDetails(selectedConvId);
-        await loadConversationSources(selectedConvId);
       }
       setStreamText("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Generation failed");
+      setError(err instanceof Error ? err.message : "Could not write an answer");
     } finally {
       setLoading(false);
     }
@@ -101,163 +133,155 @@ export function GroundedChat() {
   async function handleDelete(id: string) {
     try {
       await api.deleteConversation(id);
-      if (selectedConvId === id) {
-        setSelectedConvId(null);
-      }
-      await loadConversations();
+      if (selectedConvId === id) setSelectedConvId(null);
+      await loadConversations(notebookId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete conversation");
+      setError(err instanceof Error ? err.message : "Could not delete that conversation");
     }
   }
 
-  function toggleExcludeDoc(docId: string) {
-    setExcludedDocIds((prev) =>
-      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]
-    );
+  async function runStudio(kind: "briefing" | "faq" | "compare") {
+    const ids = enabledIds();
+    if (kind === "compare" && ids.length < 2) {
+      setError("Pick at least two sources to compare.");
+      return;
+    }
+    if (ids.length === 0) {
+      setError("Turn on at least one source first.");
+      return;
+    }
+    setStudioBusy(true);
+    setError(null);
+    try {
+      const result = await api.studioRun({
+        kind,
+        document_ids: ids.slice(0, 12),
+        notebook_id: notebookId,
+        save_as_note: false,
+      });
+      setStudio(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not prepare that");
+    } finally {
+      setStudioBusy(false);
+    }
   }
 
+  async function saveStudio() {
+    if (!studio) return;
+    setStudioBusy(true);
+    try {
+      const saved = await api.createNote({
+        title: studio.source_titles[0] ? `Note: ${studio.source_titles[0]}` : "Saved answer",
+        body: studio.markdown,
+        notebook_id: notebookId ?? undefined,
+      });
+      setSavedNotes((prev) => [saved, ...prev]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save that note");
+    } finally {
+      setStudioBusy(false);
+    }
+  }
+
+  const noThread = !currentConv || currentConv.messages.length === 0;
+
   return (
-    <div className="grounded-chat">
-      <aside className="chat-sidebar">
-        <div className="sidebar-head">
-          <h3>Threads</h3>
-          <button
-            type="button"
-            className="new-conv-btn"
-            onClick={() => {
-              setSelectedConvId(null);
-              setCurrentConv(null);
-            }}
-          >
-            New
+    <div className="ask-desk">
+      <aside className="ask-sources">
+        <NotebookPicker
+          notebookId={notebookId}
+          onChange={(id) => {
+            setNotebookId(id);
+            setSelectedConvId(null);
+            setCurrentConv(null);
+          }}
+        />
+        <h3>Sources</h3>
+        {sources.length === 0 ? (
+          <div className="empty-state">
+            <p>1. Add documents</p>
+            <p>2. Add your products</p>
+            <p>3. Ask</p>
+            <button type="button" className="link-button" onClick={() => onNavigate("sources")}>
+              Go to Sources
+            </button>
+            <button type="button" className="link-button" onClick={() => onNavigate("map")}>
+              Go to Map
+            </button>
+          </div>
+        ) : (
+          <ul className="source-list">
+            {sources.map((row) => (
+              <li key={row.document_id}>
+                <label>
+                  <input type="checkbox" checked={row.enabled} onChange={() => void toggleSource(row.document_id)} />
+                  <span>{row.title || row.filename}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="helper-row">
+          <button type="button" disabled={studioBusy} onClick={() => void runStudio("briefing")}>
+            Briefing
+          </button>
+          <button type="button" disabled={studioBusy} onClick={() => void runStudio("faq")}>
+            FAQ
+          </button>
+          <button type="button" disabled={studioBusy} onClick={() => void runStudio("compare")}>
+            Compare
           </button>
         </div>
-
-        <div className="conv-list">
-          {conversations.length === 0 ? (
-            <div className="empty-conv">No threads yet. Start by asking a question.</div>
-          ) : (
-            conversations.map((c) => (
-              <div
-                key={c.id}
-                className={`conv-item ${selectedConvId === c.id ? "active" : ""}`}
-              >
-                <button
-                  type="button"
-                  className="conv-open"
-                  onClick={() => setSelectedConvId(c.id)}
-                >
-                  <span className="conv-title">{c.title || "Untitled"}</span>
-                </button>
-                <button
-                  type="button"
-                  className="conv-delete"
-                  title="Delete"
-                  aria-label="Delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(c.id);
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-
-        {activeSources.length > 0 && (
-          <div className="source-toggle-panel">
-            <h4>Sources ({activeSources.length})</h4>
-            <div className="source-list">
-              {activeSources.map((src) => {
-                const isExcluded = excludedDocIds.includes(src.document_id);
-                return (
-                  <div key={src.chunk_id} className={`source-item ${isExcluded ? "excluded" : ""}`}>
-                    <label className="source-label">
-                      <input
-                        type="checkbox"
-                        checked={!isExcluded}
-                        onChange={() => toggleExcludeDoc(src.document_id)}
-                      />
-                      <span className="source-name">
-                        {src.document_title || src.citation}
-                      </span>
-                      {isExcluded && <span className="muted"> Left out of this question</span>}
-                    </label>
-                    {src.is_stale && <span className="stale-badge">Stale</span>}
-                  </div>
-                );
-              })}
+        <h3>Threads</h3>
+        {conversations.length === 0 ? (
+          <p className="empty-copy">Ask a question to start a thread.</p>
+        ) : (
+          conversations.map((c) => (
+            <div key={c.id} className={`conv-item ${selectedConvId === c.id ? "active" : ""}`}>
+              <button type="button" className="conv-open" onClick={() => setSelectedConvId(c.id)}>
+                {c.title || "Untitled"}
+              </button>
+              <button type="button" className="conv-delete" aria-label="Delete" onClick={() => void handleDelete(c.id)}>
+                ×
+              </button>
             </div>
-          </div>
+          ))
         )}
       </aside>
 
-      <main className="chat-main">
+      <main className="ask-chat">
         {error && <div className="banner error">{error}</div>}
-
+        {sourceCount === 0 && (
+          <div className="banner info">1. Add documents. 2. Add your products. 3. Ask.</div>
+        )}
         <div className="messages-stream">
-          {!currentConv || currentConv.messages.length === 0 ? (
+          {noThread && !loading ? (
             <div className="chat-welcome">
-              <h2>Knowledge Advisor</h2>
-              <p>
-                Upload your documents, then ask questions. Get answers with citations from your sources or expert knowledge.
-              </p>
+              <h2>Ask</h2>
+              <p>Ask about a customer, a product, or what else you can add from your list.</p>
             </div>
           ) : (
-            currentConv.messages.map((msg) => (
+            currentConv?.messages.map((msg) => (
               <div key={msg.id} className={`chat-message ${msg.role}`}>
                 <div className="message-header">
-                  <span className="role-label">
-                    {msg.role === "user" ? "You" : "Assistant"}
-                  </span>
-                  {msg.model_id && (
-                    <span className="model-label">
-                      {msg.model_id} · v{msg.prompt_version}
-                    </span>
-                  )}
+                  <span className="role-label">{msg.role === "user" ? "You" : "Assistant"}</span>
                 </div>
-
                 <div className="message-body markdown-body">
                   {msg.role === "assistant" ? (
-                    <AssistantMarkdown
-                      text={msg.content}
-                      citations={msg.citations || []}
-                      onSelect={setSelectedCitation}
-                    />
+                    <AssistantMarkdown text={msg.content} citations={msg.citations || []} onSelect={setSelectedCitation} />
                   ) : (
                     <p>{msg.content}</p>
                   )}
                 </div>
-
                 {msg.role === "assistant" && (
                   <div className="sources-used">
                     Sources used: {sourceKinds(msg.citations || [], lastToolCalls).join(" / ") || "none yet"}
                   </div>
                 )}
-
-                {msg.citations && msg.citations.length > 0 && (
-                  <div className="citations-tray">
-                    <span className="citations-label">Sources</span>
-                    {msg.citations.map((c, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className={`citation-tag ${selectedCitation?.chunk_id === c.chunk_id ? "active" : ""}`}
-                        onClick={() => setSelectedCitation(c)}
-                      >
-                        [{i + 1}] {c.citation}
-                        {c.vendor && <span className="vendor-tag"> · {c.vendor}</span>}
-                        {c.is_stale && <span className="stale-indicator">●</span>}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             ))
           )}
-
           {loading && (
             <div className="chat-message assistant loading">
               <div className="role-label">Writing…</div>
@@ -269,66 +293,11 @@ export function GroundedChat() {
             </div>
           )}
         </div>
-
-        {selectedCitation && (
-          <div className="citation-drawer">
-            <div className="drawer-head">
-              <h4>{selectedCitation.citation}</h4>
-              <button type="button" onClick={() => setSelectedCitation(null)} aria-label="Close">
-                ×
-              </button>
-            </div>
-            <div className="drawer-content">
-              <strong>Document</strong>
-              <span>{selectedCitation.document_title || "Unknown"}</span>
-              <strong>Vendor</strong>
-              <span>{selectedCitation.vendor || "—"}</span>
-              <strong>Status</strong>
-              <span>{selectedCitation.approval_state || "Draft"}</span>
-              <strong>Freshness</strong>
-              <span>{selectedCitation.is_stale ? "Stale" : "Fresh"}</span>
-              {selectedCitation.page_number && (
-                <>
-                  <strong>Page</strong>
-                  <span>{selectedCitation.page_number}</span>
-                </>
-              )}
-              {selectedCitation.slide_number && (
-                <>
-                  <strong>Slide</strong>
-                  <span>{selectedCitation.slide_number}</span>
-                </>
-              )}
-              {selectedCitation.sheet_name && (
-                <>
-                  <strong>Sheet</strong>
-                  <span>
-                    {selectedCitation.sheet_name} ({selectedCitation.cell_range})
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
         <form onSubmit={handleSend} className="chat-input-form">
           <div className="form-options">
             <label className="checkbox-option">
-              <input
-                type="checkbox"
-                checked={strictMode}
-                onChange={(e) => setStrictMode(e.target.checked)}
-              />
+              <input type="checkbox" checked={strictMode} onChange={(e) => setStrictMode(e.target.checked)} />
               {strictMode ? "From my sources only" : "Sources + expert knowledge"}
-            </label>
-            <label className="checkbox-option">
-              <input
-                type="checkbox"
-                checked={enableTools}
-                onChange={(e) => setEnableTools(e.target.checked)}
-                disabled={loading}
-              />
-              Enable live web and mailbox search
             </label>
           </div>
           <div className="input-group">
@@ -345,26 +314,56 @@ export function GroundedChat() {
             </button>
           </div>
         </form>
+        <details className="suggested-actions">
+          <summary>Suggested actions</summary>
+          <WorkflowWorkspace />
+        </details>
       </main>
+
+      <aside className="ask-side">
+        <h3>Citation</h3>
+        {selectedCitation ? (
+          <div className="citation-drawer">
+            <strong>{selectedCitation.citation}</strong>
+            <p>{selectedCitation.document_title || "Source"}</p>
+            <p>{selectedCitation.vendor || "Vendor not listed"}</p>
+            {selectedCitation.page_number ? <p>Page {selectedCitation.page_number}</p> : null}
+          </div>
+        ) : (
+          <p className="empty-copy">Citations you open will show here.</p>
+        )}
+        {studio && (
+          <div className="saved-output">
+            <AssistantMarkdown text={studio.markdown} citations={[]} onSelect={() => undefined} />
+            <button type="button" disabled={studioBusy} onClick={() => void saveStudio()}>
+              Save as note
+            </button>
+          </div>
+        )}
+        <h3>Saved outputs</h3>
+        {savedNotes.length === 0 ? (
+          <p className="empty-copy">Briefs and saved answers for this notebook show up here.</p>
+        ) : (
+          <ul className="note-index">
+            {savedNotes.map((note) => (
+              <li key={note.id}>
+                <strong>{note.title}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
+      </aside>
     </div>
   );
 }
 
 function sourceKinds(citations: SourceMetadata[], toolCalls: string[]): string[] {
   const kinds: string[] = [];
-  if (citations.some((c) => (c.document_title || c.citation || "").startsWith("note:"))) {
-    kinds.push("notes");
-  }
+  if (citations.some((c) => (c.document_title || c.citation || "").startsWith("note:"))) kinds.push("notes");
   if (citations.length) kinds.push("documents");
   const names = toolCalls.join(" ").toLowerCase();
-  if (names.includes("catalog") || names.includes("graph") || names.includes("prerequisite")) {
-    kinds.push("graph");
-  }
-  if (names.includes("brave") || names.includes("web") || names.includes("playwright")) {
-    kinds.push("web");
-  }
-  if (names.includes("mail") || names.includes("outlook") || names.includes("365")) {
-    kinds.push("email");
-  }
+  if (names.includes("catalog") || names.includes("graph") || names.includes("prerequisite")) kinds.push("graph");
+  if (names.includes("brave") || names.includes("web") || names.includes("playwright")) kinds.push("web");
+  if (names.includes("mail") || names.includes("outlook") || names.includes("365")) kinds.push("email");
   return [...new Set(kinds)];
 }

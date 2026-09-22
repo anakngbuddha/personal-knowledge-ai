@@ -109,6 +109,7 @@ def create_note(
     body: str,
     slug: str | None = None,
     created_by: uuid.UUID | None = None,
+    notebook_id: uuid.UUID | None = None,
 ) -> Note:
     title = title.strip()
     if not title:
@@ -119,9 +120,16 @@ def create_note(
             code="note_body_too_large",
             message=f"note body exceeds {settings.notes_max_body_chars} characters",
         )
+    if notebook_id is not None:
+        from app.notebooks.service import get_notebook
+
+        notebook = get_notebook(db, org_id=org_id, notebook_id=notebook_id)
+        if notebook.workspace_id != workspace_id:
+            raise AppError(status_code=404, code="notebook_not_found", message="Notebook not found.")
     note = Note(
         org_id=org_id,
         workspace_id=workspace_id,
+        notebook_id=notebook_id,
         title=title,
         slug=_unique_slug(db, workspace_id, title, slug),
         body=body,
@@ -198,8 +206,14 @@ def list_notes(
     limit: int = 50,
     offset: int = 0,
     search: str | None = None,
+    notebook_id: uuid.UUID | None = None,
 ) -> tuple[list[Note], int]:
     filters = [Note.org_id == org_id, Note.workspace_id == workspace_id]
+    if notebook_id is not None:
+        from app.notebooks.service import get_notebook
+
+        get_notebook(db, org_id=org_id, notebook_id=notebook_id)
+        filters.append(Note.notebook_id == notebook_id)
     if search:
         like = f"%{search.strip()}%"
         filters.append((Note.title.ilike(like)) | (Note.body.ilike(like)) | (Note.slug.ilike(like)))

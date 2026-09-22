@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { AssistantMarkdown } from "./AssistantMarkdown";
 import { api } from "../services/api";
-import type { GraphEdge, KnowledgeDocument } from "../types";
+import type { GraphEdge, KnowledgeDocument, StudioResult } from "../types";
 import "../styles/source-insight.css";
 
 interface Props {
@@ -60,6 +61,9 @@ export function SourceInsightCard({ documentId, onChanged }: Props) {
   const [vendorDraft, setVendorDraft] = useState("");
   const [productsDraft, setProductsDraft] = useState("");
   const [validUntilDraft, setValidUntilDraft] = useState("");
+  const [questions, setQuestions] = useState<string[]>([]);
+  const [studio, setStudio] = useState<StudioResult | null>(null);
+  const [studioBusy, setStudioBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!documentId) {
@@ -301,6 +305,66 @@ export function SourceInsightCard({ documentId, onChanged }: Props) {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          <div className="insight-actions">
+            <button
+              type="button"
+              disabled={studioBusy}
+              onClick={() => {
+                if (!documentId) return;
+                setStudioBusy(true);
+                void api
+                  .studioQuestions(documentId)
+                  .then((result) => setQuestions(result.questions))
+                  .catch((err: unknown) => setProblem(plainProblem(err, "Could not suggest questions")))
+                  .finally(() => setStudioBusy(false));
+              }}
+            >
+              Suggested questions
+            </button>
+            <button
+              type="button"
+              disabled={studioBusy}
+              onClick={() => {
+                if (!documentId) return;
+                setStudioBusy(true);
+                void api
+                  .studioRun({ kind: "briefing", document_ids: [documentId] })
+                  .then(setStudio)
+                  .catch((err: unknown) => setProblem(plainProblem(err, "Could not write a briefing")))
+                  .finally(() => setStudioBusy(false));
+              }}
+            >
+              Briefing
+            </button>
+            <button
+              type="button"
+              disabled={studioBusy}
+              onClick={() => {
+                if (!documentId) return;
+                setStudioBusy(true);
+                void api
+                  .studioRun({ kind: "faq", document_ids: [documentId] })
+                  .then(setStudio)
+                  .catch((err: unknown) => setProblem(plainProblem(err, "Could not write an FAQ")))
+                  .finally(() => setStudioBusy(false));
+              }}
+            >
+              FAQ
+            </button>
+          </div>
+          {questions.length > 0 && (
+            <ul className="insight-facts">
+              {questions.map((question) => (
+                <li key={question}>{question}</li>
+              ))}
+            </ul>
+          )}
+          {studio && (
+            <div className="insight-block">
+              <AssistantMarkdown text={studio.markdown} citations={[]} onSelect={() => undefined} />
             </div>
           )}
 

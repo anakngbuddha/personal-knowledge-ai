@@ -178,7 +178,7 @@ def test_a_caller_filter_cannot_widen_their_account_grant():
 def test_corpus_predicates_are_always_present():
     predicate_set = build_predicate_set(owner_principal(ORG))
     corpus = fields(predicate_set, Origin.CORPUS)
-    assert corpus == {"is_current", "status"}
+    assert corpus == {"is_current", "status", "is_demo"}
 
 
 def test_predicate_set_describes_where_each_predicate_came_from():

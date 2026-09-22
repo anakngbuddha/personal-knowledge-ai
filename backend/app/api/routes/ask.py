@@ -37,10 +37,54 @@ from app.generation.conversations import (
 )
 from app.generation.service import ask as generation_ask
 from app.generation.service import ask_stream as generation_ask_stream
+from app.notebooks import service as notebooks
 from app.security.deps import resolve_principal
 from app.security.principal import Principal
 
 router = APIRouter(tags=["generation"])
+
+
+def _notebook_uuid(value: str | None) -> uuid.UUID | None:
+    if not value:
+        return None
+    try:
+        return uuid.UUID(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="That notebook id is not valid.") from exc
+
+
+def _scoped_ask(
+    db: Session, principal: Principal, payload: schemas.AskIn, workspace_id: uuid.UUID
+) -> tuple[dict | None, uuid.UUID | None]:
+    """Limit retrieval to the notebook's switched-on sources.
+
+    The saved membership is the authority. A client cannot widen it by sending
+    extra document ids. An empty notebook searches nothing, so expert mode can
+    still answer from general knowledge.
+    """
+    filters = payload.filters.model_dump() if payload.filters else None
+    notebook_id = _notebook_uuid(payload.notebook_id)
+    if notebook_id is None:
+        return filters, None
+    from app.core.errors import AppError
+
+    try:
+        notebook = notebooks.get_notebook(db, org_id=principal.org_id, notebook_id=notebook_id)
+    except AppError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    if notebook.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="Notebook not found.")
+    if payload.conversation_id:
+        try:
+            conv_uuid = uuid.UUID(payload.conversation_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid conversation ID") from exc
+        conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
+        if conv is None or (conv.notebook_id is not None and conv.notebook_id != notebook_id):
+            raise HTTPException(status_code=404, detail="Conversation not found")
+    scoped = dict(filters or {})
+    scoped["document_ids"] = [str(item) for item in notebooks.enabled_document_ids(db, notebook=notebook)]
+    return scoped, notebook_id
 
 
 def _workspace_id_from_principal(db: Session, principal: Principal) -> uuid.UUID:
@@ -81,9 +125,10 @@ def ask_endpoint(
     Otherwise returns a complete AskOut response.
     """
     workspace_id = _workspace_id_from_principal(db, principal)
+    filters, notebook_id = _scoped_ask(db, principal, payload, workspace_id)
 
     if payload.stream:
-        return _stream_response(db, principal, payload, workspace_id)
+        return _stream_response(db, principal, payload, workspace_id, filters, notebook_id)
 
     try:
         answer = generation_ask(
@@ -91,11 +136,12 @@ def ask_endpoint(
             principal=principal,
             question=payload.question,
             conversation_id=payload.conversation_id,
-            filters=payload.filters.model_dump() if payload.filters else None,
+            filters=filters,
             exclude_document_ids=payload.exclude_document_ids,
             workspace_id=workspace_id,
             enable_tools=payload.enable_tools,
             strict_mode=payload.strict_mode,
+            notebook_id=notebook_id,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -120,6 +166,8 @@ def _stream_response(
     principal: Principal,
     payload: schemas.AskIn,
     workspace_id: uuid.UUID,
+    filters: dict | None = None,
+    notebook_id: uuid.UUID | None = None,
 ) -> StreamingResponse:
     """Return an SSE streaming response."""
 
@@ -130,11 +178,12 @@ def _stream_response(
                 principal=principal,
                 question=payload.question,
                 conversation_id=payload.conversation_id,
-                filters=payload.filters.model_dump() if payload.filters else None,
+                filters=filters,
                 exclude_document_ids=payload.exclude_document_ids,
                 workspace_id=workspace_id,
                 enable_tools=payload.enable_tools,
                 strict_mode=payload.strict_mode,
+                notebook_id=notebook_id,
             ):
                 event_data = {
                     "delta": chunk.delta,
@@ -176,12 +225,27 @@ def _stream_response(
 
 @router.post("/conversations", response_model=schemas.ConversationOut, status_code=201)
 def create_conversation_endpoint(
+    notebook_id: uuid.UUID | None = Query(default=None),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> schemas.ConversationOut:
     """Create a new conversation."""
     workspace_id = _workspace_id_from_principal(db, principal)
-    conv = create_conversation(db, workspace_id=workspace_id)
+    if notebook_id is not None:
+        from app.core.errors import AppError
+
+        try:
+            notebook = notebooks.get_notebook(db, org_id=principal.org_id, notebook_id=notebook_id)
+        except AppError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        if notebook.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail="Notebook not found.")
+    conv = create_conversation(
+        db,
+        workspace_id=workspace_id,
+        notebook_id=notebook_id,
+        org_id=principal.org_id,
+    )
     return _conv_to_out(conv)
 
 
@@ -189,13 +253,21 @@ def create_conversation_endpoint(
 def list_conversations_endpoint(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    notebook_id: uuid.UUID | None = Query(default=None),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> schemas.ConversationListOut:
     """List conversations (paginated)."""
     workspace_id = _workspace_id_from_principal(db, principal)
+    if notebook_id is not None:
+        from app.core.errors import AppError
+
+        try:
+            notebooks.get_notebook(db, org_id=principal.org_id, notebook_id=notebook_id)
+        except AppError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     conversations, total = list_conversations(
-        db, workspace_id=workspace_id, limit=limit, offset=offset
+        db, workspace_id=workspace_id, limit=limit, offset=offset, notebook_id=notebook_id
     )
     return schemas.ConversationListOut(
         conversations=[_conv_to_out(c) for c in conversations],
@@ -208,6 +280,7 @@ def list_conversations_endpoint(
 @router.get("/conversations/{conversation_id}", response_model=schemas.ConversationOut)
 def get_conversation_endpoint(
     conversation_id: str,
+    notebook_id: uuid.UUID | None = Query(default=None),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> schemas.ConversationOut:
@@ -219,7 +292,7 @@ def get_conversation_endpoint(
         raise HTTPException(status_code=400, detail="Invalid conversation ID") from None
 
     conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
-    if conv is None:
+    if conv is None or (notebook_id is not None and conv.notebook_id != notebook_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return _conv_to_out(conv, include_messages=True)
 
@@ -264,9 +337,10 @@ def ask_in_conversation_endpoint(
 
     # Override conversation_id in the payload
     payload.conversation_id = conversation_id
+    filters, notebook_uuid = _scoped_ask(db, principal, payload, workspace_id)
 
     if payload.stream:
-        return _stream_response(db, principal, payload, workspace_id)
+        return _stream_response(db, principal, payload, workspace_id, filters, notebook_uuid)
 
     try:
         answer = generation_ask(
@@ -274,11 +348,12 @@ def ask_in_conversation_endpoint(
             principal=principal,
             question=payload.question,
             conversation_id=conversation_id,
-            filters=payload.filters.model_dump() if payload.filters else None,
+            filters=filters,
             exclude_document_ids=payload.exclude_document_ids,
             workspace_id=workspace_id,
             enable_tools=payload.enable_tools,
             strict_mode=payload.strict_mode,
+            notebook_id=notebook_uuid,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -403,6 +478,7 @@ def _conv_to_out(
     return schemas.ConversationOut(
         id=str(conv.id),
         workspace_id=str(conv.workspace_id),
+        notebook_id=str(conv.notebook_id) if conv.notebook_id else None,
         title=conv.title,
         messages=messages,
         created_at=conv.created_at.isoformat(),

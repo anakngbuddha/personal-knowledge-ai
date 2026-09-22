@@ -1,6 +1,154 @@
 import { useEffect, useState } from "react";
 import { AuthScreen } from "./components/AuthScreen";
-import { ChunkInspector } from "./components/ChunkInspector"; import { DocumentList } from "./components/DocumentList"; import { GraphExplorer } from "./components/GraphExplorer"; import { GroundedChat } from "./components/GroundedChat"; import { IntegrationsPanel } from "./components/IntegrationsPanel"; import { MapEditor } from "./components/MapEditor"; import { NotesPanel } from "./components/NotesPanel"; import { OpsPanel } from "./components/OpsPanel"; import { ProductImport } from "./components/ProductImport"; import { SearchExplorer } from "./components/SearchExplorer"; import { SourceInsightCard } from "./components/SourceInsightCard"; import { UploadButton } from "./components/UploadButton"; import { WorkflowWorkspace } from "./components/WorkflowWorkspace"; import { useDocuments } from "./hooks/useDocuments"; import { usePrincipal } from "./hooks/useWorkflows"; import { apiPointsAtLocalhostFromRemote, getAccessToken, setAccessToken } from "./services/http";
-type Tab="documents"|"search"|"chat"|"graph"|"workflows"|"integrations"|"notes"|"ops";
-const TABS: {id:Tab;num:string;kicker:string;name:string}[] = [{id:"workflows",num:"01",kicker:"Playbooks",name:"Field runs"},{id:"integrations",num:"02",kicker:"Connectors",name:"MCP stations"},{id:"graph",num:"03",kicker:"Catalog",name:"Product graph"},{id:"chat",num:"04",kicker:"Desk",name:"Grounded ask"},{id:"search",num:"05",kicker:"Evidence",name:"Hybrid search"},{id:"documents",num:"06",kicker:"Library",name:"Sources"},{id:"notes",num:"07",kicker:"Ledger",name:"Field notes"},{id:"ops",num:"08",kicker:"Watch",name:"Freshness & drills"}];
-export default function App(){ const [authenticated,setAuthenticated]=useState(Boolean(getAccessToken())); const [activeTab,setActiveTab]=useState<Tab>("workflows"); const {documents,loading,error,refresh,setError}=useDocuments(); const [selectedId,setSelectedId]=useState<string|null>(null); const [mapVersion,setMapVersion]=useState(0); const principal=usePrincipal(); useEffect(()=>{if(!getAccessToken())setAuthenticated(false)},[]); if(!authenticated)return <AuthScreen onAuthenticated={()=>setAuthenticated(true)}/>; return <div className="app"><header className="masthead"><div className="brand"><span className="brand-kicker">Solutions engineering</span><h1>Field Desk</h1></div><div className="mast-meta"><span className="stamp">Multi-user workspace</span>{principal&&<span className="org-chip">Role <strong>{principal.role}</strong></span>}<button className="link-button" onClick={()=>{setAccessToken(null);setAuthenticated(false)}}>Sign out</button></div></header><div className="desk"><nav className="field-index" aria-label="Field kit"><span className="index-label">Index</span>{TABS.map(tab=><button key={tab.id} type="button" className={`index-item ${activeTab===tab.id?"active":""}`} onClick={()=>setActiveTab(tab.id)}><span className="index-num">{tab.num}</span><span className="index-copy"><span className="index-kicker">{tab.kicker}</span><span className="index-name">{tab.name}</span></span></button>)}</nav><div className="desk-body">{apiPointsAtLocalhostFromRemote()&&<div className="banner error">This build is not pointed at the backend. Set <code>VITE_API_BASE_URL</code> and <code>CORS_ORIGINS</code>, then redeploy.</div>}{error&&activeTab==="documents"&&<div className="banner error">{error}</div>}<main className="content-container">{activeTab==="workflows"&&<WorkflowWorkspace/>}{activeTab==="integrations"&&<IntegrationsPanel/>}{activeTab==="graph"&&<><ProductImport onImported={()=>setMapVersion(v=>v+1)}/><GraphExplorer key={mapVersion}/><MapEditor onChanged={()=>setMapVersion(v=>v+1)}/></>}{activeTab==="chat"&&<GroundedChat/>}{activeTab==="search"&&<SearchExplorer/>}{activeTab==="notes"&&<NotesPanel/>}{activeTab==="ops"&&<OpsPanel/>}{activeTab==="documents"&&<div className="layout"><section className="panel documents"><div className="panel-head"><div><p className="kicker">Sources</p><h2>Sources ({documents.length})</h2></div><UploadButton onUploaded={refresh} onError={setError}/></div><DocumentList documents={documents} loading={loading} selectedId={selectedId} onSelect={setSelectedId} onChanged={refresh} onError={setError}/></section><section className="panel workspace"><div className="panel-head"><div><p className="kicker">Source detail</p><h2>{selectedId?"What this source says":"Pick a source"}</h2></div></div>{selectedId?<><SourceInsightCard documentId={selectedId} onChanged={refresh}/><ChunkInspector documentId={selectedId}/></>:<p className="muted">Pick a source on the left to see what it says.</p>}</section></div>}</main></div></div></div> }
+import { ChunkInspector } from "./components/ChunkInspector";
+import { DocumentList } from "./components/DocumentList";
+import { GraphExplorer } from "./components/GraphExplorer";
+import { GroundedChat } from "./components/GroundedChat";
+import { IntegrationsPanel } from "./components/IntegrationsPanel";
+import { MapEditor } from "./components/MapEditor";
+import { NotesPanel } from "./components/NotesPanel";
+import { OpsPanel } from "./components/OpsPanel";
+import { ProductImport } from "./components/ProductImport";
+import { SearchExplorer } from "./components/SearchExplorer";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { SourceInsightCard } from "./components/SourceInsightCard";
+import { UploadButton } from "./components/UploadButton";
+import { useDocuments } from "./hooks/useDocuments";
+import { usePrincipal } from "./hooks/useWorkflows";
+import { apiPointsAtLocalhostFromRemote, getAccessToken, onServerWake, setAccessToken } from "./services/http";
+import { SERVER_WAKING } from "./services/errors";
+
+type Tab = "sources" | "ask" | "notes" | "map" | "connections" | "settings";
+
+const TABS: { id: Tab; name: string }[] = [
+  { id: "ask", name: "Ask" },
+  { id: "notes", name: "Notes" },
+  { id: "sources", name: "Sources" },
+  { id: "connections", name: "Connectors" },
+  { id: "map", name: "Map" },
+  { id: "settings", name: "Settings" },
+];
+
+export default function App() {
+  const [authenticated, setAuthenticated] = useState(Boolean(getAccessToken()));
+  const [activeTab, setActiveTab] = useState<Tab>("ask");
+  const { documents, loading, error, refresh, setError } = useDocuments();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mapVersion, setMapVersion] = useState(0);
+  const [waking, setWaking] = useState(false);
+  const principal = usePrincipal();
+
+  useEffect(() => {
+    if (!getAccessToken()) setAuthenticated(false);
+  }, []);
+
+  useEffect(() => {
+    const stop = onServerWake((phase) => setWaking(phase === "waking"));
+    return () => {
+      stop();
+    };
+  }, []);
+
+  function signOut() {
+    setAccessToken(null);
+    setAuthenticated(false);
+  }
+
+  if (!authenticated) return <AuthScreen onAuthenticated={() => setAuthenticated(true)} />;
+
+  return (
+    <div className="app">
+      <header className="masthead">
+        <div className="brand">
+          <span className="brand-kicker">Solutions engineering</span>
+          <h1>Field Desk</h1>
+        </div>
+        <div className="mast-meta">
+          <button className="link-button" onClick={signOut}>
+            Sign out
+          </button>
+        </div>
+      </header>
+      <div className="desk">
+        <nav className="field-index" aria-label="Main">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`index-item word ${activeTab === tab.id ? "active" : ""}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <span className="index-name">{tab.name}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="desk-body">
+          {waking && <div className="banner info">{SERVER_WAKING}</div>}
+          {apiPointsAtLocalhostFromRemote() && (
+            <div className="banner error">
+              This build is not pointed at the server. Set the API address and redeploy.
+            </div>
+          )}
+          {error && activeTab === "sources" && <div className="banner error">{error}</div>}
+          <main className="content-container">
+            {activeTab === "ask" && (
+              <GroundedChat
+                sourceCount={documents.length}
+                onNavigate={(tab) => setActiveTab(tab === "map" ? "map" : "sources")}
+              />
+            )}
+            {activeTab === "connections" && <IntegrationsPanel />}
+            {activeTab === "map" && (
+              <>
+                <ProductImport onImported={() => setMapVersion((v) => v + 1)} />
+                <GraphExplorer key={mapVersion} />
+                <MapEditor onChanged={() => setMapVersion((v) => v + 1)} />
+              </>
+            )}
+            {activeTab === "notes" && <NotesPanel />}
+            {activeTab === "settings" && <SettingsPanel principal={principal} onSignOut={signOut} />}
+            {activeTab === "sources" && (
+              <div className="sources-page">
+                <div className="layout">
+                  <section className="panel documents">
+                    <div className="panel-head">
+                      <div>
+                        <h2>Sources ({documents.length})</h2>
+                      </div>
+                      <UploadButton onUploaded={refresh} onError={setError} />
+                    </div>
+                    <DocumentList
+                      documents={documents}
+                      loading={loading}
+                      selectedId={selectedId}
+                      onSelect={setSelectedId}
+                      onChanged={refresh}
+                      onError={setError}
+                    />
+                  </section>
+                  <section className="panel workspace">
+                    <div className="panel-head">
+                      <div>
+                        <h2>{selectedId ? "What this source says" : "Pick a source"}</h2>
+                      </div>
+                    </div>
+                    {selectedId ? (
+                      <>
+                        <SourceInsightCard documentId={selectedId} onChanged={refresh} />
+                        <ChunkInspector documentId={selectedId} />
+                      </>
+                    ) : (
+                      <p className="muted">Pick a source on the left to see what it says.</p>
+                    )}
+                  </section>
+                </div>
+                <SearchExplorer />
+                <OpsPanel mode="watches" />
+              </div>
+            )}
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+}

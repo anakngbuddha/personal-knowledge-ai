@@ -201,10 +201,40 @@ export interface Message {
 export interface Conversation {
   id: string;
   workspace_id: string;
+  notebook_id?: string | null;
   title?: string | null;
   messages: Message[];
   created_at: string;
   updated_at: string;
+}
+
+export interface NotebookRecord {
+  id: string;
+  name: string;
+  workspace_id: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface NotebookList {
+  notebooks: NotebookRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface NotebookSource {
+  document_id: string;
+  title?: string | null;
+  filename: string;
+  enabled: boolean;
+  status: string;
+}
+
+export interface StudioResult {
+  markdown: string;
+  source_titles: string[];
+  note_id?: string | null;
 }
 
 export interface ConversationListResponse {
@@ -225,6 +255,7 @@ export type WorkflowRunStatus = TaskStatus;
 
 export interface PrincipalProfile {
   org_id: string;
+  organization_name?: string;
   user_id: string | null;
   role: string;
   can_write_catalog: boolean;
@@ -385,6 +416,7 @@ export interface NoteRecord {
   slug: string;
   body: string;
   workspace_id: string;
+  notebook_id?: string | null;
   created_by?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -470,3 +502,32 @@ export interface SsoStatus {
   saml_issuer?: string | null;
   oidc_client_id?: string | null;
 }
+
+export interface NoteGraphNode {
+  id: string;
+  kind: string;
+  title: string;
+  slug: string;
+}
+
+export interface NoteGraphEdge {
+  source_id: string;
+  source_kind: string;
+  target_id: string;
+  target_kind: string;
+  target_ref: string;
+  display_text?: string | null;
+  resolved: boolean;
+}
+
+export interface NoteGraphOut {
+  nodes: NoteGraphNode[];
+  edges: NoteGraphEdge[];
+}
+
+export interface LinkTargetOut {
+  kind: string;
+  ref: string;
+  title: string;
+}
+

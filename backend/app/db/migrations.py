@@ -69,11 +69,28 @@ _DEMO_SOURCES=[
  "CREATE INDEX IF NOT EXISTS ix_documents_is_demo ON documents(is_demo)",
 ]
 
+# 4.4 notebooks: a deal or customer inside the workspace. Sources stay shared;
+# the join table is only the on/off switch. Older notes and chats keep a null
+# notebook and stay visible at the workspace level.
+_NOTEBOOKS=[
+ "CREATE TABLE IF NOT EXISTS notebooks (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, name varchar(120) NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), CONSTRAINT uq_notebooks_workspace_name UNIQUE (workspace_id, name))",
+ "CREATE INDEX IF NOT EXISTS ix_notebooks_org_id ON notebooks(org_id)",
+ "CREATE INDEX IF NOT EXISTS ix_notebooks_workspace_id ON notebooks(workspace_id)",
+ "CREATE TABLE IF NOT EXISTS notebook_sources (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, notebook_id uuid NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE, document_id uuid NOT NULL REFERENCES documents(id) ON DELETE CASCADE, enabled boolean NOT NULL DEFAULT true, CONSTRAINT uq_notebook_sources_pair UNIQUE (notebook_id, document_id))",
+ "CREATE INDEX IF NOT EXISTS ix_notebook_sources_notebook_id ON notebook_sources(notebook_id)",
+ "CREATE INDEX IF NOT EXISTS ix_notebook_sources_document_id ON notebook_sources(document_id)",
+ "ALTER TABLE notes ADD COLUMN IF NOT EXISTS notebook_id uuid REFERENCES notebooks(id) ON DELETE SET NULL",
+ "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS notebook_id uuid REFERENCES notebooks(id) ON DELETE SET NULL",
+ "CREATE INDEX IF NOT EXISTS ix_notes_notebook_id ON notes(notebook_id)",
+ "CREATE INDEX IF NOT EXISTS ix_conversations_notebook_id ON conversations(notebook_id)",
+]
+
 MIGRATIONS=[
  ("0015_multi_user_rbac",_RBAC),
  ("0016_document_understanding",_UNDERSTANDING,True),
  ("0017_selling_model",_SELLING_MODEL,True),
  ("0018_demo_sources",_DEMO_SOURCES,True),
+ ("0019_notebooks",_NOTEBOOKS,True),
 ]
 
 def applied_migrations(engine: Engine)->set[str]:

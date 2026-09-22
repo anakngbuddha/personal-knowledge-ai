@@ -107,10 +107,21 @@ def issue_token(payload: TokenRequest, db: Session = Depends(get_db)):
                          org_id=str(target_org_id), user_id=str(user_id), role=role)
 
 @router.get("/me")
-def get_current_principal_profile(principal: Principal = Depends(resolve_principal)) -> dict[str, Any]:
-    info = principal.describe(); info.update({"is_owner": principal.is_owner, "is_admin": principal.is_admin,
-        "can_write_catalog": principal.can_write_catalog, "can_manage_users": principal.can_manage_users,
-        "can_export_restricted": principal.can_export_restricted, "readable_sensitivities": principal.readable_sensitivities()})
+def get_current_principal_profile(
+    principal: Principal = Depends(resolve_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    info = principal.describe()
+    org = db.get(Organization, principal.org_id)
+    info.update({
+        "organization_name": org.name if org else "",
+        "is_owner": principal.is_owner,
+        "is_admin": principal.is_admin,
+        "can_write_catalog": principal.can_write_catalog,
+        "can_manage_users": principal.can_manage_users,
+        "can_export_restricted": principal.can_export_restricted,
+        "readable_sensitivities": principal.readable_sensitivities(),
+    })
     return info
 
 @router.get("/members")

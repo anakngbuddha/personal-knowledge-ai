@@ -4,7 +4,7 @@ import type { SearchHit, SearchResponse } from "../types";
 
 export function SearchExplorer() {
   const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<"hybrid" | "vector" | "keyword">("hybrid");
+  const mode = "hybrid" as const;
   const [approvedOnly, setApprovedOnly] = useState(true);
   const [excludeInjection, setExcludeInjection] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -38,8 +38,7 @@ export function SearchExplorer() {
     <div className="search-explorer">
       <div className="stage-head">
         <div>
-          <p className="kicker">05 · Evidence</p>
-          <h2>Hybrid search</h2>
+          <h2>Find a passage</h2>
         </div>
       </div>
 
@@ -58,37 +57,6 @@ export function SearchExplorer() {
         </div>
 
         <div className="search-controls">
-          <div className="control-group">
-            <span className="control-label">Mode</span>
-            <label className="radio-label">
-              <input
-                type="radio"
-                name="search-mode"
-                checked={mode === "hybrid"}
-                onChange={() => setMode("hybrid")}
-              />
-              Hybrid (RRF)
-            </label>
-            <label className="radio-label">
-              <input
-                type="radio"
-                name="search-mode"
-                checked={mode === "vector"}
-                onChange={() => setMode("vector")}
-              />
-              Vector only
-            </label>
-            <label className="radio-label">
-              <input
-                type="radio"
-                name="search-mode"
-                checked={mode === "keyword"}
-                onChange={() => setMode("keyword")}
-              />
-              Keyword (FTS)
-            </label>
-          </div>
-
           <div className="control-group filters">
             <label className="checkbox-label">
               <input
@@ -104,7 +72,7 @@ export function SearchExplorer() {
                 checked={excludeInjection}
                 onChange={(e) => setExcludeInjection(e.target.checked)}
               />
-              Exclude injection-flagged
+              Skip sources that look like instructions
             </label>
           </div>
         </div>
@@ -118,7 +86,7 @@ export function SearchExplorer() {
           <h3>Pull passages from the live index.</h3>
           <p>
             Approved-only is on by default — as it should be on a live deal. Expand a hit for the
-            full chunk, citation, and rank split.
+            the passage and where it came from.
           </p>
         </div>
       )}
@@ -173,11 +141,11 @@ export function SearchExplorer() {
                       </div>
                       <div className="hit-scores">
                         <span className="score-pill">RRF {hit.rrf_score.toFixed(4)}</span>
-                        {hit.ranks.vector !== undefined && (
-                          <span className="rank-pill">Vec #{hit.ranks.vector}</span>
+                        {hit.ranks?.vector !== undefined && (
+                          <span className="rank-pill">Vec #{hit.ranks.vector} ({hit.branch_scores?.vector !== undefined ? hit.branch_scores.vector.toFixed(3) : ""})</span>
                         )}
-                        {hit.ranks.keyword !== undefined && (
-                          <span className="rank-pill">Key #{hit.ranks.keyword}</span>
+                        {hit.ranks?.keyword !== undefined && (
+                          <span className="rank-pill">Key #{hit.ranks.keyword} ({hit.branch_scores?.keyword !== undefined ? hit.branch_scores.keyword.toFixed(3) : ""})</span>
                         )}
                       </div>
                     </div>

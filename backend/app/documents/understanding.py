@@ -273,10 +273,17 @@ def heuristic_understanding(text: str, *, filename: str) -> SourceUnderstanding:
     name = (filename or "").lower()
 
     doc_type = "other"
+    # The filename is the author's label. A datasheet that mentions "certified for"
+    # is still a datasheet; body hints only fill in when the name is silent.
     for candidate, hints in _TYPE_HINTS:
-        if any(hint in name for hint in hints) or any(hint in lowered for hint in hints):
+        if any(hint in name for hint in hints):
             doc_type = candidate
             break
+    if doc_type == "other":
+        for candidate, hints in _TYPE_HINTS:
+            if any(hint in lowered for hint in hints):
+                doc_type = candidate
+                break
 
     vendors = _unique(_VENDOR_LABEL.findall(text))[:4]
     products = _unique(_PRODUCT_LABEL.findall(text))[:10]

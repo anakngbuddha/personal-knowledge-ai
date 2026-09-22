@@ -71,6 +71,7 @@ class AskIn(BaseModel):
     stream: bool = False
     # Source toggling: exclude specific documents from context
     exclude_document_ids: list[str] = Field(default_factory=list)
+    notebook_id: str | None = None
     enable_tools: bool = True
     # Knowledge mode: False = expert (sources + general knowledge), True = strict (sources only)
     strict_mode: bool = False
@@ -111,6 +112,7 @@ class ConversationOut(BaseModel):
 
     id: str
     workspace_id: str
+    notebook_id: str | None = None
     title: str | None = None
     messages: list[MessageOut] = Field(default_factory=list)
     created_at: str
