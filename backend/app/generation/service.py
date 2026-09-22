@@ -1,7 +1,19 @@
 """Generation service - Phase 4.1+5: Brief-aware answer generation."""
 from typing import Optional, List, Dict, Any
-from playbooks.brief import CustomerBrief, brief_to_chat_card
-from playbooks.graph_context import GraphContext
+from app.advisor.brief import CustomerBrief
+
+
+def brief_to_chat_card(brief: Optional[CustomerBrief]) -> Dict[str, Any]:
+    """Convert a brief to a chat card summary."""
+    if not brief:
+        return None
+    return {
+        "customer": brief.customer,
+        "industry": brief.industry,
+        "platforms": brief.platforms,
+        "budget": brief.budget,
+        "timeline": brief.timeline,
+    }
 
 
 class GenerationService:
@@ -70,3 +82,8 @@ Recommend: 1) Best-fit bundle 2) Why each fits 3) Integration notes 4) Implement
 
     async def _fetch_passages(self, products, sources, selected):
         return [{"source": (selected or sources)[:1] and (selected or sources)[0], "text": f"Info about {p}"} for p in products]
+
+
+class GraphContext:
+    """Placeholder for graph context - Phase 5."""
+    pass
