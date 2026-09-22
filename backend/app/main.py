@@ -16,10 +16,12 @@ from app.api.routes import (
     integrations,
     jobs,
     map_edit,
+    notebooks,
     notes,
     ops,
     phase8,
     search,
+    studio,
     workflows,
 )
 from app.core.config import settings
@@ -37,6 +39,18 @@ setup_logging()
 async def lifespan(_: FastAPI):
     if should_bootstrap():
         ensure_schema()
+    # Render restarts leave RUNNING jobs locked; reclaim them before workers start.
+    try:
+        from app.db.session import SessionLocal
+        from app.jobs import queue as job_queue
+
+        db = SessionLocal()
+        try:
+            job_queue.reap_stale(db)
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001
+        pass
     start_background_workers()
     start_workflow_workers()
     start_freshness_workers()
@@ -73,6 +87,7 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(search.router)
+app.include_router(studio.router)
 app.include_router(jobs.router)
 app.include_router(ask.router)
 app.include_router(catalog_import.router)
@@ -83,6 +98,7 @@ app.include_router(workflows.router)
 app.include_router(phase8.router)
 app.include_router(advisor.router)
 app.include_router(integrations.router)
+app.include_router(notebooks.router)
 app.include_router(notes.router)
 app.include_router(freshness.router)
 app.include_router(ops.router)

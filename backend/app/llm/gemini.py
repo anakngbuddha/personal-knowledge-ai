@@ -29,6 +29,7 @@ from app.llm.base import (
     SourceMetadata,
     TokenUsage,
 )
+from app.llm.limiter import acquire_gemini
 from app.llm.prompts import PROMPT_VERSION
 from app.tools.schema import ToolCall, ToolDefinition, ToolResult
 
@@ -86,6 +87,7 @@ class GeminiLLMProvider(LLMProvider):
             tool_results=tool_results,
         )
 
+        acquire_gemini()
         try:
             response = httpx.post(
                 url,
@@ -127,6 +129,7 @@ class GeminiLLMProvider(LLMProvider):
         accumulated_text = ""
         usage: TokenUsage | None = None
 
+        acquire_gemini()
         try:
             with httpx.stream(
                 "POST",

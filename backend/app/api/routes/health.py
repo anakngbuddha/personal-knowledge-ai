@@ -107,4 +107,16 @@ def dependencies() -> dict:
     except Exception as exc:  # noqa: BLE001
         checks["ingestion_queue"] = {"ok": False, "error": str(exc)[:300]}
 
+    try:
+        from app.llm.limiter import gemini_bucket
+
+        bucket = gemini_bucket()
+        checks["gemini"] = {
+            "ok": True,
+            "queued": bucket.queued,
+            "rpm": float(getattr(settings, "gemini_rpm", 10) or 10),
+        }
+    except Exception as exc:  # noqa: BLE001
+        checks["gemini"] = {"ok": False, "error": str(exc)[:300]}
+
     return {"ok": all(check.get("ok") for check in checks.values()), "checks": checks}

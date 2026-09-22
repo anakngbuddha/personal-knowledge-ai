@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.errors import ProviderError, ProviderRateLimited
 from app.core.logging import get_logger
 from app.embeddings.base import EmbeddingProvider
+from app.llm.limiter import acquire_gemini
 
 logger = get_logger(__name__)
 
@@ -66,6 +67,7 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
                 for text in texts
             ]
         }
+        acquire_gemini()
         try:
             response = httpx.post(
                 url,

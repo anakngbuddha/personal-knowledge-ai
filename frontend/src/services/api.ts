@@ -1,5 +1,5 @@
-import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, McpIntegration, McpIntegrationList, McpPingResult, NoteList, NoteRecord, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
-import { apiBaseUrl, getAccessToken, request, requestBlob } from "./http";
+import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, McpIntegration, McpIntegrationList, McpPingResult, NoteList, NoteRecord, NotebookList, NotebookRecord, NotebookSource, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, StudioResult, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
+import { fetchResponse, request, requestBlob } from "./http";
 
 export const api = {
   login: (email: string, password: string) => 
@@ -51,30 +51,25 @@ export const api = {
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({query, mode:options?.mode??"hybrid", top_k:options?.top_k??8, filters:options?.filters?? {}})
     }),
-  ask: (payload: {question:string; conversation_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean}) =>
+  ask: (payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean}) =>
     request<AskResponse>("/ask", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({...payload, stream:false})
     }),
   askStream: async (
-    payload: {question:string; conversation_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean},
+    payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean},
     onDelta: (text: string) => void
   ): Promise<Partial<AskResponse>> => {
-    const headers = new Headers({"Content-Type":"application/json"});
-    const token = getAccessToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000);
     try {
-      const res = await fetch(`${apiBaseUrl()}/ask`, {
+      const res = await fetchResponse("/ask", {
         method: "POST",
-        headers,
+        headers: {"Content-Type":"application/json"},
         body: JSON.stringify({...payload, stream: true}),
         signal: controller.signal
-      });
-      if (res.status === 401) throw new Error("Your session expired. Please sign in again.");
-      if (!res.ok) throw new Error(`Ask failed (${res.status})`);
+      }, 120000);
       if (!res.body) throw new Error("No response from the server");
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -114,7 +109,11 @@ export const api = {
       clearTimeout(timer);
     }
   },
-  listConversations: (limit=20, offset=0) => request<ConversationListResponse>(`/conversations?limit=${limit}&offset=${offset}`),
+  listConversations: (limit=20, offset=0, notebookId?: string) => {
+    const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (notebookId) q.set("notebook_id", notebookId);
+    return request<ConversationListResponse>(`/conversations?${q}`);
+  },
   getConversation: (id:string) => request<Conversation>(`/conversations/${id}`),
   deleteConversation: (id:string) => request<void>(`/conversations/${id}`, {method:"DELETE"}),
   getConversationSources: (id:string) => request<SourceMetadata[]>(`/conversations/${id}/sources`),
@@ -182,12 +181,45 @@ export const api = {
       body:JSON.stringify({reason})
     }),
   downloadDeliverable: (runId:string) => requestBlob(`/workflows/runs/${runId}/deliverable`),
-  listNotes: (limit=50, offset=0) => request<NoteList>(`/notes?limit=${limit}&offset=${offset}`),
-  createNote: (body:{title:string; body:string; slug?:string}) =>
+  listNotes: (limit=50, offset=0, notebookId?: string) => {
+    const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (notebookId) q.set("notebook_id", notebookId);
+    return request<NoteList>(`/notes?${q}`);
+  },
+  createNote: (body:{title:string; body:string; slug?:string; notebook_id?:string}) =>
     request<NoteRecord>("/notes", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(body)
+    }),
+  listNotebooks: () => request<NotebookList>("/notebooks?limit=100"),
+  createNotebook: (name: string) =>
+    request<NotebookRecord>("/notebooks", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ name }),
+    }),
+  renameNotebook: (id: string, name: string) =>
+    request<NotebookRecord>(`/notebooks/${id}`, {
+      method: "PATCH",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ name }),
+    }),
+  deleteNotebook: (id: string) => request<void>(`/notebooks/${id}`, { method: "DELETE" }),
+  listNotebookSources: (id: string) => request<NotebookSource[]>(`/notebooks/${id}/sources`),
+  setNotebookSources: (id: string, documentIds: string[]) =>
+    request<NotebookSource[]>(`/notebooks/${id}/sources`, {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ document_ids: documentIds }),
+    }),
+  studioQuestions: (documentId: string) =>
+    request<{ document_id: string; questions: string[] }>(`/studio/questions?document_id=${documentId}`),
+  studioRun: (body: { kind: "briefing" | "faq" | "compare"; document_ids: string[]; notebook_id?: string | null; save_as_note?: boolean }) =>
+    request<StudioResult>("/studio/run", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
     }),
   updateNote: (id:string, body:{title?:string; body?:string}) =>
     request<NoteRecord>(`/notes/${id}`, {
@@ -211,5 +243,21 @@ export const api = {
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({})
   }),
-  ssoStatus: () => request<SsoStatus>("/ops/sso")
+  ssoStatus: () => request<SsoStatus>("/ops/sso"),
+  healthDependencies: () =>
+    request<{
+      ok: boolean;
+      checks: Record<
+        string,
+        {
+          ok?: boolean;
+          queued?: number;
+          counts?: Record<string, number>;
+          worker_in_process?: boolean;
+          provider?: string;
+          error?: string;
+          [key: string]: unknown;
+        }
+      >;
+    }>("/health/dependencies"),
 };

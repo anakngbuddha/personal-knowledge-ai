@@ -10,6 +10,12 @@ import base64
 import logging
 
 import httpx
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.core.config import settings
 from app.core.errors import ProviderRateLimited
@@ -39,6 +45,21 @@ class GeminiOcrProvider(OcrProvider):
     def image_to_text(self, image_bytes: bytes) -> str:
         if not image_bytes or not self._api_key:
             return ""
+        try:
+            return self._image_to_text_once(image_bytes)
+        except ProviderRateLimited:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Gemini OCR failed: %s", exc)
+            return ""
+
+    @retry(
+        retry=retry_if_exception_type((ProviderRateLimited, httpx.TransportError)),
+        wait=wait_exponential(multiplier=2, min=2, max=30),
+        stop=stop_after_attempt(3),
+        reraise=True,
+    )
+    def _image_to_text_once(self, image_bytes: bytes) -> str:
         acquire_gemini()
         payload = {
             "contents": [
@@ -56,16 +77,12 @@ class GeminiOcrProvider(OcrProvider):
             ]
         }
         url = f"{settings.gemini_api_base}/models/{self._model}:generateContent"
-        try:
-            response = httpx.post(
-                url,
-                params={"key": self._api_key},
-                json=payload,
-                timeout=self._timeout,
-            )
-        except httpx.TransportError as exc:
-            logger.warning("Gemini OCR transport error: %s", exc)
-            return ""
+        response = httpx.post(
+            url,
+            params={"key": self._api_key},
+            json=payload,
+            timeout=self._timeout,
+        )
         if response.status_code == 429:
             raise ProviderRateLimited("Gemini OCR rate limit reached")
         if response.status_code >= 400:

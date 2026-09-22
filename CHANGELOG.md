@@ -10,6 +10,13 @@ to deploy. One entry per numbered task.
 
 ## Unreleased — NotebookLM + Obsidian Field Desk
 
+### Phase 6.2 — Shared Gemini limiter and job resume
+
+* All Gemini paths (embeddings, chat sync/stream, OCR) call `acquire_gemini()` on the shared token bucket. OCR retries on 429.
+* App boot runs `reap_stale` before workers start so Render restarts reclaim abandoned file jobs.
+* `/health/dependencies` reports `gemini.queued`. Settings > Admin shows AI wait queue and file reading counts.
+* No new environment variables (`gemini_rpm` already existed).
+
 ### Phase 6.1 — Salesperson evals
 
 * Added `docs/eval/salesperson_set.json` (reference scenario E + 13 salesperson cases).
