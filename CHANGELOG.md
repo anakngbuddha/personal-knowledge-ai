@@ -10,6 +10,51 @@ to deploy. One entry per numbered task.
 
 ## Unreleased — NotebookLM + Obsidian Field Desk
 
+### Phase 6.1 — Salesperson evals
+
+* Added `docs/eval/salesperson_set.json` (reference scenario E + 13 salesperson cases).
+* Scorer in `backend/app/eval/salesperson.py`: prose (no jargon), provenance labels, catalog grounding, empty-retrieval expert vs strict.
+* `scripts/run_generation_eval.py` runs the suite with the fake provider and exits non-zero on failure. Re-run after every `PROMPT_VERSION` change.
+* Pytest gate: `backend/tests/test_salesperson_eval.py`.
+* Eval home stays `docs/eval/` (not a top-level `evals/` folder).
+
+### Phase 4.4 — Notebooks
+
+* Named notebooks live inside the existing workspace. They are not extra workspaces.
+* A new notebook switches on every current non-demo source. Sample files stay off.
+* Notes, customer briefs, and new chats store `notebook_id`. Older rows with a null id stay visible when no notebook is selected.
+* Ask uses the saved on/off set. An empty set searches nothing, so expert mode can still answer from general knowledge.
+* Migration `0019_notebooks`. No new environment variables.
+
+### Phase 4.5 — Source helpers
+
+* **Briefing**, **FAQ**, and **Compare** use the stored summary and key facts. They do not re-read the file.
+* Suggested questions are cached on the source after the first request.
+* Studio prompts use `STUDIO_PROMPT_VERSION` (`1.0.0`). The answer prompt stays `4.2.0`.
+* The offline model still returns a deterministic write-up built from those summaries.
+
+### Phase 5.1 — Navigation
+
+* The numbered rail is now **Sources**, **Ask**, **Notes**, **Map**, **Connections**, and **Settings**.
+* Suggested actions sit under Ask. Page watches sit under Sources. Restore drills and company sign-in sit under Settings > Admin.
+
+### Phase 5.2 — Ask layout
+
+* Ask is three panes: sources with checkboxes, the conversation, and citations plus saved notes.
+* Empty states point at adding documents, adding products, then asking.
+
+### Phase 5.3 — Plain errors and wake-up
+
+* Failed requests show one plain sentence. Raw errors, SQL, and ids stay off the screen.
+* A cold server shows “Waking the server, ~30 seconds” and retries health for about half a minute.
+* Role and workspace name appear only under Settings > Admin.
+
+### Decisions
+
+* Notebooks are a new table, not a second workspace.
+* `playbooks/brief_api.py` stays unwired. The customer brief API remains `/advisor/brief`.
+* No new environment variables for 4.4–5.3. Deploy by running migrations on boot (`0019_notebooks`) and rebuilding the frontend.
+
 ### Goal 2 — unblock Vercel
 
 * **fix: close template strings in `api.ts`.** Four request paths opened with a

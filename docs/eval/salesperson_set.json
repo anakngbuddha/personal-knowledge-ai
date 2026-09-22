@@ -1,0 +1,276 @@
+{
+  "catalog_products": [
+    "Jabra Speak 750",
+    "Jabra PanaCast 50",
+    "Shure MXA920",
+    "Shure MXA710",
+    "Poly Studio X50",
+    "Poly Voyager Focus 2",
+    "Huawei Cloud OBS",
+    "Huawei Cloud CBR"
+  ],
+  "cases": [
+    {
+      "id": "sp-ref-e",
+      "category": "reference_scenario",
+      "question": "Based on these requirements — 12 huddle rooms on Teams, a 40-seat contact center needing headsets, ceiling mics for a boardroom, backup/DR on Huawei Cloud — what solutions can I add from my product list?",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Jabra Speak 750 datasheet p. 1",
+          "fenced_text": "Jabra Speak 750 is a Teams-certified speakerphone suited to huddle rooms.",
+          "metadata": {
+            "document_title": "Jabra Speak 750",
+            "vendor": "Jabra"
+          }
+        },
+        {
+          "index": 2,
+          "citation": "Poly Voyager Focus 2 p. 1",
+          "fenced_text": "Poly Voyager Focus 2 headsets suit dense contact-center seats.",
+          "metadata": {
+            "document_title": "Poly Voyager Focus 2",
+            "vendor": "Poly"
+          }
+        },
+        {
+          "index": 3,
+          "citation": "Shure MXA920 p. 2",
+          "fenced_text": "Shure MXA920 ceiling array microphone covers boardrooms.",
+          "metadata": {
+            "document_title": "Shure MXA920",
+            "vendor": "Shure"
+          }
+        },
+        {
+          "index": 4,
+          "citation": "Huawei Cloud CBR overview",
+          "fenced_text": "Huawei Cloud CBR provides backup and disaster recovery for cloud workloads.",
+          "metadata": {
+            "document_title": "Huawei Cloud CBR",
+            "vendor": "Huawei"
+          }
+        }
+      ],
+      "checks": {
+        "prose": true,
+        "provenance": true,
+        "no_fabricated_specs": true
+      },
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-01",
+      "category": "huddle_room",
+      "question": "Which speakerphone should I propose for a small Teams huddle room?",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Jabra Speak 750 datasheet p. 1",
+          "fenced_text": "Jabra Speak 750 is certified for Microsoft Teams and sized for huddle rooms.",
+          "metadata": {"document_title": "Jabra Speak 750", "vendor": "Jabra"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-02",
+      "category": "compare",
+      "question": "Compare ceiling mic options for a boardroom from my sources.",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Shure MXA920 p. 1",
+          "fenced_text": "Shure MXA920 is a ceiling array for medium boardrooms.",
+          "metadata": {"document_title": "Shure MXA920", "vendor": "Shure"}
+        },
+        {
+          "index": 2,
+          "citation": "Shure MXA710 p. 1",
+          "fenced_text": "Shure MXA710 is a linear array for narrower rooms.",
+          "metadata": {"document_title": "Shure MXA710", "vendor": "Shure"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-03",
+      "category": "contact_center",
+      "question": "What headset fits a 40-seat contact center from my list?",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Poly Voyager Focus 2 p. 1",
+          "fenced_text": "Poly Voyager Focus 2 is built for all-day contact-center wear.",
+          "metadata": {"document_title": "Poly Voyager Focus 2", "vendor": "Poly"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-04",
+      "category": "video_room",
+      "question": "Can Poly Studio X50 cover a mid-size meeting room on Teams?",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Poly Studio X50 p. 3",
+          "fenced_text": "Poly Studio X50 is a Teams Rooms video bar for mid-size spaces.",
+          "metadata": {"document_title": "Poly Studio X50", "vendor": "Poly"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-05",
+      "category": "cloud_dr",
+      "question": "What Huawei Cloud service covers backup and DR?",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Huawei Cloud CBR",
+          "fenced_text": "Huawei Cloud CBR handles backup and disaster recovery.",
+          "metadata": {"document_title": "Huawei Cloud CBR", "vendor": "Huawei"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-06",
+      "category": "storage",
+      "question": "Where do we store large media backups on Huawei Cloud?",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Huawei Cloud OBS",
+          "fenced_text": "Huawei Cloud OBS is object storage for large media archives.",
+          "metadata": {"document_title": "Huawei Cloud OBS", "vendor": "Huawei"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-07",
+      "category": "video_bar",
+      "question": "Is Jabra PanaCast 50 suitable for a huddle room camera?",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Jabra PanaCast 50 p. 1",
+          "fenced_text": "Jabra PanaCast 50 is a panoramic video bar for huddle spaces.",
+          "metadata": {"document_title": "Jabra PanaCast 50", "vendor": "Jabra"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-08",
+      "category": "upsell",
+      "question": "If they already bought Speak 750, what video bar pairs well from my sources?",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Jabra bundle note",
+          "fenced_text": "Jabra Speak 750 pairs with Jabra PanaCast 50 for audio plus video in huddle rooms.",
+          "metadata": {"document_title": "Jabra bundle", "vendor": "Jabra"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-09",
+      "category": "compatibility",
+      "question": "Are these products Teams-certified according to my docs?",
+      "mode": "strict",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Jabra Speak 750 p. 1",
+          "fenced_text": "Jabra Speak 750 is Microsoft Teams certified.",
+          "metadata": {"document_title": "Jabra Speak 750", "vendor": "Jabra"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-10",
+      "category": "gap",
+      "question": "Do my sources cover wireless presentation for a large auditorium?",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Jabra Speak 750 p. 1",
+          "fenced_text": "Jabra Speak 750 covers huddle-room audio only.",
+          "metadata": {"document_title": "Jabra Speak 750", "vendor": "Jabra"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    },
+    {
+      "id": "sp-11-empty-expert",
+      "category": "empty_retrieval",
+      "question": "What is the secret QuantumBook Pro enterprise discount for next quarter?",
+      "mode": "expert",
+      "context": [],
+      "checks": {
+        "prose": true,
+        "empty_retrieval": "expert",
+        "no_fabricated_specs": true
+      },
+      "allowed_products": []
+    },
+    {
+      "id": "sp-12-empty-strict",
+      "category": "empty_retrieval",
+      "question": "What is the secret QuantumBook Pro enterprise discount for next quarter?",
+      "mode": "strict",
+      "context": [],
+      "checks": {
+        "prose": true,
+        "empty_retrieval": "strict"
+      }
+    },
+    {
+      "id": "sp-13-overview",
+      "category": "overview",
+      "question": "Give me a short overview of the audio products in my sources for a salesperson pitch.",
+      "mode": "expert",
+      "context": [
+        {
+          "index": 1,
+          "citation": "Jabra Speak 750",
+          "fenced_text": "Jabra Speak 750 speakerphone for huddle rooms.",
+          "metadata": {"document_title": "Jabra Speak 750", "vendor": "Jabra"}
+        },
+        {
+          "index": 2,
+          "citation": "Shure MXA920",
+          "fenced_text": "Shure MXA920 ceiling mic for boardrooms.",
+          "metadata": {"document_title": "Shure MXA920", "vendor": "Shure"}
+        }
+      ],
+      "checks": {"prose": true, "provenance": true, "no_fabricated_specs": true},
+      "must_contain": ["From your documents"]
+    }
+  ]
+}

@@ -1,1 +1,1 @@
-"""Golden-scenario evaluation helpers."""
+"""Evaluation helpers (golden RFP + salesperson generation quality)."""

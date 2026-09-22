@@ -130,7 +130,12 @@ class FakeLLMProvider(LLMProvider):
         for chunk in context_chunks:
             idx = chunk.get("index", 0)
             meta = chunk.get("metadata", {})
-            parts.append(f"Based on the documentation [source_{idx}]")
+            title = meta.get("document_title") or chunk.get("citation") or f"source {idx}"
+            excerpt = (chunk.get("fenced_text") or "").strip()
+            if excerpt:
+                parts.append(f"{excerpt} [source_{idx}]")
+            else:
+                parts.append(f"Based on the documentation about {title} [source_{idx}]")
             citations.append(
                 SourceMetadata(
                     chunk_id=meta.get("chunk_id", ""),
@@ -151,7 +156,11 @@ class FakeLLMProvider(LLMProvider):
                 )
             )
 
-        text = ", ".join(parts) + "."
+        body = " ".join(parts) if parts else "Based on the documentation [source_1]."
+        text = (
+            f"From your documents: {body} "
+            "Next step: confirm sizing and certification with the customer."
+        )
         prompt_tokens = sum(len(c.get("fenced_text", "")) for c in context_chunks) + len(question)
         completion_tokens = len(text)
 
