@@ -90,6 +90,26 @@ def dependencies() -> dict:
     except Exception as exc:  # noqa: BLE001
         checks["ocr"] = {"ok": False, "error": str(exc)[:300]}
 
+    # LLM / chat key — never return the secret, only whether it is set.
+    try:
+        provider_name = (settings.llm_provider or "gemini").lower()
+        if provider_name == "fake":
+            checks["llm"] = {
+                "ok": True,
+                "provider": "fake",
+                "key_configured": True,
+                "note": "offline test provider",
+            }
+        else:
+            configured = bool(settings.gemini_api_key)
+            checks["llm"] = {
+                "ok": configured,
+                "provider": provider_name,
+                "key_configured": configured,
+            }
+    except Exception as exc:  # noqa: BLE001
+        checks["llm"] = {"ok": False, "error": str(exc)[:300]}
+
     try:
         from app.db.session import SessionLocal
         from app.jobs import queue

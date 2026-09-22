@@ -8,17 +8,21 @@ interface Props {
   onSignOut: () => void;
 }
 
-interface QueueSnapshot {
-  aiWaiting: number;
-  filesQueued: number;
-  filesRunning: number;
-  workerOn: boolean;
+interface SystemRow {
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+function labelStatus(ok: boolean): string {
+  return ok ? "OK" : "Needs attention";
 }
 
 export function SettingsPanel({ principal, onSignOut }: Props) {
   const admin = Boolean(principal?.is_admin || principal?.is_owner);
-  const [queue, setQueue] = useState<QueueSnapshot | null>(null);
-  const [queueError, setQueueError] = useState<string | null>(null);
+  const [rows, setRows] = useState<SystemRow[]>([]);
+  const [queueDetail, setQueueDetail] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!admin) return;
@@ -27,18 +31,53 @@ export function SettingsPanel({ principal, onSignOut }: Props) {
       try {
         const data = await api.healthDependencies();
         if (cancelled) return;
-        const gemini = data.checks.gemini || {};
-        const ingestion = data.checks.ingestion_queue || {};
-        const counts = (ingestion.counts || {}) as Record<string, number>;
-        setQueue({
-          aiWaiting: Number(gemini.queued || 0),
-          filesQueued: Number(counts.queued || counts.QUEUED || 0),
-          filesRunning: Number(counts.running || counts.RUNNING || 0),
-          workerOn: Boolean(ingestion.worker_in_process),
-        });
-        setQueueError(null);
+        const c = data.checks;
+        const counts = (c.ingestion_queue?.counts || {}) as Record<string, number>;
+        const queued = Number(counts.queued || 0);
+        const running = Number(counts.running || 0);
+        const aiWaiting = Number(c.gemini?.queued || 0);
+        const next: SystemRow[] = [
+          {
+            label: "Database",
+            ok: Boolean(c.postgres?.ok),
+            detail: c.postgres?.ok ? "Connected" : String(c.postgres?.error || "Unavailable"),
+          },
+          {
+            label: "File storage",
+            ok: Boolean(c.storage?.ok),
+            detail: c.storage?.ok
+              ? String(c.storage.backend || "Connected")
+              : String(c.storage?.error || "Unavailable"),
+          },
+          {
+            label: "AI key",
+            ok: Boolean(c.llm?.ok ?? c.llm?.key_configured),
+            detail: c.llm?.key_configured
+              ? `Ready (${String(c.llm.provider || "ai")})`
+              : "Not configured",
+          },
+          {
+            label: "OCR",
+            ok: Boolean(c.ocr?.ok),
+            detail: c.ocr?.ok
+              ? String(c.ocr.provider || "Ready")
+              : String(c.ocr?.error || "Unavailable"),
+          },
+          {
+            label: "Background jobs",
+            ok: Boolean(c.ingestion_queue?.ok),
+            detail: c.ingestion_queue?.worker_in_process
+              ? `${running} reading, ${queued} waiting`
+              : "Worker is off",
+          },
+        ];
+        setRows(next);
+        setQueueDetail(
+          aiWaiting === 0 ? "AI wait queue is clear" : `AI wait queue: ${aiWaiting} waiting`,
+        );
+        setStatusError(null);
       } catch {
-        if (!cancelled) setQueueError("Could not load queue status.");
+        if (!cancelled) setStatusError("Could not load system status.");
       }
     };
     void load();
@@ -75,21 +114,37 @@ export function SettingsPanel({ principal, onSignOut }: Props) {
             <dt>Role</dt>
             <dd>{principal?.role || "member"}</dd>
           </dl>
-          <div className="queue-status">
-            <h3>Queue status</h3>
-            {queueError && <p className="muted">{queueError}</p>}
-            {queue && (
-              <dl className="ops-dl">
-                <dt>AI wait queue</dt>
-                <dd>{queue.aiWaiting === 0 ? "Clear" : `${queue.aiWaiting} waiting`}</dd>
-                <dt>File reading</dt>
-                <dd>
-                  {queue.filesRunning} running, {queue.filesQueued} waiting
-                  {queue.workerOn ? "" : " (background worker off)"}
-                </dd>
-              </dl>
+
+          <div className="system-status">
+            <h3>System status</h3>
+            {statusError && <p className="muted">{statusError}</p>}
+            {rows.length > 0 && (
+              <table className="status-table">
+                <thead>
+                  <tr>
+                    <th>Check</th>
+                    <th>Status</th>
+                    <th>Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.label}>
+                      <td>{row.label}</td>
+                      <td>
+                        <span className={row.ok ? "status-ok" : "status-bad"}>
+                          {labelStatus(row.ok)}
+                        </span>
+                      </td>
+                      <td>{row.detail}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
+            {queueDetail && <p className="muted queue-note">{queueDetail}</p>}
           </div>
+
           <OpsPanel mode="admin" />
         </section>
       )}

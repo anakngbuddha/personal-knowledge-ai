@@ -10,6 +10,13 @@ to deploy. One entry per numbered task.
 
 ## Unreleased — NotebookLM + Obsidian Field Desk
 
+### Phase 6.3 — Ops hygiene
+
+* Removed tracked `__pycache__/*.pyc` from git (ignore rules already covered them).
+* `/health/dependencies` reports LLM key configured (boolean only, never the secret).
+* Settings > Admin **System status** shows database, file storage, AI key, OCR, and background jobs in plain language.
+* `USER_GUIDE.md` rewritten for non-technical users; deploy/local detail points to `README.md` / `.env.example`.
+
 ### Phase 6.2 — Shared Gemini limiter and job resume
 
 * All Gemini paths (embeddings, chat sync/stream, OCR) call `acquire_gemini()` on the shared token bucket. OCR retries on 429.

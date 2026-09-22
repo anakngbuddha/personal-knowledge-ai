@@ -1,135 +1,108 @@
 # User Guide — SE Field Desk
 
-How to run and use the Solution Engineering Knowledge Workspace: grounded answers over your collateral, a typed product graph, HITL playbooks, MCP connectors, tribal notes, and vendor freshness watches.
+Field Desk helps a salesperson keep product documents, ask questions with clear citations, take notes, and keep a map of what sells with what.
 
-The live stack is a Render API, Aiven PostgreSQL, and a Vercel frontend. Point the UI at the API with `VITE_API_BASE_URL` (no trailing slash). You can also open the frontend with `?api=https://personal-knowledge-ai-api.onrender.com`.
+**How to start**
 
----
-
-## 1. Sign in
-
-Open the app and sign in with your email and password, or create a workspace. The server issues a signed session token. Production never uses the local-only `owner_dev` shortcut, and it will not start if `JWT_SECRET_KEY` is missing or too short.
-
-Local tests may still set `AUTH_MODE=owner_dev`. Day-to-day development should use `AUTH_MODE=jwt` (see `.env.example`).
-
-**SSO.** When `SSO_ENABLED=true`:
-
-- OIDC: `GET /auth/oidc/start` returns an authorization URL. The IdP posts an ID token to `POST /auth/oidc/callback` (`{ "id_token", "nonce" }`). A valid token is exchanged for the same local session.
-- SAML: `POST /auth/saml/acs` with `{ "SAMLResponse": "<Assertion>…</Assertion>", "signature": "<hmac hex>" }` (or `X-SAML-Signature`).
+1. Add documents under **Sources**.
+2. Add your products under **Map** (or import a spreadsheet).
+3. Open **Ask** and ask in plain language.
 
 ---
 
-## 2. Sources
+## Sign in
+
+Open the app and sign in with your email and password, or create a workspace. Use **Settings** to sign out.
+
+If the server has been idle, Ask may say it is waking up and will retry for about half a minute.
+
+---
+
+## Sources
 
 Open **Sources**.
 
-1. Click **Add source** and upload a PDF, Word, PowerPoint, Excel, or text file. Files are read in the background. You do not need to fill vendor or product fields first — those are optional extras.
-2. When a file is ready, ask questions about it. If a PDF was a scan, you will see **Read with OCR**. If a source is not approved, it is left out of answers until you approve it.
-3. Status path: uploaded → processing → ready (or failed). Failed files show a plain-language reason and a Retry button.
+1. Click **Add source** and upload a PDF, Word, PowerPoint, Excel, or text file. Reading happens in the background. Vendor and product fields are optional extras.
+2. When a file is ready, open it for the summary. Use **Suggested questions**, **Briefing**, or **FAQ**. **Find a passage** searches the text. **Watch a web page** notices when a public datasheet changes.
+3. Scanned PDFs show **Read with OCR**. Sources that are not approved stay out of answers until you approve them.
+4. Failed files show a plain reason and a **Retry** button.
 
 ---
 
-## 3. Hybrid search
+## Notebooks
 
-Open **05 Evidence**. Ask a question; the engine fuses pgvector similarity with Postgres full-text search (RRF). Hits show citation paths and a stale flag when `valid_until` has passed. Filter by vendor, product, or account when the corpus is large.
+A notebook is one customer or deal. Create one on **Ask** or **Notes**.
 
----
-
-## 4. Grounded chat
-
-Open **04 Desk**.
-
-1. Ask as you would in an SE review. Answers cite chunks; unsupported claims are refused.
-2. Turn **enable tools** on to let the model query the product graph and (if configured) MCP servers: Brave Search, Playwright snapshots of public docs, Microsoft 365 Graph.
-3. Conversations persist per workspace. Click a citation to jump back to the source chunk.
-
-Never treat chat output as approved collateral. Playbooks still pause at human gates.
+- New notebooks switch on your real sources. Sample files stay off.
+- Uncheck a source before you ask if it should not count for that deal.
+- Notes, the customer brief, and chats started in a notebook stay with that notebook.
 
 ---
 
-## 5. Product graph
+## Ask
 
-Open **03 Catalog**. Browse own and resold products, typed edges (`requires`, `conflicts_with`, `integrates_with`, …), and neighborhood / impact queries. Use this before composing a bundle so conflicts surface before the HLD.
+Open **Ask**. Sources are on the left, the conversation is in the middle, and citations plus saved notes are on the right.
+
+1. Pick a notebook and leave checked only the sources for this deal.
+2. Ask in ordinary language. Choose **From my sources only** or **Sources + expert knowledge**.
+3. Open a citation on the right. **Briefing**, **FAQ**, and **Compare** use the checked sources. **Save as note** keeps the answer.
+4. **Suggested actions** under the composer start longer jobs (a spreadsheet of questions, a solution write-up, a support note, or an upgrade check). You still approve the draft before download.
+
+Answers say what came from your documents, from general product knowledge, or from the web when a connection was used.
 
 ---
 
-## 6. Playbooks (workflows)
+## Map
 
-Open **01 Field runs**.
+Open **Map** to add products, import a product list, review suggested links, and edit relationships without leaving the page.
 
-| Playbook | What you provide | What you get |
+---
+
+## Suggested actions
+
+These live under **Ask**.
+
+| Action | What you provide | What you get |
 |---|---|---|
-| RFP responder | Customer spreadsheet | Cited answers, HITL review, DOCX |
-| Solution composer | Discovery notes | Conflict-checked bundle, HLD, BOM |
-| Incident triage | Logs + install base | Cited runbook |
-| Upgrade impact | Product / version | Transitive breaks and alternatives |
-
-1. Start a run from the gallery.
-2. Watch the task tree (`pending` → `running` → `waiting_approval` / `succeeded`).
-3. On a gate, compare the draft, citations, and graph warnings; edit; **Approve & resume** or reject.
-4. Download the deliverable when the run succeeds.
-
-Runs live in Postgres. They survive deploys and overnight pauses.
+| RFP responder | Customer spreadsheet | Cited answers, a review step, a Word file |
+| Solution composer | Discovery notes | A checked bundle and a write-up |
+| Incident triage | Logs plus what is installed | A cited runbook |
+| Upgrade impact | Product and version | What would break, and alternatives |
 
 ---
 
-## 7. MCP connectors
+## Connections
 
-Open **02 Connectors** (admin). Enable Playwright, Microsoft 365, or Brave Search per org. Secrets are encrypted at rest and never returned. Use **Test** to list tools. Catalog tools stay available even when MCP is off.
-
----
-
-## 8. Field notes (`[[wikilinks]]`)
-
-Open **07 Ledger**.
-
-Write Markdown. On save, `[[product:firewall-plus]]`, `[[account:acme-corp]]`, and `[[note:sizing-acme]]` become typed links. Unprefixed `[[firewall-plus]]` resolves against products, then notes. Bound links show **bound**; missing targets stay **unresolved**.
-
-Notes are tenant-scoped. They are the SE tribal record — caveats, sizing lore, account-specific gotchas — not a substitute for approved datasheets.
+Open **Connections** to turn on web search, a browser for public pages, or Microsoft 365. Secrets stay on the server. Answers still work when these are off.
 
 ---
 
-## 9. Freshness watches and restore drills
+## Notes
 
-Open **08 Watch**.
-
-1. Register a public vendor URL (datasheet, compatibility matrix). The poller fetches it through the SSRF-safe client and stores a SHA-256 digest.
-2. A digest change raises a **staleness alert**. Acknowledge it after you ingest the new file.
-3. Admins run **Restore drill**: logical dump of notes/watches → scratch restore → row-count compare, timed against `RESTORE_DRILL_SLA_SECONDS` (default 300s). CLI: `python scripts/restore_drill.py`.
+Open **Notes**. Pick the notebook first. Write in Markdown. Links like `[[product:…]]`, `[[account:…]]`, and `[[note:…]]` become clickable. Saved notes can be found again when you Ask.
 
 ---
 
-## 10. Local run
+## Settings
+
+**Settings** is where you sign out.
+
+**Settings > Admin** (administrators only) shows:
+
+- Workspace name and role
+- **System status** (database, file storage, AI key, OCR, background jobs)
+- Company sign-in and restore drills
+
+Everyday screens do not show role or organization ids.
+
+---
+
+## Admin appendix
+
+Deploy and local development details live in `README.md` and `.env.example`. Operators can also call `GET /health/dependencies` for the same checks shown under System status.
+
+When you change the answer prompt version, re-run:
 
 ```bash
-# Backend
-cd backend
-python -m venv .venv && .venv/Scripts/activate   # Windows
-pip install -r requirements.txt
-# DATABASE_URL must be postgresql+psycopg://… ; Aiven URIs need ?sslmode=require
-python ../scripts/init_db.py
-uvicorn app.main:app --reload
+python scripts/run_generation_eval.py
 ```
-
-```bash
-# Frontend
-cd frontend
-npm install
-# .env: VITE_API_BASE_URL=http://localhost:8000
-npm run dev
-```
-
-Open http://localhost:5173. Without keys, `STORAGE_BACKEND=local`, `EMBEDDING_PROVIDER=fake`, and `LLM_PROVIDER=fake` still exercise the full loop.
-
----
-
-## Roles (short)
-
-| Role | Typical work |
-|---|---|
-| `viewer` | Read approved collateral |
-| `sales` | Search and chat within grants |
-| `solutions_engineer` | Notes, watches, playbooks, catalog writes |
-| `admin` / `owner` | SSO, MCP secrets, restore drills, all accounts |
-
-Cross-tenant IDs 404. Do not share database credentials in tickets or chat; rotate anything that has been pasted into a transcript.
