@@ -1,15 +1,18 @@
-"""Phase 10 tribal notes API."""
+"""Phase 10 tribal notes API + Phase 4.3 graph/wikilinks extensions."""
 
 from __future__ import annotations
 
+import re
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
-from app.db.models import Note
+from app.db.models import Note, NoteLink, NoteLinkKind, Product, Conversation, Message
 from app.db.session import get_db
 from app.documents.service import get_or_create_default_workspace
 from app.notes import service as notes
@@ -62,6 +65,41 @@ class NoteUpdateIn(BaseModel):
     body: str | None = Field(None, max_length=200_000)
 
 
+class LinkTargetOut(BaseModel):
+    kind: str
+    ref: str
+    title: str
+
+
+class GraphNodeOut(BaseModel):
+    id: str
+    kind: str  # "note" | "product" | "account"
+    title: str
+    slug: str
+
+
+class GraphEdgeOut(BaseModel):
+    source_id: str
+    source_kind: str
+    target_id: str
+    target_kind: str
+    target_ref: str
+    display_text: str | None = None
+    resolved: bool
+
+
+class GraphOut(BaseModel):
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+
+
+class SaveAnswerIn(BaseModel):
+    message_id: Optional[str] = None
+    text: Optional[str] = None
+    citations: Optional[list[dict]] = None
+    title: str = ""
+
+
 def _http(exc: AppError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.message)
 
@@ -90,7 +128,7 @@ def _serialize(note: Note) -> NoteOut:
 
 
 @router.get("", response_model=NoteListOut)
-def list_notes(
+def list_notes_endpoint(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     search: str | None = Query(None, max_length=200),
@@ -115,7 +153,7 @@ def list_notes(
 
 
 @router.post("", response_model=NoteOut, status_code=201)
-def create_note(
+def create_note_endpoint(
     payload: NoteIn,
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
@@ -140,7 +178,7 @@ def create_note(
 
 
 @router.get("/by-link/{kind}/{ref}", response_model=NoteListOut)
-def notes_linking_to(
+def notes_linking_to_endpoint(
     kind: str,
     ref: str,
     db: Session = Depends(get_db),
@@ -155,8 +193,226 @@ def notes_linking_to(
     )
 
 
+@router.get("/link-targets", response_model=list[LinkTargetOut])
+def link_targets_endpoint(
+    q: str = Query("", min_length=0, max_length=100),
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(resolve_principal),
+) -> list[LinkTargetOut]:
+    """Autocomplete for wikilink targets: products, notes."""
+    workspace = get_or_create_default_workspace(db, principal.org_id)
+    results: list[LinkTargetOut] = []
+
+    # Search products
+    if q:
+        products = db.scalars(
+            select(Product)
+            .where(
+                Product.org_id == principal.org_id,
+                Product.workspace_id == workspace.id,
+                (Product.name.ilike(f"%{q}%")) | (Product.slug.ilike(f"%{q}%")),
+            )
+            .limit(10)
+        )
+        for p in products:
+            results.append(LinkTargetOut(kind="product", ref=p.slug, title=p.name))
+
+    # Search notes
+    if q:
+        found_notes = db.scalars(
+            select(Note)
+            .where(
+                Note.org_id == principal.org_id,
+                Note.workspace_id == workspace.id,
+                (Note.title.ilike(f"%{q}%")) | (Note.slug.ilike(f"%{q}%")),
+            )
+            .limit(10)
+        )
+        for n in found_notes:
+            results.append(LinkTargetOut(kind="note", ref=n.slug, title=n.title))
+
+    return results[:20]  # Cap total results
+
+
+@router.get("/graph", response_model=GraphOut)
+def graph_endpoint(
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(resolve_principal),
+) -> GraphOut:
+    """Return nodes (notes, products) and edges (wikilinks) for a graph view."""
+    workspace = get_or_create_default_workspace(db, principal.org_id)
+    nodes: list[GraphNodeOut] = []
+    edges: list[GraphEdgeOut] = []
+    seen_nodes: set[tuple[str, str]] = set()  # (kind, slug)
+
+    # Collect all notes in workspace
+    all_notes = db.scalars(
+        select(Note)
+        .where(
+            Note.org_id == principal.org_id,
+            Note.workspace_id == workspace.id,
+        )
+    ).all()
+
+    for note in all_notes:
+        key = ("note", note.slug)
+        if key not in seen_nodes:
+            seen_nodes.add(key)
+            nodes.append(
+                GraphNodeOut(
+                    id=str(note.id),
+                    kind="note",
+                    title=note.title,
+                    slug=note.slug,
+                )
+            )
+
+    # Collect all products referenced
+    all_products = db.scalars(
+        select(Product)
+        .where(
+            Product.org_id == principal.org_id,
+            Product.workspace_id == workspace.id,
+        )
+    ).all()
+
+    for product in all_products:
+        key = ("product", product.slug)
+        if key not in seen_nodes:
+            seen_nodes.add(key)
+            nodes.append(
+                GraphNodeOut(
+                    id=str(product.id),
+                    kind="product",
+                    title=product.name,
+                    slug=product.slug,
+                )
+            )
+
+    # Collect all edges (wikilinks)
+    all_links = db.scalars(
+        select(NoteLink).where(NoteLink.org_id == principal.org_id)
+    ).all()
+
+    for link in all_links:
+        source_note = db.scalar(select(Note).where(Note.id == link.note_id))
+        if not source_note or source_note.workspace_id != workspace.id:
+            continue
+
+        # Determine target node
+        if link.target_kind == NoteLinkKind.PRODUCT and link.resolved_id:
+            target_product = db.scalar(select(Product).where(Product.id == link.resolved_id))
+            if target_product:
+                edges.append(
+                    GraphEdgeOut(
+                        source_id=str(source_note.id),
+                        source_kind="note",
+                        target_id=str(target_product.id),
+                        target_kind="product",
+                        target_ref=link.target_ref,
+                        display_text=link.display_text,
+                        resolved=link.resolved,
+                    )
+                )
+        elif link.target_kind == NoteLinkKind.NOTE and link.resolved_id:
+            target_note = db.scalar(select(Note).where(Note.id == link.resolved_id))
+            if target_note:
+                edges.append(
+                    GraphEdgeOut(
+                        source_id=str(source_note.id),
+                        source_kind="note",
+                        target_id=str(target_note.id),
+                        target_kind="note",
+                        target_ref=link.target_ref,
+                        display_text=link.display_text,
+                        resolved=link.resolved,
+                    )
+                )
+        elif link.target_kind == NoteLinkKind.ACCOUNT:
+            edges.append(
+                GraphEdgeOut(
+                    source_id=str(source_note.id),
+                    source_kind="note",
+                    target_id=link.target_ref,
+                    target_kind="account",
+                    target_ref=link.target_ref,
+                    display_text=link.display_text,
+                    resolved=link.resolved,
+                )
+            )
+
+    return GraphOut(nodes=nodes, edges=edges)
+
+
+@router.post("/from-answer", response_model=NoteOut, status_code=201)
+def save_answer_as_note_endpoint(
+    payload: SaveAnswerIn,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(resolve_principal),
+) -> NoteOut:
+    """Save a chat message or raw text as a note."""
+    if not principal.can_write_catalog:
+        raise HTTPException(status_code=403, detail="solutions engineer role required")
+    workspace = get_or_create_default_workspace(db, principal.org_id)
+    text = ""
+    title = payload.title or ""
+
+    if payload.message_id:
+        # Load from conversation message
+        try:
+            msg_uuid = uuid.UUID(payload.message_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid message ID") from None
+
+        message = db.scalar(
+            select(Message)
+            .join(Conversation)
+            .where(
+                Message.id == msg_uuid,
+                Conversation.org_id == principal.org_id,
+                Conversation.workspace_id == workspace.id,
+            )
+        )
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found") from None
+        text = message.content or ""
+        if not title:
+            title = _auto_title(text)
+    elif payload.text:
+        text = payload.text
+        if not title:
+            title = _auto_title(text)
+    else:
+        raise HTTPException(status_code=400, detail="Either message_id or text is required") from None
+
+    if not title:
+        title = "Untitled Note"
+
+    # Include citations as a footer if provided
+    if payload.citations:
+        citations_md = "\n\n### Sources\n"
+        for c in payload.citations:
+            source = c.get("source") or c.get("chunk_id", "Unknown")
+            citations_md += f"- {source}\n"
+        text += citations_md
+
+    try:
+        note = notes.create_note(
+            db,
+            org_id=principal.org_id,
+            workspace_id=workspace.id,
+            title=title,
+            body=text,
+            created_by=principal.user_id,
+        )
+    except AppError as exc:
+        raise _http(exc) from exc
+    record_audit(db, principal, "create", "note", str(note.id), {"from_answer": True})
+    return _serialize(note)
+
+
 @router.get("/{note_id}", response_model=NoteOut)
-def get_note(
+def get_note_endpoint(
     note_id: uuid.UUID,
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
@@ -169,7 +425,7 @@ def get_note(
 
 
 @router.put("/{note_id}", response_model=NoteOut)
-def update_note(
+def update_note_endpoint(
     note_id: uuid.UUID,
     payload: NoteUpdateIn,
     db: Session = Depends(get_db),
@@ -192,7 +448,7 @@ def update_note(
 
 
 @router.delete("/{note_id}", status_code=204)
-def delete_note(
+def delete_note_endpoint(
     note_id: uuid.UUID,
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
@@ -205,3 +461,16 @@ def delete_note(
         raise _http(exc) from exc
     record_audit(db, principal, "delete", "note", str(note_id))
 
+
+def _auto_title(text: str, max_length: int = 80) -> str:
+    """Generate a title from the first line of text."""
+    lines = text.strip().split("\n")
+    first = lines[0] if lines else ""
+    # Remove markdown and clean up
+    first = re.sub(r"^#+\s*", "", first)  # remove markdown headings
+    first = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", first)  # inline links
+    first = re.sub(r"[*_`]", "", first)  # bold, italic, code
+    first = first.strip()
+    if not first:
+        return "Untitled Note"
+    return first[:max_length].strip()
