@@ -58,6 +58,12 @@ class HybridSearchArgs(BaseModel):
     products: list[str] = Field(default_factory=list, max_length=20)
 
 
+class AdvisorRecommendArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requirements: str = Field(min_length=1, max_length=50_000)
+
+
 @dataclass(frozen=True)
 class RegisteredTool:
     name: str
@@ -104,6 +110,13 @@ def _hybrid_search(ctx: ToolContext, args: BaseModel) -> dict[str, Any]:
     return hybrid_search_tool(ctx, args.query, vendor=args.vendor, products=args.products)
 
 
+def _advisor_recommend(ctx: ToolContext, args: BaseModel) -> dict[str, Any]:
+    from app.tools.advisor_tools import advisor_recommend_tool
+
+    assert isinstance(args, AdvisorRecommendArgs)
+    return advisor_recommend_tool(ctx, args.requirements)
+
+
 _TOOLS: dict[str, RegisteredTool] = {
     "tool_catalog_impact": RegisteredTool(
         name="tool_catalog_impact",
@@ -141,6 +154,21 @@ _TOOLS: dict[str, RegisteredTool] = {
         ),
         args_model=HybridSearchArgs,
         handler=_hybrid_search,
+    ),
+    "tool_advisor_recommend": RegisteredTool(
+        name="tool_advisor_recommend",
+        description=(
+            "Use when the user pastes customer requirements and asks what to recommend, "
+            "what else they can add from their product list, or where the gaps are. "
+            "Reads the requirements into a structured brief, then matches the user's own "
+            "product list against it and returns: recommended products grouped by "
+            "requirement with reasons and citations, clashes and prerequisites from the "
+            "product map, requirements the product list cannot cover, upsell and "
+            "cross-sell options, questions to ask the customer, and assumptions to "
+            "verify. Narrate the result; never add a product that is not in it."
+        ),
+        args_model=AdvisorRecommendArgs,
+        handler=_advisor_recommend,
     ),
 }
 
