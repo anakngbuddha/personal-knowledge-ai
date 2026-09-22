@@ -65,9 +65,10 @@ to deploy. One entry per numbered task.
 
 ### Decisions
 
+* Eval datasets stay under `docs/eval/` (not a top-level `evals/` folder).
 * Notebooks are a new table, not a second workspace.
 * `playbooks/brief_api.py` stays unwired. The customer brief API remains `/advisor/brief`.
-* No new environment variables for 4.4–5.3. Deploy by running migrations on boot (`0019_notebooks`) and rebuilding the frontend.
+* No new environment variables for 4.4–6.3. Deploy by running migrations on boot (`0019_notebooks`) and rebuilding the frontend.
 
 ### Goal 2 — unblock Vercel
 
