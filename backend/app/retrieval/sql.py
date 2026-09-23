@@ -34,6 +34,7 @@ FIELD_COLUMNS = {
     "is_demo": Document.is_demo,
     "status": Document.status,
     "injection_flag_count": Document.injection_flag_count,
+    "source_type": Document.source_type,
 }
 
 _UUID_FIELDS = {"org_id", "workspace_id", "id"}

@@ -59,6 +59,7 @@ from app.retrieval import graph_context as map_lookup
 from app.retrieval.rewrite import expand_queries, keyword_overlap_score, rewrite_query
 from app.retrieval.search import search as run_search
 from app.retrieval.spec import RetrievalFilters
+from app.security.labels import SourceType
 from app.security.principal import Principal
 
 logger = get_logger(__name__)
@@ -81,6 +82,7 @@ def _build_retrieval_filters(
         exclude_injection_flagged=filters.get("exclude_injection_flagged", True),
         document_ids=filters.get("document_ids", []),
         exclude_document_ids=excluded,
+        exclude_source_types=[SourceType.RFP_INTAKE],
     )
 
 

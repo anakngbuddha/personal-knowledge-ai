@@ -6,11 +6,12 @@ import os
 import socket
 import threading
 import time
+from datetime import timedelta
 
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.session import SessionLocal
-from app.freshness.scraper import CheckResult, claim_due_source, check_source
+from app.freshness.scraper import CheckResult, _now, claim_due_source
 
 logger = get_logger(__name__)
 
@@ -23,13 +24,27 @@ def worker_id(index: int = 0) -> str:
 
 
 def run_once(identity: str, fetcher=None) -> CheckResult | None:
+    """Claim a due source and queue its crawl. The fetch runs on the ingestion worker."""
+    del fetcher  # crawls use the SSRF fetcher inside the queued job
+    from app.jobs.queue import enqueue_freshness_crawl
+
     db = SessionLocal()
     try:
         source = claim_due_source(db, identity)
         if source is None:
             return None
-        logger.info("freshness: checking %s (%s)", source.id, source.url)
-        return check_source(db, source, fetcher=fetcher)
+        logger.info("freshness: queueing crawl %s (%s)", source.id, source.url)
+        source.next_check_at = _now() + timedelta(seconds=source.check_interval_seconds)
+        source.locked_by = None
+        source.locked_at = None
+        enqueue_freshness_crawl(db, vendor_source_id=source.id, org_id=source.org_id)
+        return CheckResult(
+            source_id=source.id,
+            status="queued",
+            hash=source.last_hash,
+            changed=False,
+            alert_id=None,
+        )
     except Exception:  # noqa: BLE001 - loop must survive a single source
         logger.exception("freshness worker %s: unexpected error", identity)
         return None

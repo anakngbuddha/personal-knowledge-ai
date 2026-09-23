@@ -181,6 +181,13 @@ def test_build_retrieval_filters():
     assert rf.exclude_injection_flagged is True
     assert rf.document_ids == ["doc-1"]
     assert rf.exclude_document_ids == ["doc-2"]
+    assert rf.exclude_source_types == ["rfp_intake"]
+    assert all(predicate.field != "source_type" for predicate in rf.to_predicates())
+    unscoped = _build_retrieval_filters({})
+    assert any(
+        predicate.field == "source_type" and "rfp_intake" in predicate.value
+        for predicate in unscoped.to_predicates()
+    )
 
 
 def test_grounded_answer_includes_conversation_and_message_ids():

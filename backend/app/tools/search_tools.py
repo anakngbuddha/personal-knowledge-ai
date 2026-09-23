@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.documents.injection import wrap_untrusted
 from app.retrieval.search import search as run_search
 from app.retrieval.spec import RetrievalFilters
+from app.security.labels import SourceType
 from app.tools.registry import ToolContext
 
 
@@ -23,6 +24,7 @@ def hybrid_search_tool(
         vendor=vendor,
         approved_only=True,
         exclude_injection_flagged=True,
+        exclude_source_types=[SourceType.RFP_INTAKE],
     )
     result = run_search(
         ctx.db,

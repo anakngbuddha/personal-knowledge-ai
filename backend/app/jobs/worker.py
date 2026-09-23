@@ -43,21 +43,54 @@ def worker_id(index: int = 0) -> str:
     return f"{socket.gethostname()}:{os.getpid()}:{index}"
 
 
-def run_once(identity: str) -> bool:
-    """Claim and run at most one job. Returns True if work was done."""
+def execute_claimed(db, job) -> None:
+    """Run one job that is already claimed. Crawl jobs have no document yet."""
+    if job.kind == "freshness_crawl":
+        _run_freshness_crawl(db, job)
+        return
+    if job.document_id is None:
+        raise LookupError(f"job {job.id} has no document")
     from app.documents.service import process_document
 
+    process_document(job.document_id)
+
+
+def _run_freshness_crawl(db, job) -> None:
+    import uuid
+
+    from app.db.models import VendorSource
+    from app.freshness.crawl import crawl_source
+
+    raw = (job.payload or {}).get("vendor_source_id")
+    if not raw:
+        raise LookupError("freshness crawl job is missing vendor_source_id")
+    source = db.get(VendorSource, uuid.UUID(str(raw)))
+    if source is None:
+        raise LookupError(f"vendor source {raw} not found")
+    crawl_source(db, source)
+
+
+def run_once(identity: str) -> bool:
+    """Claim and run at most one job. Returns True if work was done."""
     db = SessionLocal()
     try:
         job = queue.claim(db, identity)
         if job is None:
             return False
-        document_id = job.document_id
-        logger.info("job %s: ingesting document %s (attempt %s)", job.id, document_id, job.attempts)
+        logger.info(
+            "job %s: %s %s (attempt %s)",
+            job.id,
+            job.kind,
+            job.document_id or (job.payload or {}).get("vendor_source_id"),
+            job.attempts,
+        )
         try:
-            process_document(document_id)
+            execute_claimed(db, job)
         except PERMANENT_FAILURES as exc:
             queue.fail(db, job, f"{type(exc).__name__}: {exc}", retryable=False)
+            return True
+        except LookupError as exc:
+            queue.fail(db, job, str(exc), retryable=False)
             return True
         except Exception as exc:  # noqa: BLE001 - transient by assumption, retried
             queue.fail(db, job, f"{type(exc).__name__}: {exc}", retryable=True)

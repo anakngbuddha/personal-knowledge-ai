@@ -110,12 +110,21 @@ def create_document(
     mime_type: str | None = None,
     metadata: DocumentMetadataIn | None = None,
     allow_duplicate: bool = False,
+    apply_auto_approve: bool = True,
+    allow_incomplete_approval: bool = False,
+    workspace_id: uuid.UUID | None = None,
 ) -> Document:
-    """Validate, scan, store and register one document. Does not extract."""
+    """Validate, scan, store and register one document. Does not extract.
+
+    ``apply_auto_approve=False`` keeps the caller's approval state. Client RFP
+    intake uses that so an incoming requirements file stays draft even when
+    uploads are auto-approved. ``allow_incomplete_approval`` is only for
+    operator-chosen vendor crawls, which are approved without a curation form.
+    """
     meta = metadata or DocumentMetadataIn()
-    if settings.auto_approve_uploads:
+    if apply_auto_approve and settings.auto_approve_uploads:
         meta = meta.model_copy(update={"approval_state": ApprovalState.APPROVED})
-    else:
+    elif not (allow_incomplete_approval and meta.approval_state == ApprovalState.APPROVED):
         promotion_error = meta.promotion_error()
         if promotion_error:
             raise AppError(promotion_error)
@@ -125,7 +134,16 @@ def create_document(
     # before object storage, and before a row exists to be forgotten about.
     scan = scan_or_raise(data, decision.file_type)
 
-    workspace = get_or_create_default_workspace(db, principal.org_id)
+    if workspace_id is None:
+        workspace = get_or_create_default_workspace(db, principal.org_id)
+    else:
+        workspace = db.get(Workspace, workspace_id)
+        if workspace is None or workspace.org_id != principal.org_id:
+            raise AppError(
+                status_code=404,
+                code="workspace_not_found",
+                message="workspace not found",
+            )
     digest = content_hash(data)
 
     duplicate = find_duplicate(db, workspace.id, digest)

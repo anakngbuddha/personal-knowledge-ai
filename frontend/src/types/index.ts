@@ -450,6 +450,13 @@ export interface VendorSourceList {
   offset: number;
 }
 
+export interface FreshnessAlertPage {
+  url: string;
+  change: string;
+  previous_hash?: string | null;
+  new_hash?: string | null;
+}
+
 export interface FreshnessAlert {
   id: string;
   vendor_source_id: string;
@@ -458,6 +465,7 @@ export interface FreshnessAlert {
   new_hash?: string | null;
   created_at?: string | null;
   acknowledged_at?: string | null;
+  pages?: FreshnessAlertPage[];
 }
 
 export interface FreshnessAlertList {
@@ -474,6 +482,7 @@ export interface FreshnessCheck {
   changed: boolean;
   alert_id?: string | null;
   error?: string | null;
+  job_id?: string | null;
 }
 
 export interface RestoreDrill {

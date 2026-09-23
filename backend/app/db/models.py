@@ -293,10 +293,11 @@ class IngestionJob(Base):
     org_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
-    document_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
     )
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="ingest")
+    payload: Mapped[dict | None] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=JobStatus.QUEUED)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
@@ -1269,6 +1270,7 @@ class VendorSource(Base):
     )
     label: Mapped[str] = mapped_column(String(255), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
+    path_prefix: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     check_interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=86400)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=FreshnessStatus.PENDING)
@@ -1288,6 +1290,9 @@ class VendorSource(Base):
     )
 
     alerts: Mapped[list["FreshnessAlert"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan", passive_deletes=True
+    )
+    pages: Mapped[list["VendorSourcePage"]] = relationship(
         back_populates="source", cascade="all, delete-orphan", passive_deletes=True
     )
 
@@ -1320,6 +1325,37 @@ class FreshnessAlert(Base):
     source: Mapped[VendorSource] = relationship(back_populates="alerts")
 
     __table_args__ = (Index("ix_freshness_alerts_open", "org_id", "acknowledged_at"),)
+
+
+class VendorSourcePage(Base):
+    """One crawled URL belonging to a vendor source, and the document it produced."""
+
+    __tablename__ = "vendor_source_pages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    vendor_source_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vendor_sources.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), index=True
+    )
+    last_hash: Mapped[str | None] = mapped_column(String(64))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    missing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    source: Mapped[VendorSource] = relationship(back_populates="pages")
+
+    __table_args__ = (
+        UniqueConstraint("vendor_source_id", "url", name="uq_vendor_source_pages_url"),
+    )
 
 
 class RestoreDrill(Base):

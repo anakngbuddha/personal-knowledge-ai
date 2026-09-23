@@ -7,7 +7,7 @@ resolving is the step an attacker controls.
 import pytest
 
 from app.core.errors import SsrfBlocked
-from app.net.ssrf import classify_host, is_blocked_address, validate_url
+from app.net.ssrf import classify_host, fetch_robots, is_blocked_address, parse_robots, validate_url
 
 BLOCKED_ADDRESSES = [
     ("127.0.0.1", "loopback"),
@@ -86,3 +86,44 @@ def test_url_is_normalised_and_fragment_dropped():
     normalized, host = validate_url("HTTPS://Example.com/a?b=1#frag", allow_private=True)
     assert normalized == "https://Example.com/a?b=1"
     assert host == "example.com"
+
+
+def test_robots_longest_match_lets_allow_win_ties():
+    rules = parse_robots(
+        b"User-agent: *\nDisallow: /private\nAllow: /private/public\nDisallow: /page$\n"
+    )
+    assert rules.allows("https://vendor.example/private/secret") is False
+    assert rules.allows("https://vendor.example/private/public/doc") is True
+    assert rules.allows("https://vendor.example/docs") is True
+    assert rules.allows("https://vendor.example/page") is False
+    assert rules.allows("https://vendor.example/page/extra") is True
+
+
+def test_robots_specific_agent_overrides_wildcard():
+    rules = parse_robots(
+        "User-agent: *\nDisallow: /\n\nUser-agent: PersonalKnowledgeAI\nDisallow: /admin\nAllow: /\n"
+    )
+    assert rules.allows("https://vendor.example/docs") is True
+    assert rules.allows("https://vendor.example/admin/keys") is False
+
+
+def test_robots_empty_file_allows_everything():
+    assert parse_robots(b"").allows("https://vendor.example/anything") is True
+
+
+def test_fetch_robots_404_allows_the_origin(monkeypatch):
+    def fake_fetch(url, **kwargs):  # noqa: ARG001
+        raise SsrfBlocked(f"{url} returned HTTP 404")
+
+    monkeypatch.setattr("app.net.ssrf.fetch", fake_fetch)
+    rules = fetch_robots("https://vendor.example/docs/page")
+    assert rules.allows("https://vendor.example/docs/page") is True
+
+
+def test_fetch_robots_failure_is_not_permission(monkeypatch):
+    def fake_fetch(url, **kwargs):  # noqa: ARG001
+        raise SsrfBlocked(f"fetch failed for {url}: timed out")
+
+    monkeypatch.setattr("app.net.ssrf.fetch", fake_fetch)
+    with pytest.raises(SsrfBlocked, match="timed out"):
+        fetch_robots("https://vendor.example/")

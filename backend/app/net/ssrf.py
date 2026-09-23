@@ -28,6 +28,9 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+USER_AGENT = "PersonalKnowledgeAI/1.0 (+collateral ingestion)"
+ROBOTS_PRODUCT_TOKEN = "PersonalKnowledgeAI"
+
 ALLOWED_SCHEMES = frozenset({"http", "https"})
 ALLOWED_PORTS = frozenset({80, 443, 8080, 8443})
 
@@ -156,6 +159,125 @@ def validate_url(url: str, *, allow_private: bool | None = None) -> tuple[str, s
     return normalized, host
 
 
+@dataclass(frozen=True)
+class RobotsGroup:
+    agents: tuple[str, ...]
+    rules: tuple[tuple[bool, str], ...]
+
+
+@dataclass(frozen=True)
+class RobotsRules:
+    """Parsed robots.txt. An empty rule set allows every path."""
+
+    groups: tuple[RobotsGroup, ...] = ()
+
+    def allows(self, url: str, product_token: str = ROBOTS_PRODUCT_TOKEN) -> bool:
+        rules = _rules_for_token(self.groups, product_token)
+        if not rules:
+            return True
+        parsed = urlparse(url)
+        path = parsed.path or "/"
+        query = parsed.query
+        best_len = -1
+        best_allow = True
+        for allowed, pattern in rules:
+            if not pattern:
+                continue
+            target = f"{path}?{query}" if "?" in pattern else path
+            if not _robots_pattern_matches(target, pattern):
+                continue
+            if len(pattern) > best_len or (len(pattern) == best_len and allowed):
+                best_len = len(pattern)
+                best_allow = allowed
+        return True if best_len < 0 else best_allow
+
+
+def robots_url_for(url: str) -> str:
+    parsed = urlparse(url.strip())
+    return urlunparse((parsed.scheme.lower(), parsed.netloc, "/robots.txt", "", "", ""))
+
+
+def parse_robots(data: bytes | str) -> RobotsRules:
+    """Parse the subset of robots.txt we honor: grouped Allow and Disallow."""
+    text = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else data
+    groups: list[RobotsGroup] = []
+    agents: list[str] = []
+    rules: list[tuple[bool, str]] = []
+
+    def flush() -> None:
+        nonlocal agents, rules
+        if agents:
+            groups.append(RobotsGroup(agents=tuple(agents), rules=tuple(rules)))
+        agents = []
+        rules = []
+
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            flush()
+            continue
+        key, sep, value = line.partition(":")
+        if not sep:
+            continue
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "user-agent":
+            if rules:
+                flush()
+            if value:
+                agents.append(value)
+        elif key in {"allow", "disallow"} and agents:
+            rules.append((key == "allow", value))
+    flush()
+    return RobotsRules(groups=tuple(groups))
+
+
+def fetch_robots(url: str) -> RobotsRules:
+    """Fetch `{origin}/robots.txt`. HTTP 404 means the origin has no rules.
+
+    Any other failure is raised. A missing or blocked robots file is not
+    treated as permission to crawl.
+    """
+    target = robots_url_for(url)
+    try:
+        resource = fetch(target, max_bytes=settings.freshness_max_bytes)
+    except SsrfBlocked as exc:
+        if "HTTP 404" in (exc.message or ""):
+            return RobotsRules()
+        raise
+    return parse_robots(resource.data)
+
+
+def _rules_for_token(groups: tuple[RobotsGroup, ...], product_token: str) -> tuple[tuple[bool, str], ...]:
+    token = product_token.strip().lower()
+    specific: list[RobotsGroup] = []
+    wildcard: list[RobotsGroup] = []
+    for group in groups:
+        named = [agent for agent in group.agents if agent != "*"]
+        if any(token.startswith(agent.lower()) for agent in named if agent):
+            specific.append(group)
+        elif any(agent == "*" for agent in group.agents):
+            wildcard.append(group)
+    chosen = specific or wildcard
+    rules: list[tuple[bool, str]] = []
+    for group in chosen:
+        rules.extend(group.rules)
+    return tuple(rules)
+
+
+def _robots_pattern_matches(path: str, pattern: str) -> bool:
+    import re
+
+    anchored = pattern.endswith("$")
+    body = pattern[:-1] if anchored else pattern
+    if body == "":
+        return False
+    regex = "".join(".*" if char == "*" else re.escape(char) for char in body)
+    if anchored:
+        regex += "$"
+    return re.match(regex, path) is not None
+
+
 def fetch(url: str, *, max_bytes: int = MAX_FETCH_BYTES) -> FetchedResource:
     """Fetch a URL, validating every redirect hop."""
     import httpx
@@ -170,7 +292,7 @@ def fetch(url: str, *, max_bytes: int = MAX_FETCH_BYTES) -> FetchedResource:
     with httpx.Client(
         follow_redirects=False,
         timeout=settings.url_fetch_timeout_seconds,
-        headers={"User-Agent": "PersonalKnowledgeAI/1.0 (+collateral ingestion)"},
+        headers={"User-Agent": USER_AGENT},
     ) as client:
         for _ in range(settings.url_fetch_max_redirects + 1):
             try:

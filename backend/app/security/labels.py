@@ -70,6 +70,8 @@ class SourceType(StrEnum):
     UPLOAD = "upload"
     URL = "url"
     PASTE = "paste"
+    RFP_INTAKE = "rfp_intake"
+    VENDOR_PAGE = "vendor_page"
 
 
 class Role(StrEnum):

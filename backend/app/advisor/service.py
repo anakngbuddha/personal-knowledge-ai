@@ -38,6 +38,7 @@ from app.db.models import (
 )
 from app.retrieval.search import search as run_search
 from app.retrieval.spec import RetrievalFilters
+from app.security.labels import SourceType
 from app.security.principal import Principal
 
 logger = get_logger(__name__)
@@ -126,7 +127,11 @@ def _gather_evidence(
 ) -> dict[str, list[Citation]]:
     """One search per shortlisted product. A failure costs a citation, never the answer."""
     evidence: dict[str, list[Citation]] = {}
-    filters = RetrievalFilters(approved_only=True, exclude_injection_flagged=True)
+    filters = RetrievalFilters(
+        approved_only=True,
+        exclude_injection_flagged=True,
+        exclude_source_types=[SourceType.RFP_INTAKE],
+    )
     hint = " ".join(brief.platforms[:2]) or (brief.industry or "")
 
     for product_id, name in list(shortlist.items())[:EVIDENCE_SHORTLIST]:

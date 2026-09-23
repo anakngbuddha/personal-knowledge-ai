@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     freshness_poll_seconds: float = 30.0
     freshness_default_interval_seconds: int = 86400
     freshness_max_bytes: int = 2000000
+    freshness_max_pages: int = 50
+    freshness_max_depth: int = 2
+    freshness_request_delay_seconds: float = 1.0
+    # Monitored pages are sources an operator chose. Approved so citations can
+    # see them. Set false to leave scraped pages in the draft review queue.
+    freshness_auto_approve: bool = True
     restore_drill_sla_seconds: float = 300.0
     sso_enabled: bool = False
     sso_credentials_key: str = ""

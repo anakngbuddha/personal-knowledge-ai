@@ -337,7 +337,7 @@ async def start_rfp_run(
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> WorkflowRunOut:
-    """Upload a customer RFP spreadsheet and materialize the responder playbook."""
+    """Upload a customer RFP and materialize the responder playbook."""
     _require_approver(principal)
     from app.generation.rate_limit import check_rate_limit, check_token_budget
     from app.storage.factory import get_storage
@@ -352,14 +352,15 @@ async def start_rfp_run(
     if len(data) > settings.max_upload_bytes:
         raise HTTPException(status_code=413, detail="RFP file exceeds upload limit")
     filename = file.filename or "rfp.xlsx"
-    lowered = filename.lower()
-    if not (lowered.endswith(".xlsx") or lowered.endswith(".csv") or data[:2] == b"PK"):
-        # Allow CSV by content even without extension.
-        sample = data[:200].decode("utf-8", errors="replace")
-        if "," not in sample and "\t" not in sample:
-            raise HTTPException(status_code=400, detail="RFP must be .xlsx or .csv")
+    from app.core.errors import AppError
+    from app.playbooks.rfp import classify_rfp_bytes
 
-    ext = ".csv" if lowered.endswith(".csv") else ".xlsx"
+    try:
+        kind = classify_rfp_bytes(filename, data)
+    except AppError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    ext = f".{kind}"
     storage_key = f"rfp/{principal.org_id}/{uuid.uuid4()}/source{ext}"
     get_storage().put(storage_key, data)
     run = start_playbook_run(

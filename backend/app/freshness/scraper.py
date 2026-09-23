@@ -62,6 +62,7 @@ def create_source(
     url: str,
     product_id: uuid.UUID | None = None,
     check_interval_seconds: int | None = None,
+    path_prefix: str | None = None,
 ) -> VendorSource:
     label = label.strip()
     if not label:
@@ -82,6 +83,7 @@ def create_source(
         product_id=product_id,
         label=label,
         url=normalized,
+        path_prefix=path_prefix,
         check_interval_seconds=max(60, interval),
         status=FreshnessStatus.PENDING,
         next_check_at=_now(),

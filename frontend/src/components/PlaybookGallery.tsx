@@ -72,7 +72,7 @@ export function PlaybookGallery(props: Props) {
           <p>Ground a questionnaire in approved catalog evidence, review it, then export Word.</p>
           <p className="playbook-meta">{meta("rfp-response", 6)} tasks</p>
           <label className="field-label">Questionnaire</label>
-          <input type="file" accept=".csv,.xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <input type="file" accept=".csv,.xlsx,.pdf,.docx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           <label className="field-label">Account ref</label>
           <input
             className="search-input"

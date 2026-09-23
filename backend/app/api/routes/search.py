@@ -8,6 +8,7 @@ from app.retrieval.search import search as run_search
 from app.retrieval.spec import RetrievalFilters
 from app.retrieval.sql import UnknownFilterField
 from app.security.deps import resolve_principal
+from app.security.labels import SourceType
 from app.security.principal import Principal
 
 router = APIRouter(tags=["retrieval"])
@@ -33,7 +34,10 @@ def search_endpoint(
             detail=f"mode must be one of: {', '.join(sorted(VALID_MODES))}",
         )
 
-    filters = RetrievalFilters(**payload.filters.model_dump())
+    filters = RetrievalFilters(
+        **payload.filters.model_dump(),
+        exclude_source_types=[SourceType.RFP_INTAKE],
+    )
     try:
         result = run_search(
             db,

@@ -68,6 +68,50 @@ def enqueue(
     return job
 
 
+def enqueue_freshness_crawl(
+    db: Session,
+    *,
+    vendor_source_id: uuid.UUID,
+    org_id: uuid.UUID | None,
+) -> IngestionJob:
+    """Queue a site crawl. A source already running or waiting is not duplicated."""
+    pending = list(
+        db.scalars(
+            select(IngestionJob).where(
+                IngestionJob.kind == "freshness_crawl",
+                IngestionJob.org_id == org_id,
+                IngestionJob.status.in_([JobStatus.QUEUED, JobStatus.FAILED, JobStatus.RUNNING]),
+            )
+        )
+    )
+    running: IngestionJob | None = None
+    for row in pending:
+        if str((row.payload or {}).get("vendor_source_id")) != str(vendor_source_id):
+            continue
+        if row.status == JobStatus.RUNNING:
+            running = row
+            continue
+        row.status = JobStatus.DEAD
+        row.error_message = "superseded by a newer request"
+    if running is not None:
+        db.commit()
+        return running
+
+    job = IngestionJob(
+        document_id=None,
+        org_id=org_id,
+        kind="freshness_crawl",
+        status=JobStatus.QUEUED,
+        max_attempts=settings.job_max_attempts,
+        run_after=_now(),
+        payload={"vendor_source_id": str(vendor_source_id)},
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
 def claim(db: Session, worker_id: str) -> IngestionJob | None:
     """Atomically claim the next runnable job. Safe to run from several workers."""
     reap_stale(db)

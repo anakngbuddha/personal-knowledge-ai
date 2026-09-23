@@ -16,7 +16,7 @@ router = APIRouter(prefix="/jobs", tags=["ingestion jobs"])
 
 class JobOut(BaseModel):
     id: uuid.UUID
-    document_id: uuid.UUID
+    document_id: uuid.UUID | None = None
     kind: str
     status: str
     attempts: int

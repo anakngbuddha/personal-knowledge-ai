@@ -123,6 +123,19 @@ def test_unknown_filter_arguments_are_a_type_error_not_silently_ignored():
         RetrievalFilters(nonexistent_filter=True)  # type: ignore[call-arg]
 
 
+def test_rfp_intake_is_excluded_unless_the_query_names_documents():
+    from app.retrieval.sql import compile_predicate
+
+    filters = RetrievalFilters(exclude_source_types=["rfp_intake"])
+    predicate = next(item for item in filters.to_predicates() if item.field == "source_type")
+    assert predicate.op is Op.NOT_IN
+    assert predicate.value == {"rfp_intake"}
+    compile_predicate(predicate)
+
+    scoped = RetrievalFilters(exclude_source_types=["rfp_intake"], document_ids=["doc-1"])
+    assert all(item.field != "source_type" for item in scoped.to_predicates())
+
+
 def test_exclude_document_ids_produces_not_in_predicate():
     filters = RetrievalFilters(exclude_document_ids=["doc-1", "doc-2"])
     predicates = filters.to_predicates()

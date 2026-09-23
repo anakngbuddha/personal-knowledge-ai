@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,7 @@ from app.core.errors import AppError
 from app.db.models import FreshnessAlert, VendorSource
 from app.db.session import get_db
 from app.documents.service import get_or_create_default_workspace
-from app.freshness.scraper import acknowledge_alert, check_source, create_source
+from app.freshness.scraper import acknowledge_alert, create_source
 from app.security.audit import record_audit
 from app.security.deps import resolve_principal
 from app.security.principal import Principal
@@ -28,6 +28,17 @@ class VendorSourceIn(BaseModel):
     url: str = Field(..., min_length=8, max_length=2048)
     product_id: uuid.UUID | None = None
     check_interval_seconds: int | None = Field(None, ge=60, le=2_592_000)
+    path_prefix: str | None = Field(None, max_length=512)
+
+    @field_validator("path_prefix")
+    @classmethod
+    def _prefix(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        cleaned = value.strip()
+        if not cleaned.startswith("/") or cleaned.startswith("//"):
+            raise ValueError("path_prefix must be an absolute path")
+        return cleaned
 
 
 class VendorSourceOut(BaseModel):
@@ -41,6 +52,7 @@ class VendorSourceOut(BaseModel):
     next_check_at: str | None = None
     last_error: str | None = None
     product_id: str | None = None
+    path_prefix: str | None = None
 
 
 class VendorSourceListOut(BaseModel):
@@ -48,6 +60,13 @@ class VendorSourceListOut(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class FreshnessAlertPage(BaseModel):
+    url: str
+    change: str
+    previous_hash: str | None = None
+    new_hash: str | None = None
 
 
 class FreshnessAlertOut(BaseModel):
@@ -58,6 +77,7 @@ class FreshnessAlertOut(BaseModel):
     new_hash: str | None = None
     created_at: str | None = None
     acknowledged_at: str | None = None
+    pages: list[FreshnessAlertPage] = Field(default_factory=list)
 
 
 class FreshnessAlertListOut(BaseModel):
@@ -74,6 +94,7 @@ class CheckOut(BaseModel):
     changed: bool
     alert_id: str | None = None
     error: str | None = None
+    job_id: str | None = None
 
 
 def _http(exc: AppError) -> HTTPException:
@@ -92,7 +113,28 @@ def _source_out(row: VendorSource) -> VendorSourceOut:
         next_check_at=row.next_check_at.isoformat() if row.next_check_at else None,
         last_error=row.last_error,
         product_id=str(row.product_id) if row.product_id else None,
+        path_prefix=row.path_prefix,
     )
+
+
+def _alert_pages(row: FreshnessAlert) -> list[FreshnessAlertPage]:
+    details = row.details if isinstance(row.details, dict) else {}
+    raw = details.get("pages")
+    if not isinstance(raw, list):
+        return []
+    pages: list[FreshnessAlertPage] = []
+    for item in raw:
+        if not isinstance(item, dict) or not item.get("url"):
+            continue
+        pages.append(
+            FreshnessAlertPage(
+                url=str(item["url"]),
+                change=str(item.get("change") or "changed"),
+                previous_hash=item.get("previous_hash"),
+                new_hash=item.get("new_hash"),
+            )
+        )
+    return pages
 
 
 def _alert_out(row: FreshnessAlert) -> FreshnessAlertOut:
@@ -104,6 +146,7 @@ def _alert_out(row: FreshnessAlert) -> FreshnessAlertOut:
         new_hash=row.new_hash,
         created_at=row.created_at.isoformat() if row.created_at else None,
         acknowledged_at=row.acknowledged_at.isoformat() if row.acknowledged_at else None,
+        pages=_alert_pages(row),
     )
 
 
@@ -151,6 +194,7 @@ def add_source(
             url=str(payload.url),
             product_id=payload.product_id,
             check_interval_seconds=payload.check_interval_seconds,
+            path_prefix=payload.path_prefix,
         )
     except AppError as exc:
         raise _http(exc) from exc
@@ -171,22 +215,23 @@ def run_check(
     )
     if source is None:
         raise HTTPException(status_code=404, detail="not found")
-    result = check_source(db, source)
+    from app.jobs.queue import enqueue_freshness_crawl
+
+    job = enqueue_freshness_crawl(db, vendor_source_id=source.id, org_id=source.org_id)
     record_audit(
         db,
         principal,
         "check",
         "vendor_source",
         str(source.id),
-        {"status": result.status, "changed": result.changed},
+        {"status": "queued", "job_id": str(job.id)},
     )
     return CheckOut(
-        source_id=str(result.source_id),
-        status=result.status,
-        hash=result.hash,
-        changed=result.changed,
-        alert_id=str(result.alert_id) if result.alert_id else None,
-        error=result.error,
+        source_id=str(source.id),
+        status="queued",
+        hash=source.last_hash,
+        changed=False,
+        job_id=str(job.id),
     )
 
 

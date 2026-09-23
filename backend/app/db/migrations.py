@@ -85,12 +85,30 @@ _NOTEBOOKS=[
  "CREATE INDEX IF NOT EXISTS ix_conversations_notebook_id ON conversations(notebook_id)",
 ]
 
+# Crawl jobs have no document yet, and one vendor source backs many pages.
+_VENDOR_CRAWL=[
+ "ALTER TABLE ingestion_jobs ALTER COLUMN document_id DROP NOT NULL",
+ "ALTER TABLE ingestion_jobs ADD COLUMN IF NOT EXISTS payload jsonb",
+ "ALTER TABLE vendor_sources ADD COLUMN IF NOT EXISTS path_prefix text",
+ "CREATE TABLE IF NOT EXISTS vendor_source_pages (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, vendor_source_id uuid NOT NULL REFERENCES vendor_sources(id) ON DELETE CASCADE, url text NOT NULL, document_id uuid REFERENCES documents(id) ON DELETE SET NULL, last_hash varchar(64), last_seen_at timestamptz, missing_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), CONSTRAINT uq_vendor_source_pages_url UNIQUE (vendor_source_id, url))",
+ "CREATE INDEX IF NOT EXISTS ix_vendor_source_pages_org_id ON vendor_source_pages(org_id)",
+ "CREATE INDEX IF NOT EXISTS ix_vendor_source_pages_vendor_source_id ON vendor_source_pages(vendor_source_id)",
+ "CREATE INDEX IF NOT EXISTS ix_vendor_source_pages_document_id ON vendor_source_pages(document_id)",
+]
+
+# Cosine HNSW so crawled vendor pages do not force a sequential vector scan.
+_VECTOR_HNSW=[
+ "CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_hnsw ON document_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)",
+]
+
 MIGRATIONS=[
  ("0015_multi_user_rbac",_RBAC),
  ("0016_document_understanding",_UNDERSTANDING,True),
  ("0017_selling_model",_SELLING_MODEL,True),
  ("0018_demo_sources",_DEMO_SOURCES,True),
  ("0019_notebooks",_NOTEBOOKS,True),
+ ("0020_vendor_source_pages",_VENDOR_CRAWL,True),
+ ("0021_document_chunk_hnsw",_VECTOR_HNSW,True),
 ]
 
 def applied_migrations(engine: Engine)->set[str]:

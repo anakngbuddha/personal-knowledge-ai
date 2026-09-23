@@ -103,6 +103,9 @@ class RetrievalFilters:
     fresh_as_of: date | None = None  # drop collateral whose valid_until has passed
     approved_only: bool = False
     exclude_injection_flagged: bool = False
+    # Client RFP files are searchable when a query names them, and omitted from
+    # every unscoped search. An explicit document id list is that opt-in.
+    exclude_source_types: list[str] = field(default_factory=list)
 
     def to_predicates(self) -> list[Predicate]:
         out: list[Predicate] = []
@@ -185,6 +188,16 @@ class RetrievalFilters:
                     set(self.exclude_document_ids),
                     Origin.FILTER,
                     "exclude document ids filter",
+                )
+            )
+        if self.exclude_source_types and not self.document_ids:
+            out.append(
+                Predicate(
+                    "source_type",
+                    Op.NOT_IN,
+                    set(self.exclude_source_types),
+                    Origin.FILTER,
+                    "exclude client RFP intake from general retrieval",
                 )
             )
         return out

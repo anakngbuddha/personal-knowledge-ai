@@ -56,11 +56,13 @@ export function OpsPanel({ mode = "all" }: { mode?: "watches" | "admin" | "all" 
     try {
       const result = await api.checkVendorSource(id);
       setMessage(
-        result.changed
-          ? "Upstream changed — staleness alert raised."
-          : result.error
-            ? result.error
-            : `Still ${result.status}.`,
+        result.status === "queued"
+          ? "Crawl queued. Pages will be indexed in the background."
+          : result.changed
+            ? "Upstream changed — staleness alert raised."
+            : result.error
+              ? result.error
+              : `Still ${result.status}.`,
       );
       await refresh();
     } catch (err) {
@@ -112,8 +114,8 @@ export function OpsPanel({ mode = "all" }: { mode?: "watches" | "admin" | "all" 
           </div>
         </div>
         <p className="muted">
-          Register upstream URLs. A hash change raises a staleness alert so proposals do not cite a
-          superseded datasheet.
+          Register a public URL. The crawler indexes same-origin pages and raises an alert when one
+          of them changes.
         </p>
         <div className="ops-form">
           <input
@@ -168,9 +170,17 @@ export function OpsPanel({ mode = "all" }: { mode?: "watches" | "admin" | "all" 
               <li key={alert.id}>
                 <div>
                   <span className="stamp stale">{alert.kind}</span>
-                  <p className="muted">
-                    {alert.previous_hash?.slice(0, 10)} → {alert.new_hash?.slice(0, 10)}
-                  </p>
+                  {alert.pages && alert.pages.length > 0 ? (
+                    alert.pages.map((page) => (
+                      <p key={`${alert.id}-${page.url}`} className="muted">
+                        {page.change}: {page.url}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="muted">
+                      {alert.previous_hash?.slice(0, 10)} → {alert.new_hash?.slice(0, 10)}
+                    </p>
+                  )}
                 </div>
                 <button type="button" onClick={() => void ack(alert.id)}>
                   Acknowledge
