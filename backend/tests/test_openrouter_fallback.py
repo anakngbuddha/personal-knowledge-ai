@@ -1,6 +1,6 @@
 """OpenRouter text fallback and Nemotron embedding guard. No network."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import httpx
 import pytest
@@ -213,3 +213,90 @@ def test_gemini_rate_limit_fails_over_without_retries(monkeypatch):
 def test_transport_error_is_fallback_eligible():
     assert issubclass(httpx.TransportError, Exception)
     assert isinstance(GroundedAnswerChunk(delta="x"), GroundedAnswerChunk)
+
+
+def test_retry_succeeds_on_second_attempt(monkeypatch):
+    """When both providers are rate-limited on attempt 1, the fallback retries
+    with backoff and succeeds on attempt 2."""
+    monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+    attempt_count = {"n": 0}
+
+    class _BoomThenOk:
+        model_id = "gemini-test"
+
+        def generate_grounded_answer(self, *args, **kwargs):
+            attempt_count["n"] += 1
+            if attempt_count["n"] <= 1:
+                raise ProviderRateLimited("Gemini rate limit")
+            from app.llm.base import GroundedAnswer
+            return GroundedAnswer(
+                text="Success on retry",
+                citations=[],
+                model_id="gemini-test",
+                prompt_version="v1",
+            )
+
+    # The fallback (OpenRouter) also fails on first attempt, so the whole
+    # primary→fallback chain fails once and triggers the retry loop.
+    class _BoomOnce:
+        model_id = "openrouter-test"
+
+        def generate_grounded_answer(self, *args, **kwargs):
+            raise ProviderRateLimited("OpenRouter rate limit")
+
+    provider = FallbackLLMProvider(_BoomThenOk(), _BoomOnce())
+    with patch("app.llm.fallback.time.sleep") as mock_sleep:
+        answer = provider.generate_grounded_answer("q", _chunk(), system_prompt="s")
+
+    assert answer.text == "Success on retry"
+    assert attempt_count["n"] == 2
+    assert mock_sleep.call_count == 1
+    # Verify backoff delay is positive
+    assert mock_sleep.call_args[0][0] > 0
+
+
+def test_retry_exhausted_raises(monkeypatch):
+    """When all retry attempts are exhausted, ProviderRateLimited is raised."""
+    monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+
+    class _AlwaysBoom:
+        model_id = "always-boom"
+
+        def generate_grounded_answer(self, *args, **kwargs):
+            raise ProviderRateLimited("always rate limited")
+
+    provider = FallbackLLMProvider(_AlwaysBoom(), _AlwaysBoom())
+    with patch("app.llm.fallback.time.sleep"):
+        with pytest.raises(ProviderRateLimited):
+            provider.generate_grounded_answer("q", _chunk(), system_prompt="s")
+
+
+def test_stream_retry_succeeds_on_second_attempt(monkeypatch):
+    """Stream path: when both providers are rate-limited on attempt 1, the
+    fallback retries with backoff and succeeds on attempt 2."""
+    monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+    attempt_count = {"n": 0}
+
+    class _StreamBoomThenOk:
+        model_id = "gemini-test"
+
+        def stream_grounded_answer(self, *args, **kwargs):
+            attempt_count["n"] += 1
+            if attempt_count["n"] <= 1:
+                raise ProviderRateLimited("Gemini rate limit")
+            yield GroundedAnswerChunk(delta="ok")
+            yield GroundedAnswerChunk(delta="", done=True, citations=[])
+
+    class _StreamBoomOnce:
+        model_id = "openrouter-test"
+
+        def stream_grounded_answer(self, *args, **kwargs):
+            raise ProviderRateLimited("OpenRouter rate limit")
+            yield  # pragma: no cover
+
+    provider = FallbackLLMProvider(_StreamBoomThenOk(), _StreamBoomOnce())
+    with patch("app.llm.fallback.time.sleep") as mock_sleep:
+        chunks = list(provider.stream_grounded_answer("q", _chunk(), system_prompt="s"))
+
+    assert chunks[0].delta == "ok"
+    assert mock_sleep.call_count == 1
