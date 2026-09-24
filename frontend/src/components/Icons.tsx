@@ -15,34 +15,22 @@ export function LogoMark({ size = 28, className, ...props }: IconProps) {
       className={className}
       {...props}
     >
-      <defs>
-        <linearGradient id="logo-grad" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#818cf8" />
-          <stop offset="0.5" stopColor="#6366f1" />
-          <stop offset="1" stopColor="#3b82f6" />
-        </linearGradient>
-        <linearGradient id="logo-glow" x1="16" y1="4" x2="16" y2="28" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#ffffff" stopOpacity="0.8" />
-          <stop offset="1" stopColor="#c7d2fe" stopOpacity="0.2" />
-        </linearGradient>
-      </defs>
-      <rect x="2" y="2" width="28" height="28" rx="8" fill="url(#logo-grad)" />
-      <rect x="2" y="2" width="28" height="28" rx="8" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
+      <rect x="1" y="1" width="30" height="30" rx="9" fill="transparent" stroke="#3b82f6" strokeWidth="1.75" />
+      {/* Isometric 3D Cube */}
       <path
-        d="M16 6L23 10V18L16 22L9 18V10L16 6Z"
-        stroke="url(#logo-glow)"
+        d="M16 6.5L23.5 10.8V19.5L16 23.8L8.5 19.5V10.8L16 6.5Z"
+        stroke="#3b82f6"
         strokeWidth="1.75"
         strokeLinecap="round"
         strokeLinejoin="round"
-        fill="rgba(255,255,255,0.08)"
       />
-      <circle cx="16" cy="14" r="2.5" fill="#ffffff" />
-      <path d="M16 16.5V22" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M14 12.5L9 10" stroke="#ffffff" strokeWidth="1.25" strokeLinecap="round" strokeOpacity="0.7" />
-      <path d="M18 12.5L23 10" stroke="#ffffff" strokeWidth="1.25" strokeLinecap="round" strokeOpacity="0.7" />
-      <circle cx="9" cy="10" r="1.5" fill="#ffffff" />
-      <circle cx="23" cy="10" r="1.5" fill="#ffffff" />
-      <circle cx="16" cy="22" r="1.5" fill="#ffffff" />
+      <path
+        d="M16 15.2V23.8M16 15.2L23.5 10.8M16 15.2L8.5 10.8"
+        stroke="#3b82f6"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -253,3 +241,93 @@ export function SendIcon({ size = 18, ...props }: IconProps) {
     </svg>
   );
 }
+
+export function StarIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    </svg>
+  );
+}
+
+export function ZapIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
+  );
+}
+
+export function InfoIcon({ size = 16, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="16" x2="12" y2="12" />
+      <line x1="12" y1="8" x2="12.01" y2="8" />
+    </svg>
+  );
+}
+
+export function PlusIcon({ size = 16, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+export function LayersVectorIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+      <path d="M2 17l10 5 10-5" />
+      <path d="M2 12l10 5 10-5" />
+    </svg>
+  );
+}
+
+export function SparkleSquircleIcon({ size = 56, className }: { size?: number; className?: string }) {
+  return (
+    <div
+      className={className}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "18px",
+        background: "linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%)",
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: "0 8px 24px -4px rgba(99, 102, 241, 0.2)",
+      }}
+    >
+      <svg width={size * 0.52} height={size * 0.52} viewBox="0 0 24 24" fill="none">
+        {/* Large 4-point star */}
+        <path
+          d="M10 2C10 6.5 6.5 10 2 10C6.5 10 10 13.5 10 18C10 13.5 13.5 10 18 10C13.5 10 10 6.5 10 2Z"
+          fill="#6366f1"
+        />
+        {/* Small 4-point star */}
+        <path
+          d="M18.5 14C18.5 16 17 17.5 15 17.5C17 17.5 18.5 19 18.5 21C18.5 19 20 17.5 22 17.5C20 17.5 18.5 16 18.5 14Z"
+          fill="#818cf8"
+        />
+      </svg>
+      {/* Accent mini bubble on top-right corner as shown in image */}
+      <span
+        style={{
+          position: "absolute",
+          top: -4,
+          right: -4,
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: "rgba(99, 102, 241, 0.35)",
+        }}
+      />
+    </div>
+  );
+}
+

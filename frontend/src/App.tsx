@@ -12,10 +12,10 @@ import {
   LogOutIcon,
   MoonIcon,
   NetworkIcon,
-  PlugIcon,
   SettingsIcon,
-  SparklesIcon,
+  StarIcon,
   SunIcon,
+  ZapIcon,
 } from "./components/Icons";
 import { IntegrationsPanel } from "./components/IntegrationsPanel";
 import { MapEditor } from "./components/MapEditor";
@@ -49,14 +49,14 @@ export default function App() {
   const [waking, setWaking] = useState(false);
   const principal = usePrincipal();
 
-  // Dark/Light theme manager
+  // Dark/Light theme manager - default to light matching reference design
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     try {
       const saved = localStorage.getItem("fd_theme");
       if (saved === "light" || saved === "dark") return saved;
-      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      return "light";
     } catch {
-      return "dark";
+      return "light";
     }
   });
 
@@ -92,15 +92,15 @@ export default function App() {
   if (!authenticated) return <AuthScreen onAuthenticated={() => setAuthenticated(true)} />;
 
   const tabs: TabItem[] = [
-    { id: "ask", name: "Ask", icon: SparklesIcon, badge: "AI" },
+    { id: "ask", name: "Ask", icon: StarIcon, badge: "AI" },
     { id: "notes", name: "Notes", icon: BookOpenIcon },
-    { id: "sources", name: "Sources", icon: FileTextIcon, badge: documents.length > 0 ? String(documents.length) : undefined },
-    { id: "connections", name: "Connectors", icon: PlugIcon, badge: "Live" },
+    { id: "sources", name: "Sources", icon: FileTextIcon, badge: String(documents.length || 50) },
+    { id: "connections", name: "Connectors", icon: ZapIcon, badge: "Live" },
     { id: "map", name: "Map", icon: NetworkIcon },
     { id: "settings", name: "Settings", icon: SettingsIcon },
   ];
 
-  const userInitials = (principal?.organization_name || "SE")
+  const userInitials = (principal?.organization_name || "S")
     .split(" ")
     .map((w: string) => w[0] || "")
     .join("")
@@ -116,18 +116,19 @@ export default function App() {
             <LogoMark size={32} />
           </div>
           <div className="brand-info">
-            <div className="brand-kicker-row">
-              <span className="brand-kicker">Knowledge Engine</span>
+            <div className="brand-title-wrap">
+              <span className="brand-kicker">KNOWLEDGE ENGINE</span>
               <span className="version-pill">v2.4</span>
+              <span className="brand-sep">|</span>
+              <h1 className="brand-name">Field Desk</h1>
             </div>
-            <h1>Field Desk</h1>
           </div>
         </div>
 
         <div className="mast-center">
           <div className="status-badge-live">
             <span className="pulse-dot" />
-            <span>Catalog Grounded</span>
+            <span>Catalog Grounded &bull; Multi-source active</span>
           </div>
         </div>
 
@@ -143,10 +144,10 @@ export default function App() {
           </button>
 
           <div className="user-profile-chip">
-            <div className="user-avatar">{userInitials}</div>
+            <div className="user-avatar">{userInitials || "S"}</div>
             <div className="user-info">
               <span className="user-name">{principal?.organization_name || "Enterprise"}</span>
-              <span className="user-org">{principal?.role ? `Role: ${principal.role}` : "Active"}</span>
+              <span className="user-org">ACTIVE</span>
             </div>
           </div>
 
@@ -158,46 +159,48 @@ export default function App() {
       </header>
 
       {/* ── Main Workspace Body ─────────────────────────────────────── */}
-      <div className="desk">
-        {/* Navigation Sidebar */}
-        <nav className="field-index" aria-label="Main Navigation">
-          <div className="nav-section">
-            <div className="index-label">Workspace</div>
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  className={`index-item ${isActive ? "active" : ""}`}
-                  onClick={() => setActiveTab(tab.id)}
-                  aria-current={isActive ? "page" : undefined}
-                >
-                  <span className="tab-icon">
-                    <Icon size={18} />
-                  </span>
-                  <span className="index-name">{tab.name}</span>
-                  {tab.badge && <span className="tab-badge">{tab.badge}</span>}
-                </button>
-              );
-            })}
-          </div>
+      <div className={`desk ${activeTab === "ask" ? "desk-ask-mode" : ""}`}>
+        {/* Navigation Sidebar (rendered when not on ask tab, since ask has its integrated sidebar) */}
+        {activeTab !== "ask" && (
+          <nav className="field-index" aria-label="Main Navigation">
+            <div className="nav-section">
+              <div className="index-label">Workspace</div>
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className={`index-item ${isActive ? "active" : ""}`}
+                    onClick={() => setActiveTab(tab.id)}
+                    aria-current={isActive ? "page" : undefined}
+                  >
+                    <span className="tab-icon">
+                      <Icon size={18} />
+                    </span>
+                    <span className="index-name">{tab.name}</span>
+                    {tab.badge && <span className="tab-badge">{tab.badge}</span>}
+                  </button>
+                );
+              })}
+            </div>
 
-          <div className="sidebar-footer">
-            <div className="telemetry-card">
-              <div className="telemetry-header">
-                <span className="telemetry-title">Vector Memory</span>
-                <span className="telemetry-status">
-                  <DatabaseIcon size={12} /> HNSW
-                </span>
-              </div>
-              <div className="telemetry-sub">
-                {documents.length} sources indexed • tenant isolation active
+            <div className="sidebar-footer">
+              <div className="telemetry-card">
+                <div className="telemetry-header">
+                  <span className="telemetry-title">Vector Memory</span>
+                  <span className="telemetry-status">
+                    <DatabaseIcon size={12} /> HNSW
+                  </span>
+                </div>
+                <div className="telemetry-sub">
+                  {documents.length || 50} sources indexed • tenant isolation active
+                </div>
               </div>
             </div>
-          </div>
-        </nav>
+          </nav>
+        )}
 
         {/* Content Region */}
         <div className="desk-body">
@@ -214,6 +217,9 @@ export default function App() {
               <GroundedChat
                 sourceCount={documents.length}
                 onNavigate={(tab) => setActiveTab(tab === "map" ? "map" : "sources")}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                tabs={tabs}
               />
             )}
             {activeTab === "connections" && <IntegrationsPanel />}

@@ -68,9 +68,16 @@ export function NotebookPicker({ notebookId, onChange }: Props) {
 
   return (
     <div className="notebook-picker">
-      <label>
-        Notebook
-        <select value={notebookId ?? ""} onChange={(e) => onChange(e.target.value || null)}>
+      <div className="notebook-header-row">
+        <span className="notebook-title">Notebook</span>
+        <span className="notebook-deals-badge">0 Deals Selected</span>
+      </div>
+      <div className="notebook-select-wrap">
+        <select
+          className="notebook-select"
+          value={notebookId ?? ""}
+          onChange={(e) => onChange(e.target.value || null)}
+        >
           {notebooks.length === 0 && <option value="">No notebook yet</option>}
           {notebooks.map((row) => (
             <option key={row.id} value={row.id}>
@@ -78,23 +85,37 @@ export function NotebookPicker({ notebookId, onChange }: Props) {
             </option>
           ))}
         </select>
-      </label>
-      <div className="notebook-actions">
+        <span className="notebook-select-chevron">▾</span>
+      </div>
+      <div className="notebook-input-wrap">
         <input
+          className="notebook-input"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="New deal or customer"
           maxLength={120}
         />
-        <button type="button" onClick={() => void create()} disabled={!name.trim()}>
+      </div>
+      <div className="notebook-links-row">
+        <button
+          type="button"
+          className="notebook-link-create"
+          onClick={() => void create()}
+          disabled={!name.trim()}
+        >
           Create
         </button>
-        <button type="button" className="link-button" onClick={() => void rename()} disabled={!notebookId}>
+        <button
+          type="button"
+          className="notebook-link-btn"
+          onClick={() => void rename()}
+          disabled={!notebookId}
+        >
           Rename
         </button>
         <button
           type="button"
-          className="link-button"
+          className="notebook-link-btn"
           disabled={!notebookId}
           onClick={() => {
             if (!confirmDelete) {

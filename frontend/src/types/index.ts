@@ -158,6 +158,8 @@ export interface SourceMetadata {
   is_stale: boolean;
   source_url?: string | null;
   origin?: string | null;
+  snippet?: string | null;
+  excerpt?: string | null;
 }
 
 export interface TokenUsage {
