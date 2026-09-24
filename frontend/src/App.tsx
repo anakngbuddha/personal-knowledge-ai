@@ -18,10 +18,8 @@ import {
   ZapIcon,
 } from "./components/Icons";
 import { IntegrationsPanel } from "./components/IntegrationsPanel";
-import { MapEditor } from "./components/MapEditor";
 import { NotesPanel } from "./components/NotesPanel";
 import { OpsPanel } from "./components/OpsPanel";
-import { ProductImport } from "./components/ProductImport";
 import { SearchExplorer } from "./components/SearchExplorer";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SourceInsightCard } from "./components/SourceInsightCard";
@@ -171,9 +169,9 @@ export default function App() {
       </header>
 
       {/* ── Main Workspace Body ─────────────────────────────────────── */}
-      <div className={`desk ${activeTab === "ask" ? "desk-ask-mode" : ""}`}>
-        {/* Navigation Sidebar (rendered when not on ask tab, since ask has its integrated sidebar) */}
-        {activeTab !== "ask" && (
+      <div className={`desk ${activeTab === "ask" || activeTab === "map" ? "desk-ask-mode" : ""}`}>
+        {/* Navigation Sidebar (rendered when not on ask or map tab, since both have integrated workspace sidebars) */}
+        {activeTab !== "ask" && activeTab !== "map" && (
           <nav className="field-index" aria-label="Main Navigation">
             <div className="nav-section">
               <div className="index-label">Workspace</div>
@@ -281,16 +279,15 @@ export default function App() {
             )}
             {activeTab === "connections" && <IntegrationsPanel />}
             {activeTab === "map" && (
-              <div className="map-stage">
-                <GraphExplorer key={mapVersion} />
-                <div className="map-float">
-                  <ProductImport onImported={() => setMapVersion((v) => v + 1)} />
-                  <details className="map-edit">
-                    <summary>Edit the map</summary>
-                    <MapEditor onChanged={() => setMapVersion((v) => v + 1)} />
-                  </details>
-                </div>
-              </div>
+              <GraphExplorer
+                key={mapVersion}
+                sourceCount={documents.length}
+                onNavigate={(tab) => setActiveTab(tab === "map" ? "map" : tab === "ask" ? "ask" : "sources")}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                tabs={tabs}
+                onMapChanged={() => setMapVersion((v) => v + 1)}
+              />
             )}
             {activeTab === "notes" && <NotesPanel />}
             {activeTab === "settings" && <SettingsPanel principal={principal} onSignOut={signOut} />}
