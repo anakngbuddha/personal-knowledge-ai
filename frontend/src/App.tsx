@@ -113,14 +113,14 @@ export default function App() {
       <header className="masthead">
         <div className="brand">
           <div className="brand-emblem" title="Field Desk AI">
-            <LogoMark size={32} />
+            <LogoMark size={26} />
           </div>
           <div className="brand-info">
             <div className="brand-title-wrap">
               <span className="brand-kicker">KNOWLEDGE ENGINE</span>
               <span className="version-pill">v2.4</span>
               <span className="brand-sep">|</span>
-              <h1 className="brand-name">Field Desk</h1>
+              <span className="brand-name">Field Desk</span>
             </div>
           </div>
         </div>
@@ -144,7 +144,7 @@ export default function App() {
           </button>
 
           <div className="user-profile-chip">
-            <div className="user-avatar">{userInitials || "S"}</div>
+            <div className="user-avatar">S</div>
             <div className="user-info">
               <span className="user-name">{principal?.organization_name || "Enterprise"}</span>
               <span className="user-org">ACTIVE</span>

@@ -316,27 +316,6 @@ export function GroundedChat({
           </div>
         </div>
 
-        {/* Sources Checklist (if user has enabled sources) */}
-        {sources.length > 0 && (
-          <div className="active-sources-checklist">
-            <div className="sources-checklist-title">SELECTED ({enabledIds().length}/{sources.length})</div>
-            <ul className="source-list">
-              {sources.map((row) => (
-                <li key={row.document_id}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={row.enabled}
-                      onChange={() => void toggleSource(row.document_id)}
-                    />
-                    <span>{row.title || row.filename}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         {/* Studio Action Buttons */}
         <div className="helper-row">
           <button type="button" disabled={studioBusy} onClick={() => void runStudio("briefing")}>
@@ -557,11 +536,6 @@ export function GroundedChat({
             </button>
           </div>
         </form>
-
-        <details className="suggested-actions-details">
-          <summary>All workflows &amp; playbooks</summary>
-          <WorkflowWorkspace />
-        </details>
       </main>
 
       {/* ── Right Column: Citation Live Inspector & Saved Outputs ──────── */}
@@ -640,69 +614,66 @@ export function GroundedChat({
           </div>
 
           <div className="saved-outputs-list">
-            {savedNotes.length > 0 ? (
-              savedNotes.map((note) => (
-                <div key={note.id} className="saved-output-card">
-                  <div className="saved-card-header">
-                    <span className="saved-card-title">{note.title}</span>
-                    <span className="saved-card-date">
-                      {new Date(note.created_at || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                    </span>
-                  </div>
-                  <p className="saved-card-snippet">
-                    {note.body ? note.body.slice(0, 52) + "..." : "Synthesis output summary"}
-                  </p>
-                  <div className="saved-card-tags">
-                    <span className="saved-tag tag-lavender">Verified</span>
-                    <span className="saved-tag tag-slate">Synthesis</span>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <>
-                <div className="saved-output-card">
-                  <div className="saved-card-header">
-                    <span className="saved-card-title">Addasound</span>
-                    <span className="saved-card-date">Oct 24</span>
-                  </div>
-                  <p className="saved-card-snippet">
-                    Acoustic matrix, peripheral certifications,...
-                  </p>
-                  <div className="saved-card-tags">
-                    <span className="saved-tag tag-lavender">Hardware</span>
-                    <span className="saved-tag tag-mint">Verified</span>
-                  </div>
-                </div>
+            <div className="saved-output-card">
+              <div className="saved-card-header">
+                <span className="saved-card-title">Addasound</span>
+                <span className="saved-card-date">Oct 24</span>
+              </div>
+              <p className="saved-card-snippet">
+                Acoustic matrix, peripheral certifications,...
+              </p>
+              <div className="saved-card-tags">
+                <span className="saved-tag tag-lavender">Hardware</span>
+                <span className="saved-tag tag-mint">Verified</span>
+              </div>
+            </div>
 
-                <div className="saved-output-card">
-                  <div className="saved-card-header">
-                    <span className="saved-card-title">compatible services on huawei cloud</span>
-                    <span className="saved-card-date">Oct 22</span>
-                  </div>
-                  <p className="saved-card-snippet">
-                    Service mesh mapping, compute engine ti...
-                  </p>
-                  <div className="saved-card-tags">
-                    <span className="saved-tag tag-purple">Infrastructure</span>
-                    <span className="saved-tag tag-slate">Cloud</span>
-                  </div>
-                </div>
+            <div className="saved-output-card">
+              <div className="saved-card-header">
+                <span className="saved-card-title">compatible services on huawei cloud</span>
+                <span className="saved-card-date">Oct 22</span>
+              </div>
+              <p className="saved-card-snippet">
+                Service mesh mapping, compute engine ti...
+              </p>
+              <div className="saved-card-tags">
+                <span className="saved-tag tag-purple">Infrastructure</span>
+                <span className="saved-tag tag-slate">Cloud</span>
+              </div>
+            </div>
 
-                <div className="saved-output-card">
-                  <div className="saved-card-header">
-                    <span className="saved-card-title">Huawei Cloud Data Ingestion 1</span>
-                    <span className="saved-card-date">Oct 19</span>
-                  </div>
-                  <p className="saved-card-snippet">
-                    Kafka pipelines, real-time ingestion...
-                  </p>
-                  <div className="saved-card-tags">
-                    <span className="saved-tag tag-cyan">Pipeline</span>
-                    <span className="saved-tag tag-slate">ETL</span>
-                  </div>
+            <div className="saved-output-card">
+              <div className="saved-card-header">
+                <span className="saved-card-title">Huawei Cloud Data Ingestion 1</span>
+                <span className="saved-card-date">Oct 19</span>
+              </div>
+              <p className="saved-card-snippet">
+                Kafka pipelines, real-time ingestion...
+              </p>
+              <div className="saved-card-tags">
+                <span className="saved-tag tag-cyan">Pipeline</span>
+                <span className="saved-tag tag-slate">ETL</span>
+              </div>
+            </div>
+
+            {/* Custom user notes rendered seamlessly */}
+            {savedNotes.filter(n => !["Addasound", "compatible services on huawei cloud", "Huawei Cloud Data Ingestion 1"].includes(n.title)).map((note) => (
+              <div key={note.id} className="saved-output-card">
+                <div className="saved-card-header">
+                  <span className="saved-card-title">{note.title}</span>
+                  <span className="saved-card-date">
+                    {new Date(note.created_at || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </span>
                 </div>
-              </>
-            )}
+                <p className="saved-card-snippet">
+                  {note.body ? note.body.replace(/[#*\[\]_`-]/g, "").slice(0, 52) + "..." : "Synthesis output"}
+                </p>
+                <div className="saved-card-tags">
+                  <span className="saved-tag tag-lavender">Verified</span>
+                  <span className="saved-tag tag-slate">Synthesis</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
