@@ -1,4 +1,5 @@
-import { useState } from "react";
+import React, { useState } from "react";
+import { LogoMark, ShieldCheckIcon } from "./Icons";
 import { api } from "../services/api";
 import { setAccessToken } from "../services/http";
 
@@ -66,8 +67,70 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
   return (
     <div className="auth-screen">
       <form className="auth-card" onSubmit={submit}>
-        <p className="kicker">Knowledge Advisor</p>
-        <h1>{mode === "login" ? "Sign in" : "Create workspace"}</h1>
+        <div className="auth-header">
+          <div className="brand-emblem" style={{ width: 48, height: 48, margin: "0 auto 8px" }}>
+            <LogoMark size={48} />
+          </div>
+          <p className="kicker">Field Desk AI</p>
+          <h1>{mode === "login" ? "Welcome back" : "Create your workspace"}</h1>
+          <p className="muted" style={{ margin: 0, fontSize: "13.5px" }}>
+            {mode === "login"
+              ? "Access your grounded enterprise knowledge base"
+              : "Set up your secure, tenant-isolated AI environment"}
+          </p>
+        </div>
+
+        {/* Segmented Mode Selector */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            background: "rgba(255, 255, 255, 0.05)",
+            padding: 4,
+            borderRadius: 10,
+            border: "1px solid var(--rule)",
+            gap: 4,
+          }}
+        >
+          <button
+            type="button"
+            style={{
+              padding: "7px 12px",
+              fontSize: "12px",
+              fontWeight: 600,
+              borderRadius: 7,
+              border: 0,
+              background: mode === "login" ? "var(--bg-surface-elevated)" : "transparent",
+              color: mode === "login" ? "var(--text-primary)" : "var(--text-muted)",
+              boxShadow: mode === "login" ? "var(--shadow-sm)" : "none",
+            }}
+            onClick={() => {
+              setMode("login");
+              setError(null);
+            }}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            style={{
+              padding: "7px 12px",
+              fontSize: "12px",
+              fontWeight: 600,
+              borderRadius: 7,
+              border: 0,
+              background: mode === "signup" ? "var(--bg-surface-elevated)" : "transparent",
+              color: mode === "signup" ? "var(--text-primary)" : "var(--text-muted)",
+              boxShadow: mode === "signup" ? "var(--shadow-sm)" : "none",
+            }}
+            onClick={() => {
+              setMode("signup");
+              setError(null);
+            }}
+          >
+            New Workspace
+          </button>
+        </div>
 
         {mode === "signup" && (
           <>
@@ -76,18 +139,18 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
               <input
                 id="name"
                 required
-                placeholder="Your name"
+                placeholder="e.g. Alex Morgan"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={busy}
               />
             </div>
             <div className="form-group">
-              <label htmlFor="org">Organization</label>
+              <label htmlFor="org">Organization Name</label>
               <input
                 id="org"
                 required
-                placeholder="Company or team"
+                placeholder="e.g. Acme Systems"
                 value={org}
                 onChange={(e) => setOrg(e.target.value)}
                 disabled={busy}
@@ -97,12 +160,12 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
         )}
 
         <div className="form-group">
-          <label htmlFor="email">Email</label>
+          <label htmlFor="email">Work Email</label>
           <input
             id="email"
             required
             type="email"
-            placeholder="you@example.com"
+            placeholder="name@company.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={busy}
@@ -123,7 +186,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
           />
           {mode === "signup" && password && (
             <small className={`password-strength ${validatePassword(password) ? "error" : "valid"}`}>
-              {validatePassword(password) ? `✗ ${validatePassword(password)}` : "✓ Strong password"}
+              {validatePassword(password) ? `✗ ${validatePassword(password)}` : "✓ Secure password"}
             </small>
           )}
         </div>
@@ -135,7 +198,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
               id="confirm"
               required
               type="password"
-              placeholder="Repeat password"
+              placeholder="Repeat your password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               disabled={busy}
@@ -145,22 +208,24 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
 
         {error && <div className="banner error">{error}</div>}
 
-        <button className="primary" disabled={busy}>
-          {busy ? "Loading…" : mode === "login" ? "Sign in" : "Create account"}
+        <button className="primary" disabled={busy} style={{ width: "100%", padding: "11px 16px", fontSize: "13.5px" }}>
+          {busy ? "Authenticating…" : mode === "login" ? "Sign in to Field Desk" : "Create Workspace"}
         </button>
 
-        <button
-          type="button"
-          className="link-button"
-          onClick={() => {
-            setMode(mode === "login" ? "signup" : "login");
-            setError(null);
-            setPassword("");
-            setConfirmPassword("");
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            marginTop: 4,
+            fontSize: "11px",
+            color: "var(--text-muted)",
           }}
         >
-          {mode === "login" ? "New here? Create an account" : "Already have an account? Sign in"}
-        </button>
+          <ShieldCheckIcon size={14} style={{ color: "var(--forest-text)" }} />
+          <span>Tenant Isolated • AES-256 Vector Encryption</span>
+        </div>
       </form>
     </div>
   );

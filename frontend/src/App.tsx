@@ -1,9 +1,22 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { AuthScreen } from "./components/AuthScreen";
 import { ChunkInspector } from "./components/ChunkInspector";
 import { DocumentList } from "./components/DocumentList";
 import { GraphExplorer } from "./components/GraphExplorer";
 import { GroundedChat } from "./components/GroundedChat";
+import {
+  BookOpenIcon,
+  DatabaseIcon,
+  FileTextIcon,
+  LogoMark,
+  LogOutIcon,
+  MoonIcon,
+  NetworkIcon,
+  PlugIcon,
+  SettingsIcon,
+  SparklesIcon,
+  SunIcon,
+} from "./components/Icons";
 import { IntegrationsPanel } from "./components/IntegrationsPanel";
 import { MapEditor } from "./components/MapEditor";
 import { NotesPanel } from "./components/NotesPanel";
@@ -20,14 +33,12 @@ import { SERVER_WAKING } from "./services/errors";
 
 type Tab = "sources" | "ask" | "notes" | "map" | "connections" | "settings";
 
-const TABS: { id: Tab; name: string }[] = [
-  { id: "ask", name: "Ask" },
-  { id: "notes", name: "Notes" },
-  { id: "sources", name: "Sources" },
-  { id: "connections", name: "Connectors" },
-  { id: "map", name: "Map" },
-  { id: "settings", name: "Settings" },
-];
+interface TabItem {
+  id: Tab;
+  name: string;
+  icon: React.ComponentType<{ size?: number }>;
+  badge?: string;
+}
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(Boolean(getAccessToken()));
@@ -37,6 +48,30 @@ export default function App() {
   const [mapVersion, setMapVersion] = useState(0);
   const [waking, setWaking] = useState(false);
   const principal = usePrincipal();
+
+  // Dark/Light theme manager
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    try {
+      const saved = localStorage.getItem("fd_theme");
+      if (saved === "light" || saved === "dark") return saved;
+      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    } catch {
+      return "dark";
+    }
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem("fd_theme", theme);
+    } catch {
+      /* ignore storage errors */
+    }
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  }
 
   useEffect(() => {
     if (!getAccessToken()) setAuthenticated(false);
@@ -56,32 +91,115 @@ export default function App() {
 
   if (!authenticated) return <AuthScreen onAuthenticated={() => setAuthenticated(true)} />;
 
+  const tabs: TabItem[] = [
+    { id: "ask", name: "Ask", icon: SparklesIcon, badge: "AI" },
+    { id: "notes", name: "Notes", icon: BookOpenIcon },
+    { id: "sources", name: "Sources", icon: FileTextIcon, badge: documents.length > 0 ? String(documents.length) : undefined },
+    { id: "connections", name: "Connectors", icon: PlugIcon, badge: "Live" },
+    { id: "map", name: "Map", icon: NetworkIcon },
+    { id: "settings", name: "Settings", icon: SettingsIcon },
+  ];
+
+  const userInitials = (principal?.organization_name || "SE")
+    .split(" ")
+    .map((w: string) => w[0] || "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <div className="app">
+      {/* ── Top Glass Masthead ────────────────────────────────────────── */}
       <header className="masthead">
         <div className="brand">
-          <span className="brand-kicker">Solutions engineering</span>
-          <h1>Field Desk</h1>
+          <div className="brand-emblem" title="Field Desk AI">
+            <LogoMark size={32} />
+          </div>
+          <div className="brand-info">
+            <div className="brand-kicker-row">
+              <span className="brand-kicker">Knowledge Engine</span>
+              <span className="version-pill">v2.4</span>
+            </div>
+            <h1>Field Desk</h1>
+          </div>
         </div>
+
+        <div className="mast-center">
+          <div className="status-badge-live">
+            <span className="pulse-dot" />
+            <span>Catalog Grounded</span>
+          </div>
+        </div>
+
         <div className="mast-meta">
-          <button className="link-button" onClick={signOut}>
-            Sign out
+          <button
+            type="button"
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-label="Toggle visual theme"
+          >
+            {theme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
+          </button>
+
+          <div className="user-profile-chip">
+            <div className="user-avatar">{userInitials}</div>
+            <div className="user-info">
+              <span className="user-name">{principal?.organization_name || "Enterprise"}</span>
+              <span className="user-org">{principal?.role ? `Role: ${principal.role}` : "Active"}</span>
+            </div>
+          </div>
+
+          <button type="button" className="signout-btn" onClick={signOut} title="Sign out of workspace">
+            <LogOutIcon size={14} />
+            <span>Sign out</span>
           </button>
         </div>
       </header>
+
+      {/* ── Main Workspace Body ─────────────────────────────────────── */}
       <div className="desk">
-        <nav className="field-index" aria-label="Main">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`index-item word ${activeTab === tab.id ? "active" : ""}`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              <span className="index-name">{tab.name}</span>
-            </button>
-          ))}
+        {/* Navigation Sidebar */}
+        <nav className="field-index" aria-label="Main Navigation">
+          <div className="nav-section">
+            <div className="index-label">Workspace</div>
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`index-item ${isActive ? "active" : ""}`}
+                  onClick={() => setActiveTab(tab.id)}
+                  aria-current={isActive ? "page" : undefined}
+                >
+                  <span className="tab-icon">
+                    <Icon size={18} />
+                  </span>
+                  <span className="index-name">{tab.name}</span>
+                  {tab.badge && <span className="tab-badge">{tab.badge}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="sidebar-footer">
+            <div className="telemetry-card">
+              <div className="telemetry-header">
+                <span className="telemetry-title">Vector Memory</span>
+                <span className="telemetry-status">
+                  <DatabaseIcon size={12} /> HNSW
+                </span>
+              </div>
+              <div className="telemetry-sub">
+                {documents.length} sources indexed • tenant isolation active
+              </div>
+            </div>
+          </div>
         </nav>
+
+        {/* Content Region */}
         <div className="desk-body">
           {waking && <div className="banner info">{SERVER_WAKING}</div>}
           {apiPointsAtLocalhostFromRemote() && (
@@ -90,6 +208,7 @@ export default function App() {
             </div>
           )}
           {error && activeTab === "sources" && <div className="banner error">{error}</div>}
+          
           <main className="content-container">
             {activeTab === "ask" && (
               <GroundedChat
@@ -134,7 +253,7 @@ export default function App() {
                   <section className="panel workspace">
                     <div className="panel-head">
                       <div>
-                        <h2>{selectedId ? "What this source says" : "Pick a source"}</h2>
+                        <h2>{selectedId ? "Source Insight" : "Pick a source"}</h2>
                       </div>
                     </div>
                     {selectedId ? (
@@ -143,7 +262,7 @@ export default function App() {
                         <ChunkInspector documentId={selectedId} />
                       </>
                     ) : (
-                      <p className="muted">Pick a source on the left to see what it says.</p>
+                      <p className="muted">Select a document from the left library to inspect its synthesis, facts, and chunks.</p>
                     )}
                   </section>
                 </div>

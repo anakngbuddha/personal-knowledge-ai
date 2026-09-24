@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AssistantMarkdown } from "./AssistantMarkdown";
+import { BookOpenIcon, SendIcon, SparklesIcon } from "./Icons";
 import { NotebookPicker } from "./NotebookPicker";
 import { WorkflowWorkspace } from "./WorkflowWorkspace";
 import { api } from "../services/api";
@@ -304,8 +305,67 @@ export function GroundedChat({ sourceCount, onNavigate }: Props) {
         <div className="messages-stream">
           {noThread && !loading ? (
             <div className="chat-welcome">
-              <h2>Ask</h2>
-              <p>Ask about a customer, a product, or what else you can add from your list.</p>
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(6, 182, 212, 0.2))",
+                  border: "1px solid var(--primary-border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--primary)",
+                  boxShadow: "0 0 20px var(--primary-glow)",
+                  marginBottom: 4,
+                }}
+              >
+                <SparklesIcon size={24} />
+              </div>
+              <h2>How can I help you today?</h2>
+              <p>
+                Ask questions grounded directly in your uploaded documentation, product catalogs, and team notes.
+              </p>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 10,
+                  width: "100%",
+                  marginTop: 12,
+                }}
+              >
+                {[
+                  "Summarize key capabilities across all sources",
+                  "What are the deployment prerequisites & compatibility?",
+                  "Compare pricing, licensing tiers & architecture",
+                  "Draft an executive briefing for stakeholders",
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: 10,
+                      background: "var(--bg-card)",
+                      border: "1px solid var(--rule-strong)",
+                      color: "var(--text-primary)",
+                      textAlign: "left",
+                      fontSize: "12.5px",
+                      lineHeight: "1.4",
+                      cursor: "pointer",
+                      transition: "all 160ms var(--ease-out)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                    }}
+                    onClick={() => setQuestion(prompt)}
+                  >
+                    <span style={{ fontSize: "10px", color: "var(--primary)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>PROMPT</span>
+                    <span>{prompt}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             currentConv?.messages.map((msg) => (
@@ -374,8 +434,13 @@ export function GroundedChat({ sourceCount, onNavigate }: Props) {
               onChange={(e) => setQuestion(e.target.value)}
               disabled={loading}
             />
-            <button type="submit" className="primary" disabled={loading || !question.trim()}>
-              {loading ? "…" : "Send"}
+            <button type="submit" className="primary" disabled={loading || !question.trim()} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 10 }}>
+              {loading ? "…" : (
+                <>
+                  <span>Send</span>
+                  <SendIcon size={14} />
+                </>
+              )}
             </button>
           </div>
         </form>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 
+import { FolderIcon, UploadCloudIcon } from "./Icons";
 import { api } from "../services/api";
 import type { DocumentStatusReport, TrackedUpload, UploadPhase } from "../types";
 
@@ -179,11 +180,30 @@ export function UploadButton({ onUploaded, onError }: Props) {
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
       >
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 10, color: "var(--primary)" }}>
+          <UploadCloudIcon size={36} />
+        </div>
         <p className="drop-hint">
-          Drop files here, or a whole folder.
-          <br />
-          <span className="muted">PDF, Word, PowerPoint, Excel, text, Markdown, HTML.</span>
+          Drag & drop sources here, or choose a folder
         </p>
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+          {["PDF", "Word", "PowerPoint", "Excel", "Markdown", "Text"].map((ext) => (
+            <span
+              key={ext}
+              style={{
+                fontSize: "10px",
+                fontFamily: "var(--font-mono)",
+                padding: "2px 7px",
+                borderRadius: "5px",
+                background: "rgba(255, 255, 255, 0.05)",
+                border: "1px solid var(--rule)",
+                color: "var(--text-muted)",
+              }}
+            >
+              {ext}
+            </span>
+          ))}
+        </div>
         <div className="drop-actions">
           <button
             type="button"
@@ -191,10 +211,12 @@ export function UploadButton({ onUploaded, onError }: Props) {
             disabled={busy}
             onClick={() => fileInputRef.current?.click()}
           >
-            {busy ? "Adding\u2026" : inFlight > 0 ? "Add more" : "Add sources"}
+            <UploadCloudIcon size={14} />
+            <span>{busy ? "Adding…" : inFlight > 0 ? "Add more" : "Choose Files"}</span>
           </button>
           <button type="button" disabled={busy} onClick={() => folderInputRef.current?.click()}>
-            Add a folder
+            <FolderIcon size={14} />
+            <span>Add Folder</span>
           </button>
         </div>
       </div>
