@@ -92,11 +92,11 @@ export default function App() {
   if (!authenticated) return <AuthScreen onAuthenticated={() => setAuthenticated(true)} />;
 
   const tabs: TabItem[] = [
-    { id: "ask", name: "Ask", icon: StarIcon, badge: "AI" },
-    { id: "notes", name: "Notes", icon: BookOpenIcon },
+    { id: "ask", name: "Ask Intelligence", icon: StarIcon, badge: "AI" },
+    { id: "notes", name: "Notes", icon: BookOpenIcon, badge: "18" },
     { id: "sources", name: "Sources", icon: FileTextIcon, badge: String(documents.length || 50) },
     { id: "connections", name: "Connectors", icon: ZapIcon, badge: "Live" },
-    { id: "map", name: "Map", icon: NetworkIcon },
+    { id: "map", name: "Knowledge Map", icon: NetworkIcon },
     { id: "settings", name: "Settings", icon: SettingsIcon },
   ];
 
@@ -117,18 +117,30 @@ export default function App() {
           </div>
           <div className="brand-info">
             <div className="brand-title-wrap">
-              <span className="brand-kicker">KNOWLEDGE ENGINE</span>
-              <span className="version-pill">v2.4</span>
-              <span className="brand-sep">|</span>
               <span className="brand-name">Field Desk</span>
+              <span className="version-pill">v2.4</span>
             </div>
+            <span className="brand-kicker">Knowledge Engine • Cupertino Core</span>
           </div>
         </div>
 
         <div className="mast-center">
           <div className="status-badge-live">
             <span className="pulse-dot" />
-            <span>Catalog Grounded &bull; Multi-source active</span>
+            <span>Catalog Grounded &bull; HNSW: 14ms</span>
+          </div>
+
+          <div className="mast-search-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-muted)", flexShrink: 0 }}>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              className="mast-search-input"
+              placeholder="Jump to note or search catalog [[product:name]].."
+            />
+            <kbd className="mast-search-shortcut">⌘K</kbd>
           </div>
         </div>
 
@@ -144,10 +156,10 @@ export default function App() {
           </button>
 
           <div className="user-profile-chip">
-            <div className="user-avatar">S</div>
+            <div className="user-avatar">{userInitials || "S"}</div>
             <div className="user-info">
-              <span className="user-name">{principal?.organization_name || "Enterprise"}</span>
-              <span className="user-org">ACTIVE</span>
+              <span className="user-name">{principal?.organization_name || "Enterprise Tenant"}</span>
+              <span className="user-org">Active • Zero Retention</span>
             </div>
           </div>
 
@@ -186,16 +198,61 @@ export default function App() {
               })}
             </div>
 
+            <div className="nav-section notebooks-nav-section">
+              <div className="index-label-row">
+                <span className="index-label" style={{ padding: 0 }}>NOTEBOOKS</span>
+                <button
+                  type="button"
+                  className="btn-add-notebook"
+                  onClick={() => setActiveTab("notes")}
+                  title="Create new notebook"
+                >
+                  +
+                </button>
+              </div>
+              <button
+                type="button"
+                className={`index-item notebook-item ${activeTab === "notes" ? "active" : ""}`}
+                onClick={() => setActiveTab("notes")}
+              >
+                <span className="notebook-dot active" />
+                <span className="index-name">Acme on-prem sizing deal</span>
+              </button>
+              <button
+                type="button"
+                className="index-item notebook-item"
+                onClick={() => setActiveTab("notes")}
+              >
+                <span className="index-name" style={{ paddingLeft: "14px" }}>
+                  EMEA Retail Banking RFI
+                </span>
+              </button>
+              <button
+                type="button"
+                className="index-item notebook-item"
+                onClick={() => setActiveTab("notes")}
+              >
+                <span className="index-name" style={{ paddingLeft: "14px" }}>
+                  HNSW Hardware Specs Q3
+                </span>
+              </button>
+            </div>
+
             <div className="sidebar-footer">
               <div className="telemetry-card">
                 <div className="telemetry-header">
-                  <span className="telemetry-title">Vector Memory</span>
+                  <span className="telemetry-title">VECTOR MEMORY</span>
                   <span className="telemetry-status">
                     <DatabaseIcon size={12} /> HNSW
                   </span>
                 </div>
-                <div className="telemetry-sub">
-                  {documents.length || 50} sources indexed • tenant isolation active
+                <div className="telemetry-sub" style={{ lineHeight: 1.45 }}>
+                  {documents.length || 50} sources indexed<br />
+                  Tenant isolation: <span style={{ color: "#10b981", fontWeight: 600 }}>Enforced</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px", fontSize: "10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                  <span>Dimensions: 1536</span>
+                  <span style={{ color: "#10b981", fontWeight: 600 }}>Sync: OK</span>
                 </div>
               </div>
             </div>
