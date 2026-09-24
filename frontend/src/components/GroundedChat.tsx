@@ -28,6 +28,7 @@ interface Props {
   activeTab?: Tab;
   onTabChange?: (tab: Tab) => void;
   tabs?: TabItem[];
+  initialQuestion?: string | null;
 }
 
 export function GroundedChat({
@@ -36,11 +37,18 @@ export function GroundedChat({
   activeTab = "ask",
   onTabChange,
   tabs,
+  initialQuestion,
 }: Props) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [currentConv, setCurrentConv] = useState<Conversation | null>(null);
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(initialQuestion || "");
+
+  useEffect(() => {
+    if (initialQuestion) {
+      setQuestion(initialQuestion);
+    }
+  }, [initialQuestion]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);

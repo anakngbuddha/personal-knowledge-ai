@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { AuthScreen } from "./components/AuthScreen";
-import { ChunkInspector } from "./components/ChunkInspector";
-import { DocumentList } from "./components/DocumentList";
 import { GraphExplorer } from "./components/GraphExplorer";
 import { GroundedChat } from "./components/GroundedChat";
 import {
@@ -19,11 +17,8 @@ import {
 } from "./components/Icons";
 import { IntegrationsPanel } from "./components/IntegrationsPanel";
 import { NotesPanel } from "./components/NotesPanel";
-import { OpsPanel } from "./components/OpsPanel";
-import { SearchExplorer } from "./components/SearchExplorer";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { SourceInsightCard } from "./components/SourceInsightCard";
-import { UploadButton } from "./components/UploadButton";
+import { SourcesWorkspace } from "./components/SourcesWorkspace";
 import { useDocuments } from "./hooks/useDocuments";
 import { usePrincipal } from "./hooks/useWorkflows";
 import { apiPointsAtLocalhostFromRemote, getAccessToken, onServerWake, setAccessToken } from "./services/http";
@@ -43,6 +38,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("ask");
   const { documents, loading, error, refresh, setError } = useDocuments(authenticated);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [seedQuestion, setSeedQuestion] = useState<string | null>(null);
   const [mapVersion, setMapVersion] = useState(0);
   const [waking, setWaking] = useState(false);
   const principal = usePrincipal();
@@ -169,9 +165,9 @@ export default function App() {
       </header>
 
       {/* ── Main Workspace Body ─────────────────────────────────────── */}
-      <div className={`desk ${activeTab === "ask" || activeTab === "map" ? "desk-ask-mode" : ""}`}>
-        {/* Navigation Sidebar (rendered when not on ask or map tab, since both have integrated workspace sidebars) */}
-        {activeTab !== "ask" && activeTab !== "map" && (
+      <div className={`desk ${activeTab === "ask" || activeTab === "map" || activeTab === "sources" ? "desk-ask-mode" : ""}`}>
+        {/* Navigation Sidebar (rendered when not on ask, map, or sources tab, since all three have integrated workspace sidebars) */}
+        {activeTab !== "ask" && activeTab !== "map" && activeTab !== "sources" && (
           <nav className="field-index" aria-label="Main Navigation">
             <div className="nav-section">
               <div className="index-label">Workspace</div>
@@ -265,16 +261,23 @@ export default function App() {
               This build is not pointed at the server. Set the API address and redeploy.
             </div>
           )}
-          {error && activeTab === "sources" && <div className="banner error">{error}</div>}
+          {error && activeTab !== "sources" && <div className="banner error">{error}</div>}
           
           <main className="content-container">
             {activeTab === "ask" && (
               <GroundedChat
                 sourceCount={documents.length}
-                onNavigate={(tab) => setActiveTab(tab === "map" ? "map" : "sources")}
+                onNavigate={(tab) => {
+                  setActiveTab(tab === "map" ? "map" : "sources");
+                  setSeedQuestion(null);
+                }}
                 activeTab={activeTab}
-                onTabChange={setActiveTab}
+                onTabChange={(t) => {
+                  setActiveTab(t);
+                  setSeedQuestion(null);
+                }}
                 tabs={tabs}
+                initialQuestion={seedQuestion}
               />
             )}
             {activeTab === "connections" && <IntegrationsPanel />}
@@ -282,9 +285,15 @@ export default function App() {
               <GraphExplorer
                 key={mapVersion}
                 sourceCount={documents.length}
-                onNavigate={(tab) => setActiveTab(tab === "map" ? "map" : tab === "ask" ? "ask" : "sources")}
+                onNavigate={(tab) => {
+                  setActiveTab(tab === "map" ? "map" : tab === "ask" ? "ask" : "sources");
+                  setSeedQuestion(null);
+                }}
                 activeTab={activeTab}
-                onTabChange={setActiveTab}
+                onTabChange={(t) => {
+                  setActiveTab(t);
+                  setSeedQuestion(null);
+                }}
                 tabs={tabs}
                 onMapChanged={() => setMapVersion((v) => v + 1)}
               />
@@ -292,43 +301,25 @@ export default function App() {
             {activeTab === "notes" && <NotesPanel />}
             {activeTab === "settings" && <SettingsPanel principal={principal} onSignOut={signOut} />}
             {activeTab === "sources" && (
-              <div className="sources-page">
-                <div className="layout">
-                  <section className="panel documents">
-                    <div className="panel-head">
-                      <div>
-                        <h2>Sources ({documents.length})</h2>
-                      </div>
-                      <UploadButton onUploaded={refresh} onError={setError} />
-                    </div>
-                    <DocumentList
-                      documents={documents}
-                      loading={loading}
-                      selectedId={selectedId}
-                      onSelect={setSelectedId}
-                      onChanged={refresh}
-                      onError={setError}
-                    />
-                  </section>
-                  <section className="panel workspace">
-                    <div className="panel-head">
-                      <div>
-                        <h2>{selectedId ? "Source Insight" : "Pick a source"}</h2>
-                      </div>
-                    </div>
-                    {selectedId ? (
-                      <>
-                        <SourceInsightCard documentId={selectedId} onChanged={refresh} />
-                        <ChunkInspector documentId={selectedId} />
-                      </>
-                    ) : (
-                      <p className="muted">Select a document from the left library to inspect its synthesis, facts, and chunks.</p>
-                    )}
-                  </section>
-                </div>
-                <SearchExplorer />
-                <OpsPanel mode="watches" />
-              </div>
+              <SourcesWorkspace
+                documents={documents}
+                loading={loading}
+                error={error}
+                refresh={refresh}
+                setError={setError}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                onNavigate={(tab, prompt) => {
+                  if (prompt) setSeedQuestion(prompt);
+                  setActiveTab(tab);
+                }}
+                activeTab={activeTab}
+                onTabChange={(t) => {
+                  setActiveTab(t);
+                  setSeedQuestion(null);
+                }}
+                tabs={tabs}
+              />
             )}
           </main>
         </div>
