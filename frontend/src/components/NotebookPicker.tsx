@@ -11,6 +11,7 @@ export function NotebookPicker({ notebookId, onChange }: Props) {
   const [notebooks, setNotebooks] = useState<NotebookRecord[]>([]);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function refresh(selectId?: string | null) {
     const listed = await api.listNotebooks();
@@ -91,8 +92,21 @@ export function NotebookPicker({ notebookId, onChange }: Props) {
         <button type="button" className="link-button" onClick={() => void rename()} disabled={!notebookId}>
           Rename
         </button>
-        <button type="button" className="link-button" onClick={() => void remove()} disabled={!notebookId}>
-          Delete
+        <button
+          type="button"
+          className="link-button"
+          disabled={!notebookId}
+          onClick={() => {
+            if (!confirmDelete) {
+              setConfirmDelete(true);
+              return;
+            }
+            setConfirmDelete(false);
+            void remove();
+          }}
+          onBlur={() => setConfirmDelete(false)}
+        >
+          {confirmDelete ? "Confirm" : "Delete"}
         </button>
       </div>
       {error && <p className="insight-problem">{error}</p>}

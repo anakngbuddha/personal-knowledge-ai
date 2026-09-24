@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     gemini_embedding_dimensions: int = 768
     gemini_generation_model: str = "gemini-2.5-flash"
     llm_provider: str = "gemini"
+    openrouter_api_key: str = ""
+    openrouter_api_base: str = "https://openrouter.ai/api/v1"
+    openrouter_llm_model: str = "qwen/qwen3.8-27b:free"
+    openrouter_embedding_model: str = "nvidia/nemotron-3-embed-1b:free"
+    openrouter_embedding_dimensions: int = 2048
 
     generation_rate_limit_rpm: int = 20
     generation_rate_limit_tpd: int = 100000

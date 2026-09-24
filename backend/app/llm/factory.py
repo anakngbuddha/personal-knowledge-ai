@@ -18,6 +18,11 @@ def get_llm_provider() -> LLMProvider:
         from app.llm.fake import FakeLLMProvider
 
         return FakeLLMProvider()
+    if provider == "openrouter":
+        from app.llm.openrouter import OpenRouterLLMProvider
+
+        return OpenRouterLLMProvider()
+    from app.llm.fallback import FallbackLLMProvider
     from app.llm.gemini import GeminiLLMProvider
 
-    return GeminiLLMProvider()
+    return FallbackLLMProvider(GeminiLLMProvider())

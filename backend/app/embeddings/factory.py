@@ -11,6 +11,10 @@ def get_embedding_provider() -> EmbeddingProvider:
         from app.embeddings.fake import FakeEmbeddingProvider
 
         return FakeEmbeddingProvider()
+    if provider == "openrouter":
+        from app.embeddings.openrouter import OpenRouterEmbeddingProvider
+
+        return OpenRouterEmbeddingProvider()
     from app.embeddings.gemini import GeminiEmbeddingProvider
 
     return GeminiEmbeddingProvider()

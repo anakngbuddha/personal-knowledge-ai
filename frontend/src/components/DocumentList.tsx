@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { api } from "../services/api";
 import type { KnowledgeDocument } from "../types";
 
@@ -24,6 +25,7 @@ export function DocumentList({
   onChanged,
   onError,
 }: Props) {
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   if (loading) return <p className="muted">Loading sources…</p>;
   if (documents.length === 0) {
     return (
@@ -102,10 +104,16 @@ export function DocumentList({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
+                if (pendingDelete !== doc.id) {
+                  setPendingDelete(doc.id);
+                  return;
+                }
+                setPendingDelete(null);
                 void remove(doc.id);
               }}
+              onBlur={() => setPendingDelete((current) => (current === doc.id ? null : current))}
             >
-              Delete
+              {pendingDelete === doc.id ? "Confirm" : "Delete"}
             </button>
           </div>
         </li>

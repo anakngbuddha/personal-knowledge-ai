@@ -249,7 +249,7 @@ export function NotesPanel() {
             ) : !graphData || graphData.nodes.length === 0 ? (
               <div className="empty-copy">No links between notes found yet. Create notes with [[wikilinks]].</div>
             ) : (
-              <div style={{ flex: 1, position: "relative", minHeight: "400px", background: "#fcfcfc", border: "1px solid #e0e0e0", borderRadius: "8px", padding: "16px" }}>
+              <div className="notes-graph-canvas">
                 <svg width="100%" height="100%" viewBox="0 0 600 400" style={{ width: "100%", height: "100%" }}>
                   {/* Render links */}
                   {graphData.edges.map((edge, idx) => {
@@ -271,9 +271,8 @@ export function NotesPanel() {
                         y1={y1}
                         x2={x2}
                         y2={y2}
-                        stroke={edge.resolved ? "#3b82f6" : "#9ca3af"}
                         strokeWidth="2"
-                        strokeDasharray={edge.resolved ? undefined : "4,4"}
+                        className={edge.resolved ? "edge resolved" : "edge"}
                       />
                     );
                   })}
@@ -287,25 +286,12 @@ export function NotesPanel() {
                       <g key={node.id} transform={`translate(${cx}, ${cy})`} style={{ cursor: "pointer" }}>
                         <circle
                           r="20"
-                          fill={isNote ? "#eff6ff" : "#ecfdf5"}
-                          stroke={isNote ? "#3b82f6" : "#10b981"}
-                          strokeWidth="2"
+                          className={isNote ? "node-dot node-note" : "node-dot node-product"}
                         />
-                        <text
-                          textAnchor="middle"
-                          dy="4"
-                          fontSize="11"
-                          fontWeight="600"
-                          fill={isNote ? "#1d4ed8" : "#047857"}
-                        >
+                        <text textAnchor="middle" dy="4" fontSize="11" fontWeight="600">
                           {isNote ? "Note" : "Prod"}
                         </text>
-                        <text
-                          textAnchor="middle"
-                          dy="34"
-                          fontSize="12"
-                          fill="#374151"
-                        >
+                        <text textAnchor="middle" dy="34" fontSize="12">
                           {node.title.length > 14 ? `${node.title.slice(0, 12)}…` : node.title}
                         </text>
                       </g>
@@ -408,7 +394,7 @@ export function NotesPanel() {
 
             {/* Backlinks Side Panel / Section */}
             {selected && (
-              <div className="backlinks-list" style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid #e0e0e0" }}>
+              <div className="backlinks-list">
                 <h3>Backlinks ({backlinks.length})</h3>
                 {loadingBacklinks ? (
                   <p className="muted" style={{ fontSize: "12px" }}>Loading backlinks…</p>

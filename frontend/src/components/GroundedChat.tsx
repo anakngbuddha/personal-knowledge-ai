@@ -17,6 +17,7 @@ export function GroundedChat({ sourceCount, onNavigate }: Props) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [selectedCitation, setSelectedCitation] = useState<SourceMetadata | null>(null);
   const [strictMode, setStrictMode] = useState(false);
   const [lastToolCalls, setLastToolCalls] = useState<string[]>([]);
@@ -274,8 +275,21 @@ export function GroundedChat({ sourceCount, onNavigate }: Props) {
               <button type="button" className="conv-open" onClick={() => setSelectedConvId(c.id)}>
                 {c.title || "Untitled"}
               </button>
-              <button type="button" className="conv-delete" aria-label="Delete" onClick={() => void handleDelete(c.id)}>
-                ×
+              <button
+                type="button"
+                className="conv-delete"
+                aria-label={pendingDeleteId === c.id ? "Confirm delete" : "Delete"}
+                onClick={() => {
+                  if (pendingDeleteId !== c.id) {
+                    setPendingDeleteId(c.id);
+                    return;
+                  }
+                  setPendingDeleteId(null);
+                  void handleDelete(c.id);
+                }}
+                onBlur={() => setPendingDeleteId((current) => (current === c.id ? null : current))}
+              >
+                {pendingDeleteId === c.id ? "Confirm" : "×"}
               </button>
             </div>
           ))

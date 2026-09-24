@@ -38,6 +38,13 @@ export function HitlReviewModal({ answers, canApprove, busy, onApprove, onReject
   const [drafts, setDrafts] = useState<RfpAnswer[]>(answers);
   const [index, setIndex] = useState(0);
   const [reason, setReason] = useState("");
+  const [closing, setClosing] = useState(false);
+
+  function requestClose() {
+    if (busy || closing) return;
+    setClosing(true);
+    window.setTimeout(onClose, 200);
+  }
 
   useEffect(() => {
     setDrafts(answers);
@@ -53,11 +60,11 @@ export function HitlReviewModal({ answers, canApprove, busy, onApprove, onReject
 
   if (!current) {
     return (
-      <div className="modal-backdrop" onClick={onClose}>
-        <div className="modal-card hitl-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-backdrop" onClick={requestClose}>
+        <div className="modal-card hitl-modal" data-closing={closing || undefined} onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
             <h3>Waiting approval</h3>
-            <button onClick={onClose}>Close</button>
+            <button onClick={requestClose}>Close</button>
           </div>
           <p className="muted">No drafted answers on this gate.</p>
         </div>
@@ -67,12 +74,12 @@ export function HitlReviewModal({ answers, canApprove, busy, onApprove, onReject
 
   return (
     <div className="modal-backdrop">
-      <div className="modal-card hitl-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card hitl-modal" data-closing={closing || undefined} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>
             Waiting approval {index + 1} / {drafts.length}
           </h3>
-          <button onClick={onClose} disabled={busy}>
+          <button onClick={requestClose} disabled={busy}>
             Close
           </button>
         </div>
