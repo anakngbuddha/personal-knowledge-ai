@@ -28,6 +28,8 @@ class SourceMetadataOut(BaseModel):
     sensitivity: str | None = None
     valid_until: str | None = None
     is_stale: bool = False
+    source_url: str | None = None
+    origin: str | None = None
 
 
 class TokenUsageOut(BaseModel):
@@ -72,7 +74,7 @@ class AskIn(BaseModel):
     # Source toggling: exclude specific documents from context
     exclude_document_ids: list[str] = Field(default_factory=list)
     notebook_id: str | None = None
-    enable_tools: bool = True
+    enable_tools: bool = False
     # Knowledge mode: False = expert (sources + general knowledge), True = strict (sources only)
     strict_mode: bool = False
 
@@ -90,6 +92,21 @@ class AskOut(BaseModel):
     conversation_id: str | None = None
     message_id: str | None = None
     tool_calls: list[ToolCallOut] = Field(default_factory=list)
+    web_note: str | None = None
+    web_sources: list[SourceMetadataOut] = Field(default_factory=list)
+
+
+class WebSourceSaveIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=8, max_length=2000)
+    title: str | None = Field(default=None, max_length=300)
+    notebook_id: str | None = None
+
+
+class WebSourceSaveOut(BaseModel):
+    document_id: str
+    notebook_id: str | None = None
 
 
 class MessageOut(BaseModel):
@@ -139,3 +156,6 @@ class StreamChunkOut(BaseModel):
     refusal_reason: str | None = None
     conversation_id: str | None = None
     message_id: str | None = None
+    status: str | None = None
+    web_note: str | None = None
+    web_sources: list[SourceMetadataOut] = Field(default_factory=list)

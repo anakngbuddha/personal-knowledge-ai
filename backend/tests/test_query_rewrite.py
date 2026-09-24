@@ -14,10 +14,18 @@ def test_standalone_question_is_unchanged():
     )
 
 
-def test_compare_questions_expand_to_subqueries():
+def test_compare_questions_stay_one_query():
     queries = expand_queries("Compare Jabra and Shure ceiling mics")
-    assert len(queries) >= 2
-    assert queries[0].lower().startswith("compare")
+    assert queries == ["Compare Jabra and Shure ceiling mics"]
+
+
+def test_rewrite_does_not_call_the_model(monkeypatch):
+    def _boom():
+        raise AssertionError("rewrite must not call the model")
+
+    monkeypatch.setattr("app.llm.factory.get_llm_provider", _boom)
+    history = [{"role": "user", "content": "Tell me about the Jabra Speak 750"}]
+    assert "Jabra" in rewrite_query("what about the pricing?", history)
 
 
 def test_fake_llm_expert_mode_answers_without_sources():

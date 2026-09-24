@@ -161,6 +161,71 @@ def ask_endpoint(
     return _answer_to_out(answer, fallback_conversation_id=payload.conversation_id)
 
 
+@router.post("/ask/web-sources", response_model=schemas.WebSourceSaveOut, status_code=202)
+def save_web_source(
+    payload: schemas.WebSourceSaveIn,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(resolve_principal),
+) -> schemas.WebSourceSaveOut:
+    """Ingest one web result into the knowledge base and the current notebook."""
+    from urllib.parse import urlparse
+
+    from app.core.errors import AppError, DuplicateDocument, SsrfBlocked
+    from app.documents.metadata import DocumentMetadataIn
+    from app.documents.service import create_document, enqueue_ingestion
+    from app.net import ssrf
+    from app.security.labels import SourceType
+
+    try:
+        rules = ssrf.fetch_robots(payload.url)
+        if not rules.allows(payload.url):
+            raise HTTPException(status_code=422, detail="That page asks not to be saved.")
+        resource = ssrf.fetch(payload.url)
+    except SsrfBlocked as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    path = urlparse(resource.final_url).path
+    name = path.rstrip("/").split("/")[-1] or urlparse(resource.final_url).netloc
+    if "." not in name:
+        name = f"{name}.html"
+    meta = DocumentMetadataIn(
+        title=payload.title,
+        source_type=str(SourceType.URL),
+        source_url=resource.final_url,
+        source_of_truth_url=resource.final_url,
+    )
+    try:
+        document = create_document(
+            db,
+            principal=principal,
+            original_filename=name[:255],
+            data=resource.data,
+            mime_type=resource.content_type,
+            metadata=meta,
+        )
+        enqueue_ingestion(db, document)
+    except DuplicateDocument as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AppError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    notebook_id = _notebook_uuid(payload.notebook_id)
+    if notebook_id is not None:
+        try:
+            notebooks.enable_document(
+                db,
+                org_id=principal.org_id,
+                notebook_id=notebook_id,
+                document_id=document.id,
+            )
+        except AppError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return schemas.WebSourceSaveOut(
+        document_id=str(document.id),
+        notebook_id=str(notebook_id) if notebook_id else None,
+    )
+
+
 def _stream_response(
     db: Session,
     principal: Principal,
@@ -189,10 +254,14 @@ def _stream_response(
                     "delta": chunk.delta,
                     "done": chunk.done,
                 }
+                if chunk.status:
+                    event_data["status"] = chunk.status
                 if chunk.done:
                     event_data["citations"] = [
                         c.as_dict() for c in chunk.citations
                     ]
+                    event_data["web_note"] = chunk.web_note
+                    event_data["web_sources"] = [s.as_dict() for s in chunk.web_sources]
                     if chunk.usage:
                         event_data["usage"] = chunk.usage.as_dict()
                     event_data["refused"] = chunk.refused
@@ -440,6 +509,10 @@ def _answer_to_out(answer, *, fallback_conversation_id: str | None) -> schemas.A
         conversation_id=answer.conversation_id or fallback_conversation_id,
         message_id=answer.message_id,
         tool_calls=tool_calls,
+        web_note=getattr(answer, "web_note", None),
+        web_sources=[
+            schemas.SourceMetadataOut(**s.as_dict()) for s in getattr(answer, "web_sources", [])
+        ],
     )
 
 

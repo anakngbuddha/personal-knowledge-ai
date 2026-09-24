@@ -40,7 +40,11 @@ class Settings(BaseSettings):
     generation_stream_enabled: bool = True
     generation_max_output_tokens: int = 4096
     generation_rerank_enabled: bool = True
-    generation_rerank_candidates: int = 30
+    generation_rerank_candidates: int = 12
+    generation_search_candidate_k: int = 20
+    web_fallback_min_score: float = 0.15
+    web_fallback_max_results: int = 3
+    web_fallback_max_chars: int = 2500
     tool_max_rounds: int = 1
     tool_max_calls_per_round: int = 4
 

@@ -7,11 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.catalog.auto_graph import suggest_solution_graph
 from app.catalog.curation import EdgeSuggestionEngine
 from app.catalog.demo import DISABLED_MESSAGE, demo_catalog_enabled, seed_demo_catalog
 from app.catalog.models import (
+    AutoGraphOut,
     CapabilityIn,
     CapabilityOut,
+    ContextLinkOut,
     CoverageReportOut,
     EdgeActionIn,
     EdgeSuggestionOut,
@@ -446,6 +449,49 @@ def suggest_edges(
         )
         for s in suggestions
     ]
+
+
+@router.post("/graph/auto-graph", response_model=AutoGraphOut)
+def auto_graph(
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    db: Session = Depends(get_db),
+) -> AutoGraphOut:
+    """Propose solution-selling relationships from the listed products."""
+    service, org_id, workspace_id = deps
+    result = suggest_solution_graph(db, workspace_id=workspace_id, org_id=org_id)
+    names = {p.id: p.name for p in service.list_products(workspace_id, limit=500)}
+    edges = [
+        EdgeSuggestionOut(
+            id=edge.id,
+            source_product_id=edge.source_product_id,
+            source_product_name=names.get(edge.source_product_id, "Unknown"),
+            target_product_id=edge.target_product_id,
+            target_product_name=names.get(edge.target_product_id, "Unknown"),
+            relation_type=edge.relation_type,
+            evidence=edge.evidence,
+            confidence=edge.confidence,
+            document_id=edge.document_id,
+            status=edge.status,
+        )
+        for edge in result.edges
+    ]
+    links = [
+        ContextLinkOut(
+            id=link.id,
+            product_id=link.product_id,
+            product_name=names.get(link.product_id, "Unknown"),
+            context_id=link.context_id,
+            context_name=link.context.name if link.context else "Unknown",
+            context_kind=link.context.kind if link.context else "use_case",
+            relation_type=link.relation_type,
+            evidence=link.evidence,
+            confidence=link.confidence,
+            status=link.status,
+            is_ai_suggested=link.is_ai_suggested,
+        )
+        for link in result.context_links
+    ]
+    return AutoGraphOut(edges=edges, context_links=links, proposed=result.proposed)
 
 
 @router.post("/graph/edges/{edge_id}/approve", response_model=ProductEdgeOut)

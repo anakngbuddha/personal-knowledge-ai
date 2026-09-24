@@ -38,6 +38,8 @@ class SourceMetadata:
     sensitivity: str | None = None
     valid_until: str | None = None
     is_stale: bool = False
+    source_url: str | None = None
+    origin: str | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -56,6 +58,8 @@ class SourceMetadata:
             "sensitivity": self.sensitivity,
             "valid_until": self.valid_until,
             "is_stale": self.is_stale,
+            "source_url": self.source_url,
+            "origin": self.origin,
         }
 
 
@@ -90,6 +94,8 @@ class GroundedAnswer:
     message_id: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_results: list[ToolResult] = field(default_factory=list)
+    web_note: str | None = None
+    web_sources: list[SourceMetadata] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -104,6 +110,8 @@ class GroundedAnswer:
             "message_id": self.message_id,
             "tool_calls": [c.as_dict() for c in self.tool_calls],
             "tool_results": [r.as_dict() for r in self.tool_results],
+            "web_note": self.web_note,
+            "web_sources": [s.as_dict() for s in self.web_sources],
         }
 
 
@@ -120,6 +128,9 @@ class GroundedAnswerChunk:
     refusal_reason: str | None = None
     conversation_id: str | None = None
     message_id: str | None = None
+    status: str | None = None
+    web_note: str | None = None
+    web_sources: list[SourceMetadata] = field(default_factory=list)
 
 
 class LLMProvider(ABC):

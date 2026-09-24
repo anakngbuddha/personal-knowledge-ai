@@ -148,6 +148,8 @@ export function GraphExplorer() {
   /* Curation */
   const [pendingEdges, setPendingEdges] = useState<ProductEdgeOut[]>([]);
   const [showCuration, setShowCuration] = useState(false);
+  const [autoGraphNote, setAutoGraphNote] = useState<string | null>(null);
+  const [autoGraphBusy, setAutoGraphBusy] = useState(false);
 
   /* Canvas */
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -442,6 +444,31 @@ export function GraphExplorer() {
     }
   }, []);
 
+  const triggerAutoGraph = useCallback(async () => {
+    setAutoGraphBusy(true);
+    setAutoGraphNote(null);
+    try {
+      const result = await catalogApi.autoGraph();
+      const waiting = result.edges.filter((edge) => edge.status === "pending_review");
+      setPendingEdges((prev) => {
+        const seen = new Set(prev.map((edge) => edge.id));
+        return [...prev, ...waiting.filter((edge) => !seen.has(edge.id))];
+      });
+      setShowCuration(true);
+      setAutoGraphNote(
+        result.proposed === 0
+          ? "No new relationships. The list needs at least two products, or these pairs are already on the map."
+          : `Proposed ${result.proposed} relationship${result.proposed === 1 ? "" : "s"}. Review them before they guide a sale.`
+      );
+      await fetchGraph();
+      await loadPending();
+    } catch (e: unknown) {
+      setAutoGraphNote(e instanceof Error ? e.message : "Auto-graph failed.");
+    } finally {
+      setAutoGraphBusy(false);
+    }
+  }, [fetchGraph, loadPending]);
+
   /* ── Edge toggle ────────────────────────────────────────────────────── */
   const toggleEdgeType = (type: string) => {
     setEdgeTypeFilter((prev) => {
@@ -514,6 +541,9 @@ export function GraphExplorer() {
         </div>
 
         <div className="toolbar-actions">
+          <button type="button" className="primary" onClick={triggerAutoGraph} disabled={autoGraphBusy}>
+            {autoGraphBusy ? "Graphing…" : "Auto-graph"}
+          </button>
           <button type="button" onClick={runHealthCheck}>
             Integrity check
           </button>
@@ -522,6 +552,7 @@ export function GraphExplorer() {
           </button>
         </div>
       </div>
+      {autoGraphNote && <p className="graph-note">{autoGraphNote}</p>}
 
       {/* ── Main Area ────────────────────────────────────────────────── */}
       <div className="graph-main">

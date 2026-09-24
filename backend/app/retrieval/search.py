@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -40,6 +41,24 @@ from app.security.principal import Principal
 logger = get_logger(__name__)
 
 SearchMode = Literal["hybrid", "vector", "keyword"]
+
+
+def _vector_branch(db: Session, candidates, vector, candidate_k: int, timings: dict[str, float]) -> RankedList:
+    mark = time.perf_counter()
+    distance = DocumentChunk.embedding.cosine_distance(vector).label("distance")
+    rows = db.execute(
+        select(DocumentChunk.id, distance)
+        .join(candidates, candidates.c.chunk_id == DocumentChunk.id)
+        .where(DocumentChunk.embedding.isnot(None))
+        .order_by(distance)
+        .limit(candidate_k)
+    ).all()
+    timings["vector_ms"] = _ms(mark)
+    return RankedList(
+        name="vector",
+        ids=[str(row[0]) for row in rows],
+        scores={str(row[0]): 1.0 - float(row[1]) for row in rows},
+    )
 
 
 @dataclass
@@ -125,31 +144,17 @@ def search(
     timings["candidates_ms"] = _ms(mark)
 
     branches: list[RankedList] = []
+    embed_pool: ThreadPoolExecutor | None = None
+    embed_future = None
+    if mode == "hybrid":
+        embed_pool = ThreadPoolExecutor(max_workers=1)
+        embed_future = embed_pool.submit(get_embedding_provider().embed_query, query)
 
-    if mode in ("hybrid", "vector"):
+    if mode == "vector":
         mark = time.perf_counter()
         vector = get_embedding_provider().embed_query(query)
         timings["embed_ms"] = _ms(mark)
-
-        mark = time.perf_counter()
-        distance = DocumentChunk.embedding.cosine_distance(vector).label("distance")
-        rows = db.execute(
-            select(DocumentChunk.id, distance)
-            .join(candidates, candidates.c.chunk_id == DocumentChunk.id)
-            .where(DocumentChunk.embedding.isnot(None))
-            .order_by(distance)
-            .limit(candidate_k)
-        ).all()
-        timings["vector_ms"] = _ms(mark)
-        branches.append(
-            RankedList(
-                name="vector",
-                ids=[str(row[0]) for row in rows],
-                # Reported as similarity so a bigger number is always better,
-                # matching the keyword branch. Avoids a class of reading errors.
-                scores={str(row[0]): 1.0 - float(row[1]) for row in rows},
-            )
-        )
+        branches.append(_vector_branch(db, candidates, vector, candidate_k, timings))
 
     if mode in ("hybrid", "keyword"):
         mark = time.perf_counter()
@@ -170,6 +175,15 @@ def search(
                 scores={str(row[0]): float(row[1]) for row in rows},
             )
         )
+
+    if embed_future is not None and embed_pool is not None:
+        mark = time.perf_counter()
+        try:
+            vector = embed_future.result()
+        finally:
+            embed_pool.shutdown(wait=False)
+        timings["embed_ms"] = _ms(mark)
+        branches.append(_vector_branch(db, candidates, vector, candidate_k, timings))
 
     mark = time.perf_counter()
     fused = reciprocal_rank_fusion(branches, k=rrf_k, limit=top_k)

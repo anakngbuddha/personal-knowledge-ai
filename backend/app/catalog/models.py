@@ -267,6 +267,26 @@ class EdgeActionIn(BaseModel):
     reason: str | None = None
 
 
+class ContextLinkOut(BaseModel):
+    id: uuid.UUID
+    product_id: uuid.UUID
+    product_name: str
+    context_id: uuid.UUID
+    context_name: str
+    context_kind: str
+    relation_type: str
+    evidence: str
+    confidence: float
+    status: str
+    is_ai_suggested: bool = True
+
+
+class AutoGraphOut(BaseModel):
+    edges: list[EdgeSuggestionOut] = Field(default_factory=list)
+    context_links: list[ContextLinkOut] = Field(default_factory=list)
+    proposed: int = 0
+
+
 # ---------------------------------------------------------------------------
 # Reference Architecture
 # ---------------------------------------------------------------------------

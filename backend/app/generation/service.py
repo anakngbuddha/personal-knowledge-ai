@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -58,11 +59,31 @@ from app.llm.prompts import (
 from app.retrieval import graph_context as map_lookup
 from app.retrieval.rewrite import expand_queries, keyword_overlap_score, rewrite_query
 from app.retrieval.search import search as run_search
+from app.retrieval.web import gather_web_fallback
 from app.retrieval.spec import RetrievalFilters
 from app.security.labels import SourceType
 from app.security.principal import Principal
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class PreparedContext:
+    chunks: list[dict]
+    sources: list[SourceMetadata]
+    relationships_block: str
+    needs_web: bool
+    search_query: str
+    web_note: str | None = None
+    web_sources: list[SourceMetadata] = field(default_factory=list)
+
+
+def hits_are_weak(hits: list, query: str) -> bool:
+    """True when local passages do not cover the question."""
+    if not hits:
+        return True
+    best = max(keyword_overlap_score(query, getattr(hit, "text", "") or "") for hit in hits)
+    return best < settings.web_fallback_min_score
 
 
 def _build_retrieval_filters(
@@ -131,7 +152,7 @@ def _prepare_context(
     exclude_document_ids: list[str] | None = None,
     history: list[dict] | None = None,
     workspace_id: uuid.UUID | None = None,
-) -> tuple[list[dict], list[SourceMetadata], str]:
+) -> PreparedContext:
     """Retrieve and prepare context chunks for the LLM.
 
     Rewrites follow-ups using conversation history, expands broad questions
@@ -158,6 +179,7 @@ def _prepare_context(
             filters=retrieval_filters,
             mode="hybrid",
             top_k=candidate_k,
+            candidate_k=settings.generation_search_candidate_k,
         )
         for hit in search_result.hits:
             previous = merged.get(hit.chunk_id)
@@ -180,7 +202,8 @@ def _prepare_context(
     # passage so a pairing can be cited instead of asserted.
     graph = map_lookup.expand(db, workspace_id=workspace_id, question=question)
     relationships_block = build_relationships_block(graph.as_lines())
-    if graph.neighbour_names:
+    covered = not hits_are_weak(hits, search_query)
+    if graph.neighbour_names and not covered:
         known = {hit.chunk_id for hit in hits}
         per_neighbour = max(1, settings.graph_expansion_chunks_per_neighbour)
         for name in graph.neighbour_names:
@@ -192,6 +215,7 @@ def _prepare_context(
                     filters=retrieval_filters,
                     mode="hybrid",
                     top_k=per_neighbour,
+                    candidate_k=settings.generation_search_candidate_k,
                 )
             except Exception:  # noqa: BLE001 - a neighbour is a bonus, never a blocker
                 logger.debug("neighbour lookup failed for %s", name, exc_info=True)
@@ -268,7 +292,63 @@ def _prepare_context(
             )
         )
 
-    return context_chunks, source_metadata, relationships_block
+    return PreparedContext(
+        chunks=context_chunks,
+        sources=source_metadata,
+        relationships_block=relationships_block,
+        needs_web=hits_are_weak(hits, search_query),
+        search_query=search_query,
+    )
+
+
+def _attach_web(prepared: PreparedContext) -> PreparedContext:
+    """Fetch web passages and append them as fenced, labeled sources."""
+    if not prepared.needs_web:
+        return prepared
+    fallback = gather_web_fallback(prepared.search_query)
+    prepared.web_note = fallback.note
+    start = len(prepared.chunks)
+    for offset, passage in enumerate(fallback.passages, start=1):
+        index = start + offset
+        citation = passage.title or passage.url
+        fenced = wrap_untrusted(passage.text, source=citation)
+        metadata = {
+            "chunk_id": f"web-{offset}",
+            "document_id": "web",
+            "document_title": passage.title,
+            "page_number": None,
+            "slide_number": None,
+            "sheet_name": None,
+            "cell_range": None,
+            "heading_path": [],
+            "vendor": None,
+            "ownership": None,
+            "approval_state": None,
+            "sensitivity": None,
+            "valid_until": None,
+            "is_stale": False,
+            "source_url": passage.url,
+            "origin": "web",
+        }
+        prepared.chunks.append(
+            {
+                "index": index,
+                "fenced_text": fenced,
+                "citation": citation,
+                "metadata": metadata,
+            }
+        )
+        source = SourceMetadata(
+            chunk_id=metadata["chunk_id"],
+            document_id="web",
+            document_title=passage.title,
+            citation=citation,
+            source_url=passage.url,
+            origin="web",
+        )
+        prepared.sources.append(source)
+        prepared.web_sources.append(source)
+    return prepared
 
 
 def ask(
@@ -326,15 +406,20 @@ def ask(
         conv_uuid = conv.id
 
     # Retrieve and prepare context
-    context_chunks, all_sources, relationships_block = _prepare_context(
-        db,
-        principal,
-        question,
-        filters,
-        exclude_document_ids,
-        history,
-        workspace_id=workspace_id,
+    prepared = _attach_web(
+        _prepare_context(
+            db,
+            principal,
+            question,
+            filters,
+            exclude_document_ids,
+            history,
+            workspace_id=workspace_id,
+        )
     )
+    context_chunks = prepared.chunks
+    all_sources = prepared.sources
+    relationships_block = prepared.relationships_block
 
     # Build the full prompt
     context_block = build_context_block(context_chunks, strict_mode=strict_mode)
@@ -343,7 +428,8 @@ def ask(
 
     # Generate
     provider = get_llm_provider()
-    if enable_tools:
+    use_tools = enable_tools and not prepared.needs_web
+    if use_tools:
         if workspace_id is None:
             raise ValueError("enable_tools requires a workspace")
         from app.tools.loop import run_tool_loop
@@ -400,6 +486,9 @@ def ask(
             auto_title(db, conversation_id=conv_uuid, question=question)
             answer.message_id = str(assistant_msg.id)
 
+    answer.web_note = prepared.web_note
+    answer.web_sources = list(prepared.web_sources)
+
     logger.info(
         "ask model=%s refused=%s citations=%d prompt_v=%s conv=%s",
         answer.model_id,
@@ -454,6 +543,8 @@ def ask_stream(
             refused=answer.refused,
             refusal_reason=answer.refusal_reason,
             conversation_id=answer.conversation_id,
+            web_note=answer.web_note,
+            web_sources=list(answer.web_sources),
         )
         conv_uuid = uuid.UUID(answer.conversation_id) if answer.conversation_id else None
         if conv_uuid:
@@ -506,8 +597,7 @@ def ask_stream(
         )
         conv_uuid = conv.id
 
-    # Retrieve and prepare context
-    context_chunks, all_sources, relationships_block = _prepare_context(
+    prepared = _prepare_context(
         db,
         principal,
         question,
@@ -516,6 +606,12 @@ def ask_stream(
         history,
         workspace_id=workspace_id,
     )
+    if prepared.needs_web:
+        yield GroundedAnswerChunk(delta="", status="searching the web")
+        prepared = _attach_web(prepared)
+    context_chunks = prepared.chunks
+    all_sources = prepared.sources
+    relationships_block = prepared.relationships_block
 
     # Build the full prompt
     context_block = build_context_block(context_chunks, strict_mode=strict_mode)
@@ -533,10 +629,9 @@ def ask_stream(
         history=history,
     ):
         accumulated_text += chunk.delta
-        yield chunk
-
         if chunk.done:
-            # Record token usage
+            chunk.web_note = prepared.web_note
+            chunk.web_sources = list(prepared.web_sources)
             if chunk.usage:
                 record_token_usage(
                     db,
@@ -544,8 +639,6 @@ def ask_stream(
                     chunk.usage.prompt_tokens,
                     chunk.usage.completion_tokens,
                 )
-
-            # Persist messages
             if conv_uuid:
                 add_message(db, conversation_id=conv_uuid, role="user", content=question)
                 assistant_msg = add_message(
@@ -563,7 +656,6 @@ def ask_stream(
                 auto_title(db, conversation_id=conv_uuid, question=question)
                 chunk.conversation_id = str(conv_uuid)
                 chunk.message_id = str(assistant_msg.id)
-
             logger.info(
                 "ask_stream done model=%s refused=%s citations=%d conv=%s",
                 provider.model_id,
@@ -571,6 +663,7 @@ def ask_stream(
                 len(chunk.citations),
                 conv_uuid,
             )
+        yield chunk
 
 
 def _usage_with_tools(answer: GroundedAnswer) -> dict | None:

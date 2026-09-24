@@ -156,6 +156,8 @@ export interface SourceMetadata {
   sensitivity?: string | null;
   valid_until?: string | null;
   is_stale: boolean;
+  source_url?: string | null;
+  origin?: string | null;
 }
 
 export interface TokenUsage {
@@ -183,6 +185,8 @@ export interface AskResponse {
   conversation_id?: string | null;
   message_id?: string | null;
   tool_calls?: ToolCallInfo[];
+  web_note?: string | null;
+  web_sources?: SourceMetadata[];
 }
 
 export interface Message {

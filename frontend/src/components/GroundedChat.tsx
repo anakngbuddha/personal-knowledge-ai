@@ -21,6 +21,10 @@ export function GroundedChat({ sourceCount, onNavigate }: Props) {
   const [strictMode, setStrictMode] = useState(false);
   const [lastToolCalls, setLastToolCalls] = useState<string[]>([]);
   const [streamText, setStreamText] = useState("");
+  const [statusNote, setStatusNote] = useState<string | null>(null);
+  const [webSources, setWebSources] = useState<SourceMetadata[]>([]);
+  const [webNote, setWebNote] = useState<string | null>(null);
+  const [savingUrl, setSavingUrl] = useState<string | null>(null);
   const [notebookId, setNotebookId] = useState<string | null>(null);
   const [sources, setSources] = useState<NotebookSource[]>([]);
   const [savedNotes, setSavedNotes] = useState<NoteRecord[]>([]);
@@ -94,6 +98,27 @@ export function GroundedChat({ sourceCount, onNavigate }: Props) {
     }
   }
 
+  async function saveWeb(source: SourceMetadata) {
+    if (!source.source_url) return;
+    setSavingUrl(source.source_url);
+    setError(null);
+    try {
+      await api.saveWebSource({
+        url: source.source_url,
+        title: source.document_title,
+        notebook_id: notebookId,
+      });
+      if (notebookId) {
+        setSources(await api.listNotebookSources(notebookId));
+      }
+      setWebSources((prev) => prev.filter((item) => item.source_url !== source.source_url));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add that page");
+    } finally {
+      setSavingUrl(null);
+    }
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if (!question.trim() || loading) return;
@@ -103,6 +128,9 @@ export function GroundedChat({ sourceCount, onNavigate }: Props) {
     setError(null);
     setSelectedCitation(null);
     setStreamText("");
+    setStatusNote(null);
+    setWebSources([]);
+    setWebNote(null);
     try {
       const answer = await api.askStream(
         {
@@ -110,11 +138,14 @@ export function GroundedChat({ sourceCount, onNavigate }: Props) {
           conversation_id: selectedConvId,
           notebook_id: notebookId,
           filters: { document_ids: enabledIds() },
-          enable_tools: true,
+          enable_tools: false,
           strict_mode: strictMode,
         },
-        setStreamText
+        setStreamText,
+        setStatusNote
       );
+      setWebSources(answer.web_sources || []);
+      setWebNote(answer.web_note || null);
       setLastToolCalls((answer.tool_calls || []).map((c) => c.name));
       if (!selectedConvId && answer.conversation_id) {
         setSelectedConvId(answer.conversation_id);
@@ -123,6 +154,7 @@ export function GroundedChat({ sourceCount, onNavigate }: Props) {
         await loadConversationDetails(selectedConvId);
       }
       setStreamText("");
+      setStatusNote(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not write an answer");
     } finally {
@@ -282,9 +314,28 @@ export function GroundedChat({ sourceCount, onNavigate }: Props) {
               </div>
             ))
           )}
+          {(webNote || webSources.length > 0) && (
+            <div className="web-sources">
+              {webNote && <p className="web-note">{webNote}</p>}
+              {webSources.map((source) => (
+                <div key={source.source_url || source.chunk_id} className="web-source-row">
+                  <span>{source.document_title || source.citation}</span>
+                  {source.source_url && (
+                    <button
+                      type="button"
+                      disabled={savingUrl === source.source_url}
+                      onClick={() => void saveWeb(source)}
+                    >
+                      {savingUrl === source.source_url ? "Saving…" : "Add to knowledge"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {loading && (
             <div className="chat-message assistant loading">
-              <div className="role-label">Writing…</div>
+              <div className="role-label">{statusNote || "Writing…"}</div>
               {streamText ? (
                 <AssistantMarkdown text={streamText} citations={[]} onSelect={() => undefined} />
               ) : (

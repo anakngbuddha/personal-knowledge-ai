@@ -59,6 +59,20 @@ export interface CapabilityOut {
   product_count: number;
 }
 
+export interface AutoGraphOut {
+  edges: ProductEdgeOut[];
+  context_links: {
+    id: string;
+    product_name: string;
+    context_name: string;
+    context_kind: string;
+    relation_type: string;
+    evidence: string;
+    status: string;
+  }[];
+  proposed: number;
+}
+
 export interface ProductEdgeOut {
   id: string;
   org_id: string;
@@ -271,6 +285,9 @@ export const catalogApi = {
 
   suggestEdges: () =>
     request<ProductEdgeOut[]>("/graph/suggest-edges", { method: "POST" }),
+
+  autoGraph: () =>
+    request<AutoGraphOut>("/graph/auto-graph", { method: "POST" }),
 
   approveEdge: (id: string) =>
     request<ProductEdgeOut>(`/graph/edges/${id}/approve`, { method: "POST" }),

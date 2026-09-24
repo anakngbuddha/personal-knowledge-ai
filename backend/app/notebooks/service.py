@@ -216,6 +216,44 @@ def set_enabled_sources(
     return source_membership(db, org_id=org_id, notebook_id=notebook.id)
 
 
+def enable_document(
+    db: Session,
+    *,
+    org_id: uuid.UUID,
+    notebook_id: uuid.UUID,
+    document_id: uuid.UUID,
+) -> None:
+    """Turn one workspace document on for a notebook without changing the others."""
+    notebook = get_notebook(db, org_id=org_id, notebook_id=notebook_id)
+    document = db.scalar(
+        select(Document).where(
+            Document.id == document_id,
+            Document.org_id == org_id,
+            Document.workspace_id == notebook.workspace_id,
+        )
+    )
+    if document is None:
+        raise AppError(
+            status_code=404,
+            code="notebook_source_unknown",
+            message="That source is not in this workspace.",
+        )
+    existing = next((row for row in notebook.sources if row.document_id == document_id), None)
+    if existing is None:
+        db.add(
+            NotebookSource(
+                org_id=org_id,
+                notebook_id=notebook.id,
+                document_id=document_id,
+                enabled=True,
+            )
+        )
+    else:
+        existing.enabled = True
+    notebook.updated_at = _now()
+    db.commit()
+
+
 def enabled_document_ids(db: Session, *, notebook: Notebook) -> list[uuid.UUID]:
     """Ids Ask should search: switched-on sources, plus notes saved in this notebook."""
     ids = [row.document_id for row in notebook.sources if row.enabled]

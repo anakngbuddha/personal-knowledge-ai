@@ -57,9 +57,16 @@ export const api = {
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({...payload, stream:false})
     }),
+  saveWebSource: (body: {url: string; title?: string | null; notebook_id?: string | null}) =>
+    request<{document_id: string; notebook_id?: string | null}>("/ask/web-sources", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    }),
   askStream: async (
     payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean},
-    onDelta: (text: string) => void
+    onDelta: (text: string) => void,
+    onStatus?: (status: string) => void
   ): Promise<Partial<AskResponse>> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000);
@@ -87,8 +94,9 @@ export const api = {
           if (!line) continue;
           const data = line.slice(6).trim();
           if (data === "[DONE]") continue;
-          const event = JSON.parse(data) as {delta?: string; done?: boolean; error?: string; citations?: SourceMetadata[]; conversation_id?: string; message_id?: string; refused?: boolean};
+          const event = JSON.parse(data) as {delta?: string; done?: boolean; error?: string; status?: string; citations?: SourceMetadata[]; conversation_id?: string; message_id?: string; refused?: boolean; web_note?: string | null; web_sources?: SourceMetadata[]};
           if (event.error) throw new Error(event.error);
+          if (event.status) onStatus?.(event.status);
           if (event.delta) {
             assembled += event.delta;
             onDelta(assembled);
@@ -99,7 +107,9 @@ export const api = {
               citations: event.citations || [],
               conversation_id: event.conversation_id,
               message_id: event.message_id,
-              refused: Boolean(event.refused)
+              refused: Boolean(event.refused),
+              web_note: event.web_note,
+              web_sources: event.web_sources || []
             };
           }
         }
