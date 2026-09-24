@@ -12,7 +12,11 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.catalog.auto_graph import suggest_solution_graph
+from unittest.mock import MagicMock
+
+from app.api.routes import catalog as catalog_routes
 from app.core.config import settings
+from app.core.errors import ProviderError, ProviderRateLimited
 from app.db.models import (
     Base,
     Capability,
@@ -227,3 +231,36 @@ def test_auto_graph_route_requires_auth(monkeypatch):
     finally:
         app.dependency_overrides.pop(get_db, None)
         session.close()
+
+
+def test_auto_graph_route_maps_provider_failures():
+    def _db():
+        yield MagicMock()
+
+    def _deps():
+        return MagicMock(), uuid.uuid4(), uuid.uuid4()
+
+    app.dependency_overrides[get_db] = _db
+    app.dependency_overrides[catalog_routes._get_service] = _deps
+    try:
+        client = TestClient(app)
+
+        def _limited(*_args, **_kwargs):
+            raise ProviderRateLimited("Gemini generation rate limit reached")
+
+        catalog_routes.suggest_solution_graph = _limited
+        limited = client.post("/graph/auto-graph")
+        assert limited.status_code == 429
+        assert limited.json()["detail"] == "The model is busy. Wait a moment and try Auto-graph again."
+
+        def _down(*_args, **_kwargs):
+            raise ProviderError("model down")
+
+        catalog_routes.suggest_solution_graph = _down
+        down = client.post("/graph/auto-graph")
+        assert down.status_code == 503
+        assert "could not graph" in down.json()["detail"]
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(catalog_routes._get_service, None)
+        catalog_routes.suggest_solution_graph = suggest_solution_graph

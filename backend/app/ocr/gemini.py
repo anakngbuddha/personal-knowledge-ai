@@ -79,7 +79,7 @@ class GeminiOcrProvider(OcrProvider):
         url = f"{settings.gemini_api_base}/models/{self._model}:generateContent"
         response = httpx.post(
             url,
-            params={"key": self._api_key},
+            headers={"x-goog-api-key": self._api_key},
             json=payload,
             timeout=self._timeout,
         )

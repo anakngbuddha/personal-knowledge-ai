@@ -162,7 +162,13 @@ async function fetchOnce(path: string, init?: RequestInit, timeoutMs = FETCH_TIM
 }
 
 function defaultTimeoutForPath(path: string): number {
-  if (path.startsWith("/ask") || path.startsWith("/conversations") || path.startsWith("/studio") || path.startsWith("/workflows")) {
+  if (
+    path.startsWith("/ask") ||
+    path.startsWith("/conversations") ||
+    path.startsWith("/studio") ||
+    path.startsWith("/workflows") ||
+    path.startsWith("/graph/auto-graph")
+  ) {
     return 120000;
   }
   return FETCH_TIMEOUT_MS;
@@ -198,7 +204,7 @@ export async function fetchResponse(
     response = await fetchOnce(path, init, effectiveTimeout);
   }
   if (response.status === 401) {
-    setAccessToken(null);
+    if (withAuthHeaders(init).has("Authorization")) setAccessToken(null);
     throw new Error(friendlyError(401, ""));
   }
   if (!response.ok) {

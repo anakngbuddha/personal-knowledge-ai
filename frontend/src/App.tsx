@@ -32,7 +32,7 @@ const TABS: { id: Tab; name: string }[] = [
 export default function App() {
   const [authenticated, setAuthenticated] = useState(Boolean(getAccessToken()));
   const [activeTab, setActiveTab] = useState<Tab>("ask");
-  const { documents, loading, error, refresh, setError } = useDocuments();
+  const { documents, loading, error, refresh, setError } = useDocuments(authenticated);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mapVersion, setMapVersion] = useState(0);
   const [waking, setWaking] = useState(false);
@@ -99,11 +99,16 @@ export default function App() {
             )}
             {activeTab === "connections" && <IntegrationsPanel />}
             {activeTab === "map" && (
-              <>
-                <ProductImport onImported={() => setMapVersion((v) => v + 1)} />
+              <div className="map-stage">
                 <GraphExplorer key={mapVersion} />
-                <MapEditor onChanged={() => setMapVersion((v) => v + 1)} />
-              </>
+                <div className="map-float">
+                  <ProductImport onImported={() => setMapVersion((v) => v + 1)} />
+                  <details className="map-edit">
+                    <summary>Edit the map</summary>
+                    <MapEditor onChanged={() => setMapVersion((v) => v + 1)} />
+                  </details>
+                </div>
+              </div>
             )}
             {activeTab === "notes" && <NotesPanel />}
             {activeTab === "settings" && <SettingsPanel principal={principal} onSignOut={signOut} />}

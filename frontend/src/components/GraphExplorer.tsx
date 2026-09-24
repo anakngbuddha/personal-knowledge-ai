@@ -373,10 +373,16 @@ export function GraphExplorer() {
     panRef.current.panning = false;
   }, []);
 
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    zoomRef.current = Math.max(0.3, Math.min(3, zoomRef.current - e.deltaY * 0.001));
-  }, []);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      zoomRef.current = Math.max(0.3, Math.min(3, zoomRef.current - event.deltaY * 0.001));
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [loading, error]);
 
   /* ── Fetch detail on select ────────────────────────────────────────── */
   useEffect(() => {
@@ -567,7 +573,6 @@ export function GraphExplorer() {
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
             onMouseLeave={handleCanvasMouseUp}
-            onWheel={handleWheel}
           />
           <div className="graph-legend">
             <span className="legend-title">Key</span>

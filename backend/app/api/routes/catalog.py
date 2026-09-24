@@ -36,7 +36,7 @@ from app.catalog.models import (
     ReferenceArchitectureProductOut,
 )
 from app.catalog.service import CatalogService
-from app.core.errors import AppError
+from app.core.errors import AppError, ProviderError, ProviderRateLimited
 from app.core.logging import get_logger
 from app.db.models import Document, EdgeStatus, Product
 from app.db.session import get_db
@@ -458,7 +458,18 @@ def auto_graph(
 ) -> AutoGraphOut:
     """Propose solution-selling relationships from the listed products."""
     service, org_id, workspace_id = deps
-    result = suggest_solution_graph(db, workspace_id=workspace_id, org_id=org_id)
+    try:
+        result = suggest_solution_graph(db, workspace_id=workspace_id, org_id=org_id)
+    except ProviderRateLimited as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="The model is busy. Wait a moment and try Auto-graph again.",
+        ) from exc
+    except ProviderError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="The model could not graph these products. Try again shortly.",
+        ) from exc
     names = {p.id: p.name for p in service.list_products(workspace_id, limit=500)}
     edges = [
         EdgeSuggestionOut(

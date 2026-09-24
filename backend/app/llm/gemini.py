@@ -58,9 +58,9 @@ class GeminiLLMProvider(LLMProvider):
         return self._model
 
     @retry(
-        retry=retry_if_exception_type((ProviderRateLimited, httpx.TransportError)),
-        wait=wait_exponential(multiplier=2, min=2, max=60),
-        stop=stop_after_attempt(4),
+        retry=retry_if_exception_type(httpx.TransportError),
+        wait=wait_exponential(multiplier=0.25, min=0.25, max=1),
+        stop=stop_after_attempt(2),
         reraise=True,
     )
     def generate_grounded_answer(
@@ -91,7 +91,7 @@ class GeminiLLMProvider(LLMProvider):
         try:
             response = httpx.post(
                 url,
-                params={"key": self._api_key},
+                headers={"x-goog-api-key": self._api_key},
                 json=payload,
                 timeout=self._timeout,
             )
@@ -134,7 +134,8 @@ class GeminiLLMProvider(LLMProvider):
             with httpx.stream(
                 "POST",
                 url,
-                params={"key": self._api_key, "alt": "sse"},
+                params={"alt": "sse"},
+                headers={"x-goog-api-key": self._api_key},
                 json=payload,
                 timeout=self._timeout,
             ) as response:

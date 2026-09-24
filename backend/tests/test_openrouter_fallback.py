@@ -186,6 +186,30 @@ def test_gemini_factory_wraps_fallback(monkeypatch):
         get_llm_provider.cache_clear()
 
 
+def test_gemini_rate_limit_fails_over_without_retries(monkeypatch):
+    from app.llm.gemini import GeminiLLMProvider
+
+    monkeypatch.setattr(settings, "gemini_api_base", "https://example.test/v1beta")
+    provider = GeminiLLMProvider(api_key="secret-key", model="gemini-test")
+    response = MagicMock()
+    response.status_code = 429
+    response.text = "slow"
+    calls: list[tuple] = []
+
+    def fake_post(url, headers=None, json=None, timeout=None, params=None):
+        calls.append((url, headers, params))
+        return response
+
+    with patch("app.llm.gemini.httpx.post", fake_post), patch("app.llm.gemini.acquire_gemini"):
+        with pytest.raises(ProviderRateLimited):
+            provider.generate_grounded_answer("q", [], system_prompt="s")
+
+    assert len(calls) == 1
+    assert "key=" not in calls[0][0]
+    assert calls[0][1]["x-goog-api-key"] == "secret-key"
+    assert not calls[0][2] or "key" not in calls[0][2]
+
+
 def test_transport_error_is_fallback_eligible():
     assert issubclass(httpx.TransportError, Exception)
     assert isinstance(GroundedAnswerChunk(delta="x"), GroundedAnswerChunk)
