@@ -274,7 +274,7 @@ textarea:focus:not(:focus-visible) {
   justify-content: space-between;
   align-items: center;
   min-height: var(--mast);
-  height: var(--mast);
+  height: auto;
   padding: 0 24px;
   border-bottom: 1px solid var(--rule);
   background: var(--chrome);
@@ -282,6 +282,9 @@ textarea:focus:not(:focus-visible) {
   box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.04);
   position: relative;
   z-index: 20;
+  gap: 12px;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .brand {
@@ -375,6 +378,9 @@ textarea:focus:not(:focus-visible) {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
 }
 
 .status-badge-live {
@@ -415,6 +421,9 @@ textarea:focus:not(:focus-visible) {
   border-radius: 9px;
   padding: 6px 12px;
   width: 380px;
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 1;
   transition: all 160ms var(--ease-out);
 }
 
@@ -454,6 +463,7 @@ textarea:focus:not(:focus-visible) {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .mast-bell-btn {
@@ -1819,8 +1829,8 @@ textarea::placeholder {
 .chat-input-form {
   flex-shrink: 0;
   padding: 12px 28px 16px;
-  background: var(--bg-surface);
-  border-top: 1px solid var(--rule);
+  background: transparent;
+  border-top: none;
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -5167,6 +5177,16 @@ textarea::placeholder {
 
 /* ── Responsive Refinements ─────────────────────────────────────────── */
 
+/* Large screens: hide status badge first to free space */
+@media (max-width: 1280px) {
+  .status-badge-live {
+    display: none;
+  }
+  .mast-search-box {
+    width: 280px;
+  }
+}
+
 @media (max-width: 1080px) {
   .ask-desk,
   .map-desk,
@@ -5174,6 +5194,26 @@ textarea::placeholder {
     grid-template-columns: 1fr;
     height: auto;
     overflow: visible;
+  }
+  /* Compress user profile: hide text, keep avatar */
+  .user-info {
+    display: none;
+  }
+  .user-chevron {
+    display: none;
+  }
+  .user-profile-chip {
+    padding: 4px;
+  }
+  /* Compress sign-out: icon only */
+  .signout-btn span {
+    display: none;
+  }
+  .signout-btn {
+    padding: 6px 8px;
+  }
+  .mast-search-box {
+    width: 220px;
   }
 }
 
@@ -5196,14 +5236,28 @@ textarea::placeholder {
     min-width: 120px;
     padding: 8px 12px;
   }
+  /* Further compress masthead */
+  .mast-search-box {
+    width: 180px;
+  }
+  .brand-kicker {
+    display: none;
+  }
+  .version-pill {
+    display: none;
+  }
 }
 
 @media (max-width: 680px) {
   .masthead {
-    padding: 0 16px;
+    padding: 0 12px;
+    gap: 8px;
   }
   .mast-center {
     display: none;
+  }
+  .brand-name {
+    font-size: 15px;
   }
   .sources-page .layout {
     grid-template-columns: 1fr;
