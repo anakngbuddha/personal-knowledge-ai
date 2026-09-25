@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronDownIcon, ChevronRightIcon } from "./Icons";
 import { api } from "../services/api";
 import type { NotebookRecord } from "../types";
 
@@ -69,8 +70,8 @@ export function NotebookPicker({ notebookId, onChange }: Props) {
   return (
     <div className="notebook-picker">
       <div className="notebook-header-row">
-        <span className="notebook-title">Notebook</span>
-        <span className="notebook-deals-badge">0 Deals Selected</span>
+        <span className="notebook-title">NOTEBOOK</span>
+        <ChevronRightIcon size={14} className="notebook-section-chevron" />
       </div>
       <div className="notebook-select-wrap">
         <select
@@ -85,7 +86,9 @@ export function NotebookPicker({ notebookId, onChange }: Props) {
             </option>
           ))}
         </select>
-        <span className="notebook-select-chevron">▾</span>
+        <span className="notebook-select-chevron">
+          <ChevronDownIcon size={13} />
+        </span>
       </div>
       <div className="notebook-input-wrap">
         <input

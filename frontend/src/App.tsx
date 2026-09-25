@@ -3,7 +3,9 @@ import { AuthScreen } from "./components/AuthScreen";
 import { GraphExplorer } from "./components/GraphExplorer";
 import { GroundedChat } from "./components/GroundedChat";
 import {
+  BellIcon,
   BookOpenIcon,
+  ChevronDownIcon,
   DatabaseIcon,
   FileTextIcon,
   LogoMark,
@@ -89,7 +91,7 @@ export default function App() {
     { id: "ask", name: "Ask Intelligence", icon: StarIcon, badge: "AI" },
     { id: "notes", name: "Notes", icon: BookOpenIcon, badge: "18" },
     { id: "sources", name: "Sources", icon: FileTextIcon, badge: String(documents.length || 50) },
-    { id: "connections", name: "Connectors", icon: ZapIcon, badge: "Live" },
+    { id: "connections", name: "Connectors", icon: ZapIcon, badge: "11 ●" },
     { id: "map", name: "Knowledge Map", icon: NetworkIcon },
     { id: "settings", name: "Settings", icon: SettingsIcon },
   ];
@@ -107,21 +109,21 @@ export default function App() {
       <header className="masthead">
         <div className="brand">
           <div className="brand-emblem" title="Field Desk AI">
-            <LogoMark size={26} />
+            <LogoMark size={28} />
           </div>
           <div className="brand-info">
             <div className="brand-title-wrap">
               <span className="brand-name">Field Desk</span>
               <span className="version-pill">v2.4</span>
             </div>
-            <span className="brand-kicker">Knowledge Engine • Cupertino Core</span>
+            <span className="brand-kicker">KNOWLEDGE ENGINE &bull; ENTERPRISE CORE</span>
           </div>
         </div>
 
         <div className="mast-center">
           <div className="status-badge-live">
             <span className="pulse-dot" />
-            <span>Catalog Grounded &bull; HNSW: 14ms</span>
+            <span>Catalogs Grounded &bull; HNSW &bull; 14ms</span>
           </div>
 
           <div className="mast-search-box">
@@ -132,13 +134,23 @@ export default function App() {
             <input
               type="text"
               className="mast-search-input"
-              placeholder="Jump to note or search catalog [[product:name]].."
+              placeholder="Jump to note or search catalog | product..."
             />
-            <kbd className="mast-search-shortcut">⌘K</kbd>
+            <kbd className="mast-search-shortcut">⌘ K</kbd>
           </div>
         </div>
 
         <div className="mast-meta">
+          <button
+            type="button"
+            className="mast-bell-btn"
+            title="Notifications"
+            aria-label="Notifications"
+          >
+            <BellIcon size={16} />
+            <span className="bell-badge-dot" />
+          </button>
+
           <button
             type="button"
             className="theme-toggle-btn"
@@ -152,9 +164,10 @@ export default function App() {
           <div className="user-profile-chip">
             <div className="user-avatar">{userInitials || "S"}</div>
             <div className="user-info">
-              <span className="user-name">{principal?.organization_name || "Enterprise Tenant"}</span>
-              <span className="user-org">Active • Zero Retention</span>
+              <span className="user-name">Enterprise Tenant</span>
+              <span className="user-org">Field Desk – Enterprise</span>
             </div>
+            <ChevronDownIcon size={12} className="user-chevron" />
           </div>
 
           <button type="button" className="signout-btn" onClick={signOut} title="Sign out of workspace">

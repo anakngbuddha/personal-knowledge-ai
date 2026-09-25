@@ -1,11 +1,19 @@
 import { useEffect, useState } from "react";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import {
+  ArrowRightIcon,
   BookOpenIcon,
+  ChevronDownIcon,
+  ChevronsLeftIcon,
+  FileTextIcon,
   InfoIcon,
   LayersVectorIcon,
+  MoreVerticalIcon,
+  PaperclipIcon,
   PlusIcon,
   SendIcon,
+  SlidersIcon,
+  SparklesIcon,
   SparkleSquircleIcon,
 } from "./Icons";
 import { NotebookPicker } from "./NotebookPicker";
@@ -65,6 +73,10 @@ export function GroundedChat({
   const [savedNotes, setSavedNotes] = useState<NoteRecord[]>([]);
   const [studio, setStudio] = useState<StudioResult | null>(null);
   const [studioBusy, setStudioBusy] = useState(false);
+  const [hybridRag, setHybridRag] = useState(true);
+  const [sourcesExpertKnowledge, setSourcesExpertKnowledge] = useState(true);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<"briefing" | "faq" | "compare" | null>(null);
 
   useEffect(() => {
     void loadConversations(notebookId);
@@ -254,12 +266,23 @@ export function GroundedChat({
   const noThread = !currentConv || currentConv.messages.length === 0;
 
   return (
-    <div className="ask-desk">
+    <div className={`ask-desk ${leftCollapsed ? "sidebar-collapsed" : ""}`}>
       {/* ── Left Column: Workspace Sidebar ─────────────────────────────── */}
-      <aside className="ask-sources">
+      <aside className={`ask-sources ${leftCollapsed ? "collapsed" : ""}`}>
         {tabs && onTabChange && (
           <div className="sidebar-workspace-nav">
-            <div className="sidebar-section-title">WORKSPACE</div>
+            <div className="sidebar-section-header">
+              <span className="sidebar-section-title">WORKSPACE</span>
+              <button
+                type="button"
+                className="sidebar-collapse-btn"
+                onClick={() => setLeftCollapsed(!leftCollapsed)}
+                title="Collapse sidebar"
+                aria-label="Collapse sidebar"
+              >
+                <ChevronsLeftIcon size={14} />
+              </button>
+            </div>
             <div className="workspace-tabs-list">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
@@ -272,11 +295,11 @@ export function GroundedChat({
                     onClick={() => onTabChange(tab.id)}
                   >
                     <span className="tab-btn-icon">
-                      <Icon size={17} />
+                      <Icon size={16} />
                     </span>
                     <span className="tab-btn-name">{tab.name}</span>
                     {tab.badge && (
-                      <span className={`tab-btn-badge ${tab.badge === "Live" ? "live" : tab.badge === "AI" ? "ai" : ""}`}>
+                      <span className={`tab-btn-badge ${tab.badge === "Live" ? "live" : tab.badge === "AI" ? "ai" : tab.badge.includes("●") ? "live" : ""}`}>
                         {tab.badge}
                       </span>
                     )}
@@ -302,15 +325,21 @@ export function GroundedChat({
           <div className="sources-setup-header">SOURCES SETUP</div>
           <div className="setup-steps-list">
             <div className="setup-step-row">
-              <span className="setup-step-num">1</span>
+              <span className="setup-step-icon">
+                <FileTextIcon size={14} />
+              </span>
               <span className="setup-step-text">Add documents</span>
             </div>
             <div className="setup-step-row">
-              <span className="setup-step-num">2</span>
-              <span className="setup-step-text">Add your products</span>
+              <span className="setup-step-icon">
+                <SlidersIcon size={14} />
+              </span>
+              <span className="setup-step-text">Analyze and preprocess</span>
             </div>
             <div className="setup-step-row">
-              <span className="setup-step-num">3</span>
+              <span className="setup-step-icon">
+                <SparklesIcon size={14} />
+              </span>
               <span className="setup-step-text">Ask &amp; synthesize</span>
             </div>
           </div>
@@ -318,79 +347,96 @@ export function GroundedChat({
             <button type="button" className="setup-link-blue" onClick={() => onNavigate("sources")}>
               Go to Sources
             </button>
-            <button type="button" className="setup-link-gray" onClick={() => onNavigate("map")}>
+            <button type="button" className="setup-link-blue" onClick={() => onNavigate("map")}>
               Go to Map
             </button>
           </div>
-        </div>
-
-        {/* Studio Action Buttons */}
-        <div className="helper-row">
-          <button type="button" disabled={studioBusy} onClick={() => void runStudio("briefing")}>
-            Briefing
-          </button>
-          <button type="button" disabled={studioBusy} onClick={() => void runStudio("faq")}>
-            FAQ
-          </button>
-          <button type="button" disabled={studioBusy} onClick={() => void runStudio("compare")}>
-            Compare
-          </button>
         </div>
 
         {/* Threads Section */}
         <div className="threads-section">
           <div className="threads-header-row">
             <span className="threads-title">THREADS</span>
-            <span className="threads-live-label">REAL-TIME</span>
           </div>
-          {conversations.length === 0 ? (
-            <div className="threads-empty-box">
-              <em>No previous threads in this session</em>
-            </div>
-          ) : (
-            <div className="threads-list">
-              {conversations.map((c) => (
-                <div key={c.id} className={`conv-item ${selectedConvId === c.id ? "active" : ""}`}>
-                  <button type="button" className="conv-open" onClick={() => setSelectedConvId(c.id)}>
-                    {c.title || "Untitled"}
-                  </button>
-                  <button
-                    type="button"
-                    className="conv-delete"
-                    aria-label={pendingDeleteId === c.id ? "Confirm delete" : "Delete"}
-                    onClick={() => {
-                      if (pendingDeleteId !== c.id) {
-                        setPendingDeleteId(c.id);
-                        return;
-                      }
-                      setPendingDeleteId(null);
-                      void handleDelete(c.id);
-                    }}
-                    onBlur={() => setPendingDeleteId((current) => (current === c.id ? null : current))}
-                  >
-                    {pendingDeleteId === c.id ? "Confirm" : "×"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
 
-        {/* Vector Memory Telemetry Card */}
-        <div className="vector-memory-card">
-          <div className="vector-memory-row">
-            <div className="vector-memory-icon-wrap">
-              <LayersVectorIcon size={16} />
-            </div>
-            <div className="vector-memory-info">
-              <div className="vector-memory-title-row">
-                <span className="vector-memory-title">Vector Memory</span>
-                <span className="vector-memory-hnsw">HNSW</span>
+          {/* Quick Studio Filter Chips */}
+          <div className="threads-filter-row">
+            <button
+              type="button"
+              className={`thread-filter-btn ${activeFilter === "briefing" ? "active" : ""}`}
+              disabled={studioBusy}
+              onClick={() => {
+                setActiveFilter(activeFilter === "briefing" ? null : "briefing");
+                void runStudio("briefing");
+              }}
+            >
+              Briefing
+            </button>
+            <button
+              type="button"
+              className={`thread-filter-btn ${activeFilter === "faq" ? "active" : ""}`}
+              disabled={studioBusy}
+              onClick={() => {
+                setActiveFilter(activeFilter === "faq" ? null : "faq");
+                void runStudio("faq");
+              }}
+            >
+              FAQ
+            </button>
+            <button
+              type="button"
+              className={`thread-filter-btn ${activeFilter === "compare" ? "active" : ""}`}
+              disabled={studioBusy}
+              onClick={() => {
+                setActiveFilter(activeFilter === "compare" ? null : "compare");
+                void runStudio("compare");
+              }}
+            >
+              Compare
+            </button>
+          </div>
+
+          <div className="threads-list">
+            {[
+              { id: "sample-1", title: "prem server and they want to m...", time: "2h", fullPrompt: "prem server and they want to migrate to cloud" },
+              { id: "sample-2", title: "build requirements for Addasou...", time: "5h", fullPrompt: "build requirements for Addasound integration" },
+              { id: "sample-3", title: "Huawei Cloud Data Ingestion ...", time: "1d", fullPrompt: "Huawei Cloud Data Ingestion Kafka pipeline specifications" },
+              { id: "sample-4", title: "HNSW Accuracy Benchmark", time: "2d", fullPrompt: "HNSW Accuracy Benchmark recall specifications" },
+              { id: "sample-5", title: "compatible services on huawei...", time: "3d", fullPrompt: "compatible services on huawei cloud compute engine" },
+            ].map((st) => (
+              <div
+                key={st.id}
+                className="conv-item sample-thread-item"
+                onClick={() => setQuestion(st.fullPrompt)}
+              >
+                <span className="conv-open">{st.title}</span>
+                <span className="conv-time">{st.time}</span>
               </div>
-              <div className="vector-memory-meta">
-                {sourceCount || 50} sources indexed &bull; isolation active
+            ))}
+            {conversations.map((c) => (
+              <div key={c.id} className={`conv-item ${selectedConvId === c.id ? "active" : ""}`}>
+                <button type="button" className="conv-open" onClick={() => setSelectedConvId(c.id)}>
+                  {c.title || "Untitled thread"}
+                </button>
+                <button
+                  type="button"
+                  className="conv-delete"
+                  aria-label={pendingDeleteId === c.id ? "Confirm delete" : "Delete"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (pendingDeleteId !== c.id) {
+                      setPendingDeleteId(c.id);
+                      return;
+                    }
+                    setPendingDeleteId(null);
+                    void handleDelete(c.id);
+                  }}
+                  onBlur={() => setPendingDeleteId((current) => (current === c.id ? null : current))}
+                >
+                  {pendingDeleteId === c.id ? "Confirm" : "×"}
+                </button>
               </div>
-            </div>
+            ))}
           </div>
         </div>
       </aside>
@@ -401,12 +447,14 @@ export function GroundedChat({
         <div className="messages-stream">
           {noThread && !loading ? (
             <div className="chat-welcome">
-              <SparkleSquircleIcon size={56} className="welcome-squircle" />
+              <div className="sparkle-badge-wrap">
+                <SparklesIcon size={26} className="welcome-sparkle-icon" />
+              </div>
               <h2 className="welcome-title">
                 How can I help you <span className="today-gradient">today?</span>
               </h2>
               <p className="welcome-subtitle">
-                Ask questions grounded directly in your uploaded documentation, product catalogs, and team notes.
+                Ask questions and get dual-checked answers using your uploaded documentation, product catalogs, and team notes.
               </p>
 
               <div className="prompt-cards-container">
@@ -423,8 +471,11 @@ export function GroundedChat({
                       setQuestion(promptText);
                     }}
                   >
-                    <span className="prompt-badge">PROMPT</span>
-                    <span className="prompt-text">{promptText}</span>
+                    <div className="prompt-card-left">
+                      <span className="prompt-badge">PROMPT</span>
+                      <span className="prompt-text">{promptText}</span>
+                    </div>
+                    <ArrowRightIcon size={16} className="prompt-card-arrow" />
                   </button>
                 ))}
               </div>
@@ -481,35 +532,63 @@ export function GroundedChat({
           )}
         </div>
 
-        {/* Chat Input Bar */}
+        {/* Chat Input Bar / Composer */}
         <form onSubmit={handleSend} className="chat-input-form">
           <div className="form-options">
             <label className="checkbox-option">
               <input
                 type="checkbox"
-                checked={!strictMode}
-                onChange={(e) => setStrictMode(!e.target.checked)}
+                checked={sourcesExpertKnowledge}
+                onChange={(e) => {
+                  setSourcesExpertKnowledge(e.target.checked);
+                  setStrictMode(!e.target.checked);
+                }}
               />
-              <span>Sources + expert knowledge</span>
+              <span>Sources = expert knowledge</span>
+              <span className="info-circle" title="Ground generation directly in verified sources">
+                <InfoIcon size={13} />
+              </span>
             </label>
-            <div className="hybrid-rag-badge">
-              <InfoIcon size={14} />
-              <span>Hybrid RAG Mode</span>
+
+            <div className="hybrid-rag-control">
+              <span className="info-circle" title="Combines dense vector retrieval with lexical BM25 matching">
+                <InfoIcon size={13} />
+              </span>
+              <span className="hybrid-rag-label">Hybrid RAG Mode</span>
+              <button
+                type="button"
+                className={`ios-toggle ${hybridRag ? "active" : ""}`}
+                role="switch"
+                aria-checked={hybridRag}
+                onClick={() => setHybridRag(!hybridRag)}
+                title="Toggle Hybrid RAG Mode"
+              >
+                <span className="ios-toggle-knob" />
+              </button>
             </div>
           </div>
 
-          <div className="input-pill-container">
+          <div className="composer-bar-container">
+            <button
+              type="button"
+              className="composer-attach-btn"
+              title="Attach document or note"
+              aria-label="Attach source"
+              onClick={() => onNavigate("sources")}
+            >
+              <PaperclipIcon size={18} />
+            </button>
             <input
               type="text"
               className="chat-pill-input"
-              placeholder="Ask about compatibility, pricing, requirements…"
+              placeholder="Compare SLA specifications against Huawei Cloud benchmarks"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               disabled={loading}
             />
             <button
               type="submit"
-              className="chat-send-btn"
+              className="composer-send-btn"
               disabled={loading || !question.trim()}
             >
               <span>Send</span>
@@ -518,26 +597,24 @@ export function GroundedChat({
           </div>
 
           <div className="suggested-actions-row">
-            <span className="suggested-kicker">&gt; Suggested actions:</span>
+            <span className="suggested-kicker">Suggested actions:</span>
             <button
               type="button"
-              className="suggested-action-item"
-              onClick={() => setQuestion("Generate PDF executive summary across all sources")}
+              className="suggested-action-pill"
+              onClick={() => setQuestion("Generate PDF summary across all sources")}
             >
               Generate PDF summary
             </button>
-            <span className="suggested-bullet">&bull;</span>
             <button
               type="button"
-              className="suggested-action-item"
+              className="suggested-action-pill"
               onClick={() => setQuestion("Draft proposal comparing SLA and commercial terms")}
             >
               Draft proposal
             </button>
-            <span className="suggested-bullet">&bull;</span>
             <button
               type="button"
-              className="suggested-action-item"
+              className="suggested-action-pill"
               onClick={() => setQuestion("Inspect latency across vector search")}
             >
               Inspect latency
@@ -549,10 +626,14 @@ export function GroundedChat({
       {/* ── Right Column: Citation Live Inspector & Saved Outputs ──────── */}
       <aside className="ask-side">
         {/* Citation Live Inspector */}
-        <div className="side-section">
+        <div className="side-section citation-section">
           <div className="side-section-header">
             <span className="side-title">CITATION</span>
-            <span className="side-meta-mono">Live Inspector</span>
+            <div className="live-inspector-badge">
+              <span className="live-inspector-dot" />
+              <span className="live-inspector-text">Live Inspector</span>
+              <ChevronDownIcon size={12} className="live-inspector-chevron" />
+            </div>
           </div>
 
           {selectedCitation ? (
@@ -579,7 +660,7 @@ export function GroundedChat({
           ) : (
             <div className="citation-inspector-empty">
               <div className="citation-icon-squircle">
-                <BookOpenIcon size={20} />
+                <FileTextIcon size={22} />
               </div>
               <p className="citation-empty-text">Citations you open will show here.</p>
               <button
@@ -618,7 +699,7 @@ export function GroundedChat({
         <div className="side-section saved-outputs-section">
           <div className="side-section-header">
             <span className="side-title">SAVED OUTPUTS</span>
-            <span className="saved-count-pill">{Math.max(3, savedNotes.length)} items</span>
+            <span className="saved-count-pill">{Math.max(4, savedNotes.length)} items</span>
           </div>
 
           <div className="saved-outputs-list">
@@ -628,11 +709,16 @@ export function GroundedChat({
                 <span className="saved-card-date">Oct 24</span>
               </div>
               <p className="saved-card-snippet">
-                Acoustic matrix, peripheral certifications,...
+                Acoustic materials, peripheral certifications, ...
               </p>
-              <div className="saved-card-tags">
-                <span className="saved-tag tag-lavender">Hardware</span>
-                <span className="saved-tag tag-mint">Verified</span>
+              <div className="saved-card-footer">
+                <div className="saved-card-tags">
+                  <span className="saved-tag tag-lavender">Hardware</span>
+                  <span className="saved-tag tag-mint">Verified</span>
+                </div>
+                <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
+                  <MoreVerticalIcon size={14} />
+                </button>
               </div>
             </div>
 
@@ -642,30 +728,59 @@ export function GroundedChat({
                 <span className="saved-card-date">Oct 22</span>
               </div>
               <p className="saved-card-snippet">
-                Service mesh mapping, compute engine ti...
+                Service mesh mapping, compute engine sc...
               </p>
-              <div className="saved-card-tags">
-                <span className="saved-tag tag-purple">Infrastructure</span>
-                <span className="saved-tag tag-slate">Cloud</span>
+              <div className="saved-card-footer">
+                <div className="saved-card-tags">
+                  <span className="saved-tag tag-lavender">Infrastructure</span>
+                  <span className="saved-tag tag-blue">Cloud</span>
+                </div>
+                <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
+                  <MoreVerticalIcon size={14} />
+                </button>
               </div>
             </div>
 
             <div className="saved-output-card">
               <div className="saved-card-header">
-                <span className="saved-card-title">Huawei Cloud Data Ingestion 1</span>
+                <span className="saved-card-title">Huawei Cloud Data Ingestion</span>
                 <span className="saved-card-date">Oct 19</span>
               </div>
               <p className="saved-card-snippet">
                 Kafka pipelines, real-time ingestion...
               </p>
-              <div className="saved-card-tags">
-                <span className="saved-tag tag-cyan">Pipeline</span>
-                <span className="saved-tag tag-slate">ETL</span>
+              <div className="saved-card-footer">
+                <div className="saved-card-tags">
+                  <span className="saved-tag tag-blue">Pipeline</span>
+                  <span className="saved-tag tag-blue">ETL</span>
+                </div>
+                <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
+                  <MoreVerticalIcon size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div className="saved-output-card">
+              <div className="saved-card-header">
+                <span className="saved-card-title">HNSW Accuracy Benchmark</span>
+                <span className="saved-card-date">Sep 24</span>
+              </div>
+              <p className="saved-card-snippet">
+                Recall@10 achieved 99.4% on 1M document test set...
+              </p>
+              <div className="saved-card-footer">
+                <div className="saved-card-tags">
+                  <span className="saved-tag tag-mint">Verified</span>
+                  <span className="saved-tag tag-blue">Synthesis</span>
+                </div>
+                <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
+                  <MoreVerticalIcon size={14} />
+                </button>
               </div>
             </div>
 
             {/* Custom user notes rendered seamlessly */}
-            {savedNotes.filter(n => !["Addasound", "compatible services on huawei cloud", "Huawei Cloud Data Ingestion 1"].includes(n.title)).map((note) => (
+            {savedNotes.filter(n => !["Addasound", "compatible services on huawei cloud", "Huawei Cloud Data Ingestion", "HNSW Accuracy Benchmark"].includes(n.title)).map((note) => (
               <div key={note.id} className="saved-output-card">
                 <div className="saved-card-header">
                   <span className="saved-card-title">{note.title}</span>
@@ -676,40 +791,19 @@ export function GroundedChat({
                 <p className="saved-card-snippet">
                   {note.body ? note.body.replace(/[#*\[\]_`-]/g, "").slice(0, 52) + "..." : "Synthesis output"}
                 </p>
-                <div className="saved-card-tags">
-                  <span className="saved-tag tag-lavender">Verified</span>
-                  <span className="saved-tag tag-slate">Synthesis</span>
+                <div className="saved-card-footer">
+                  <div className="saved-card-tags">
+                    <span className="saved-tag tag-mint">Verified</span>
+                    <span className="saved-tag tag-blue">Synthesis</span>
+                  </div>
+                  <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
+                    <MoreVerticalIcon size={14} />
+                  </button>
                 </div>
               </div>
             ))}
           </div>
         </div>
-
-        {/* Bottom Export Synthesis Pack Button */}
-        <button
-          type="button"
-          className="export-synthesis-btn"
-          onClick={() => {
-            const pack = [
-              "# Field Desk — Synthesis Pack",
-              "Generated: " + new Date().toISOString(),
-              `Tenant Status: Catalog Grounded (Multi-source active)`,
-              `Vector Sources: ${sourceCount || 50} indexed`,
-              "\n## Grounded Intelligence Brief",
-              "Extracted capabilities, SLA benchmarks, and compatibility requirements."
-            ].join("\n");
-            const blob = new Blob([pack], { type: "text/markdown;charset=utf-8;" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `synthesis_pack_${new Date().toISOString().slice(0, 10)}.md`;
-            a.click();
-            URL.revokeObjectURL(url);
-          }}
-        >
-          <PlusIcon size={15} />
-          <span>Export Synthesis Pack</span>
-        </button>
       </aside>
     </div>
   );

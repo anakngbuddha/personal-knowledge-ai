@@ -15,22 +15,77 @@ export function LogoMark({ size = 28, className, ...props }: IconProps) {
       className={className}
       {...props}
     >
-      <rect x="1" y="1" width="30" height="30" rx="9" fill="transparent" stroke="#3b82f6" strokeWidth="1.75" />
-      {/* Isometric 3D Cube */}
-      <path
-        d="M16 6.5L23.5 10.8V19.5L16 23.8L8.5 19.5V10.8L16 6.5Z"
-        stroke="#3b82f6"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M16 15.2V23.8M16 15.2L23.5 10.8M16 15.2L8.5 10.8"
-        stroke="#3b82f6"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <rect width="32" height="32" rx="8" fill="url(#brand-grad)" />
+      <circle cx="16" cy="16" r="7.5" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="16" cy="16" r="3" fill="#FFFFFF" />
+      <circle cx="21" cy="11" r="1.5" fill="#FFFFFF" />
+      <defs>
+        <linearGradient id="brand-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#3B82F6" />
+          <stop offset="1" stopColor="#1D4ED8" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+export function BellIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  );
+}
+
+export function PaperclipIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
+export function SlidersIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <line x1="4" y1="21" x2="4" y2="14" />
+      <line x1="4" y1="10" x2="4" y2="3" />
+      <line x1="12" y1="21" x2="12" y2="12" />
+      <line x1="12" y1="8" x2="12" y2="3" />
+      <line x1="20" y1="21" x2="20" y2="16" />
+      <line x1="20" y1="12" x2="20" y2="3" />
+      <line x1="1" y1="14" x2="7" y2="14" />
+      <line x1="9" y1="8" x2="15" y2="8" />
+      <line x1="17" y1="16" x2="23" y2="16" />
+    </svg>
+  );
+}
+
+export function ArrowRightIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <line x1="5" y1="12" x2="19" y2="12" />
+      <polyline points="12 5 19 12 12 19" />
+    </svg>
+  );
+}
+
+export function MoreVerticalIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="1.5" />
+      <circle cx="12" cy="5" r="1.5" />
+      <circle cx="12" cy="19" r="1.5" />
+    </svg>
+  );
+}
+
+export function ChevronsLeftIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polyline points="11 17 6 12 11 7" />
+      <polyline points="18 17 13 12 18 7" />
     </svg>
   );
 }
