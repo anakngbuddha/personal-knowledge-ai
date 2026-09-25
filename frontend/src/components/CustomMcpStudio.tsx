@@ -22,6 +22,7 @@ export function CustomMcpStudio() {
 
   // Active view tab
   const [activeTab, setActiveTab] = useState<"claude" | "cursor" | "console" | "manifest">("claude");
+  const [claudeMode, setClaudeMode] = useState<"python_remote" | "npx_remote" | "local_script">("python_remote");
 
   // Console testing state
   const [selectedToolName, setSelectedToolName] = useState<string>("search_knowledge");
@@ -350,75 +351,188 @@ export function CustomMcpStudio() {
       )}
 
       {/* ── Tab 1: Claude Desktop Setup ────────────────────────────────── */}
-      {activeTab === "claude" && config && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "20px" }}>
-          <div style={{ background: "var(--card-bg, #ffffff)", borderRadius: "12px", border: "1px solid var(--border-color, #e2e8f0)", padding: "20px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-              <div>
-                <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: 700 }}>Claude Desktop Configuration</h3>
-                <p style={{ margin: 0, fontSize: "13px", color: "var(--text-muted, #64748b)" }}>
-                  Add this block to your Claude Desktop configuration file to connect Claude directly to this website.
-                </p>
+      {/* ── Tab 1: Claude Desktop Setup ────────────────────────────────── */}
+      {activeTab === "claude" && config && (() => {
+        const activeSnippet =
+          claudeMode === "npx_remote"
+            ? (config.remote_npx_config || config.claude_desktop_config)
+            : claudeMode === "local_script"
+            ? {
+                mcpServers: {
+                  [config.server_name || "personal-knowledge-ai"]: {
+                    command: "python",
+                    args: ["mcp_server.py"],
+                    env: {
+                      PERSONAL_KNOWLEDGE_API_URL: config.api_url,
+                      PERSONAL_KNOWLEDGE_API_KEY: ((config.remote_python_config as any)?.mcpServers?.[config.server_name]?.env?.PERSONAL_KNOWLEDGE_API_KEY) || "YOUR_TOKEN",
+                    },
+                  },
+                },
+              }
+            : (config.remote_python_config || config.claude_desktop_config);
+
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "20px" }}>
+            <div style={{ background: "var(--card-bg, #ffffff)", borderRadius: "12px", border: "1px solid var(--border-color, #e2e8f0)", padding: "20px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
+                <div>
+                  <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: 700 }}>Claude Desktop Configuration</h3>
+                  <p style={{ margin: 0, fontSize: "13px", color: "var(--text-muted, #64748b)" }}>
+                    Connect Claude Desktop to your online knowledge base. Select your preferred connection method:
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <a
+                    href={`${config.api_url || ""}/api/mcp/custom-server/script`}
+                    download="mcp_server.py"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      background: "rgba(99, 102, 241, 0.1)",
+                      color: "#4f46e5",
+                      border: "1px solid rgba(99, 102, 241, 0.2)",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                      fontSize: "13px",
+                      textDecoration: "none",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    <span>Download mcp_server.py</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(JSON.stringify(activeSnippet, null, 2), "claude_config")}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      background: copiedKey === "claude_config" ? "#10b981" : "var(--accent-color, #4f46e5)",
+                      color: "#fff",
+                      border: "none",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                      fontSize: "13px",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    {copiedKey === "claude_config" ? <CheckIcon size={14} /> : <ZapIcon size={14} />}
+                    <span>{copiedKey === "claude_config" ? "Copied!" : "Copy Configuration"}</span>
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => copyToClipboard(JSON.stringify(config.claude_desktop_config, null, 2), "claude_config")}
+
+              {/* Mode Selector */}
+              <div style={{ display: "flex", gap: "8px", marginBottom: "14px", background: "rgba(0,0,0,0.03)", padding: "4px", borderRadius: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => setClaudeMode("python_remote")}
+                  style={{
+                    flex: 1,
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    background: claudeMode === "python_remote" ? "#fff" : "transparent",
+                    color: claudeMode === "python_remote" ? "#4f46e5" : "#64748b",
+                    boxShadow: claudeMode === "python_remote" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                  }}
+                >
+                  ⚡ Python Remote (Zero Download - Recommended)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClaudeMode("npx_remote")}
+                  style={{
+                    flex: 1,
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    background: claudeMode === "npx_remote" ? "#fff" : "transparent",
+                    color: claudeMode === "npx_remote" ? "#4f46e5" : "#64748b",
+                    boxShadow: claudeMode === "npx_remote" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                  }}
+                >
+                  🌐 NPX / SSE (Zero Download)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClaudeMode("local_script")}
+                  style={{
+                    flex: 1,
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    background: claudeMode === "local_script" ? "#fff" : "transparent",
+                    color: claudeMode === "local_script" ? "#4f46e5" : "#64748b",
+                    boxShadow: claudeMode === "local_script" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                  }}
+                >
+                  📁 Local File (Downloaded Script)
+                </button>
+              </div>
+
+              <pre
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "8px 14px",
+                  background: "#0f172a",
+                  color: "#e2e8f0",
+                  padding: "16px",
                   borderRadius: "8px",
-                  background: copiedKey === "claude_config" ? "#10b981" : "var(--accent-color, #4f46e5)",
-                  color: "#fff",
-                  border: "none",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "13px",
-                  transition: "all 0.2s ease",
+                  fontSize: "12px",
+                  fontFamily: "var(--font-mono, monospace)",
+                  overflowX: "auto",
+                  border: "1px solid #1e293b",
+                  margin: "0 0 16px 0",
                 }}
               >
-                {copiedKey === "claude_config" ? <CheckIcon size={14} /> : <ZapIcon size={14} />}
-                <span>{copiedKey === "claude_config" ? "Copied to Clipboard!" : "Copy Configuration"}</span>
-              </button>
-            </div>
+                {JSON.stringify(activeSnippet, null, 2)}
+              </pre>
 
-            <pre
-              style={{
-                background: "#0f172a",
-                color: "#e2e8f0",
-                padding: "16px",
-                borderRadius: "8px",
-                fontSize: "12px",
-                fontFamily: "var(--font-mono, monospace)",
-                overflowX: "auto",
-                border: "1px solid #1e293b",
-                margin: "0 0 16px 0",
-              }}
-            >
-              {JSON.stringify(config.claude_desktop_config, null, 2)}
-            </pre>
-
-            <div style={{ background: "rgba(99, 102, 241, 0.05)", border: "1px solid rgba(99, 102, 241, 0.2)", borderRadius: "8px", padding: "14px", fontSize: "13px", color: "var(--text-color, #1e293b)" }}>
-              <div style={{ fontWeight: 600, marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px", color: "#4f46e5" }}>
-                <InfoIcon size={15} /> How to activate in Claude Desktop:
+              <div style={{ background: "rgba(99, 102, 241, 0.05)", border: "1px solid rgba(99, 102, 241, 0.2)", borderRadius: "8px", padding: "14px", fontSize: "13px", color: "var(--text-color, #1e293b)" }}>
+                <div style={{ fontWeight: 600, marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px", color: "#4f46e5" }}>
+                  <InfoIcon size={15} /> How to connect Claude Desktop:
+                </div>
+                <ol style={{ margin: "0 0 0 18px", padding: 0, lineHeight: 1.6 }}>
+                  <li>
+                    Open your Claude Desktop configuration file:
+                    <div style={{ margin: "4px 0", fontFamily: "monospace", fontSize: "12px", background: "rgba(0,0,0,0.04)", padding: "4px 8px", borderRadius: "4px" }}>
+                      Windows: %APPDATA%\Claude\claude_desktop_config.json<br />
+                      macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+                    </div>
+                  </li>
+                  <li>
+                    {claudeMode === "python_remote" && (
+                      <span><strong>No file download needed!</strong> Claude will run Python and load the bridge in memory straight from your deployed server.</span>
+                    )}
+                    {claudeMode === "npx_remote" && (
+                      <span><strong>No file download needed!</strong> Uses <code>npx</code> to stream requests over SSE directly to your server.</span>
+                    )}
+                    {claudeMode === "local_script" && (
+                      <span>Download <code>mcp_server.py</code> above, place it in your chosen folder, and update the <code>args</code> path to its location.</span>
+                    )}
+                  </li>
+                  <li>Paste the configuration snippet into the <code>mcpServers</code> section of the JSON file.</li>
+                  <li>Completely restart Claude Desktop (exit from system tray).</li>
+                  <li>Claude will now display the tools hammer with read and write capabilities!</li>
+                </ol>
               </div>
-              <ol style={{ margin: "0 0 0 18px", padding: 0, lineHeight: 1.6 }}>
-                <li>
-                  Open your Claude Desktop config file:
-                  <div style={{ margin: "4px 0", fontFamily: "monospace", fontSize: "12px", background: "rgba(0,0,0,0.04)", padding: "4px 8px", borderRadius: "4px" }}>
-                    Windows: %APPDATA%\Claude\claude_desktop_config.json<br />
-                    macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
-                  </div>
-                </li>
-                <li>Paste the JSON snippet inside your configuration file.</li>
-                <li>Completely restart Claude Desktop (exit from system tray).</li>
-                <li>Claude will now show the hammer icon with all 13 Read and Write tools!</li>
-              </ol>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Tab 2: Cursor / IDE Setup ──────────────────────────────────── */}
       {activeTab === "cursor" && config && (

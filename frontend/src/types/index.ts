@@ -572,7 +572,11 @@ export interface McpServerConfig {
   server_name: string;
   server_script_path: string;
   api_url: string;
+  script_url?: string;
+  sse_url?: string;
   claude_desktop_config: Record<string, unknown>;
+  remote_python_config?: Record<string, unknown>;
+  remote_npx_config?: Record<string, unknown>;
   cursor_config: Record<string, unknown>;
   instructions: Record<string, string>;
 }
