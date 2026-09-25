@@ -1,7 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="8" fill="#0071e3"/>
-  <circle cx="11" cy="16" r="3" fill="#fff"/>
-  <circle cx="21" cy="11" r="3" fill="#fff"/>
-  <circle cx="21" cy="21" r="3" fill="#fff"/>
-  <path d="M14 16h4M18 13.2 14.8 15M18 18.8 14.8 17" stroke="#fff" stroke-width="1.4" fill="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <radialGradient id="ocean-bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0a182e" />
+      <stop offset="100%" stop-color="#040711" />
+    </radialGradient>
+    <linearGradient id="wing-grad" x1="12" y1="18" x2="52" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="inner-glow" x1="20" y1="20" x2="44" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#93c5fd" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.3" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Deep Ocean App Tile -->
+  <rect width="64" height="64" rx="16" fill="url(#ocean-bg)" stroke="#1e3a8a" stroke-width="1.5" />
+
+  <!-- Orbital Rings -->
+  <ellipse cx="32" cy="32" rx="22" ry="14" stroke="#38bdf8" stroke-opacity="0.35" stroke-width="1.2" transform="rotate(-25 32 32)" />
+  <circle cx="16" cy="22" r="2.2" fill="#38bdf8" />
+  <circle cx="48" cy="42" r="2.2" fill="#06b6d4" />
+
+  <!-- Luminous Manta Ray -->
+  <g filter="url(#glow)">
+    <!-- Wings & Body -->
+    <path d="M14 26 C22 22 28 28 32 35 C36 28 42 22 50 26 C46 36 38 43 32 49 C26 43 18 36 14 26 Z" fill="url(#wing-grad)" />
+    <!-- Inner luminous core -->
+    <path d="M22 28 C27 26 30 31 32 35 C34 31 37 26 42 28 C38 34 35 39 32 44 C29 39 26 34 22 28 Z" fill="url(#inner-glow)" />
+    <!-- Curled Tail -->
+    <path d="M32 48 C30 54 23 57 19 53 C16 50 18 45 22 45 C25 45 26 48 24 50" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round" fill="none" />
+  </g>
 </svg>

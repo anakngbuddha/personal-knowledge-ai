@@ -1,6 +1,6 @@
-# User Guide — SE Field Desk
-
-Field Desk helps a salesperson keep product documents, ask questions with clear citations, take notes, and keep a map of what sells with what.
+# User Guide — Deep Atlas
+ 
+Deep Atlas helps enterprise teams organize corporate documents, ask questions with verifiable citations, curate living notes, and explore neural knowledge maps.
 
 **How to start**
 

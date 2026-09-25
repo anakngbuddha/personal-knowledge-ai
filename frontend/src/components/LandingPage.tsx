@@ -11,6 +11,7 @@ import {
   StarIcon,
   ZapIcon,
 } from "./Icons";
+import { SeaBubbles } from "./SeaBubbles";
 
 interface LandingPageProps {
   onLogin: () => void;
@@ -252,13 +253,14 @@ export function LandingPage({ onLogin }: LandingPageProps) {
 
   return (
     <div className="landing-page">
-      {/* ── Ambient Glow Background ──────────────────────────────────── */}
+      {/* ── Ambient Glow Background & Oceanic Bubbles Atmosphere ─────── */}
       <div className="landing-ambient" aria-hidden="true">
         <div className="landing-mesh-grid" />
         <div className="landing-orb landing-orb-1" />
         <div className="landing-orb landing-orb-2" />
         <div className="landing-orb landing-orb-3" />
         <div className="landing-shimmer-sweep" />
+        <SeaBubbles count={26} variant="landing" interactive={true} />
       </div>
 
       {/* ── Glass Navigation ─────────────────────────────────────────── */}
@@ -266,12 +268,12 @@ export function LandingPage({ onLogin }: LandingPageProps) {
         <div className="landing-nav-inner">
           <div className="landing-nav-brand">
             <div className="landing-nav-logo-wrap">
-              <LogoMark size={32} />
+              <LogoMark size={34} />
               <div className="landing-nav-logo-glow" />
             </div>
             <div className="landing-nav-brand-text">
-              <span className="landing-nav-name">Field Desk</span>
-              <span className="landing-nav-tagline">Knowledge Engine</span>
+              <span className="landing-nav-name">Deep Atlas</span>
+              <span className="landing-nav-tagline">Autonomous Knowledge Engine</span>
             </div>
           </div>
 
@@ -301,7 +303,7 @@ export function LandingPage({ onLogin }: LandingPageProps) {
           <div className="landing-hero-badge">
             <span className="landing-badge-pulse" />
             <SparklesIcon size={13} />
-            <span>Enterprise AI Knowledge Platform</span>
+            <span>Deep Atlas — Autonomous Enterprise Intelligence</span>
           </div>
 
           <h1 className="landing-hero-title">
@@ -314,13 +316,13 @@ export function LandingPage({ onLogin }: LandingPageProps) {
           <p className="landing-hero-subtitle">
             Ingest corporate documents, connect live data repositories, and synthesize
             answers rigorously verified against your organization's verified source of truth —
-            powered by HNSW vector graphs and tenant-isolated AI.
+            powered by Deep Atlas HNSW vector graphs and tenant-isolated AI.
           </p>
 
           <div className="landing-hero-cta-row">
             <button type="button" className="landing-btn-hero" onClick={onLogin}>
               <span className="landing-btn-hero-sheen" />
-              <span>Launch Knowledge Engine</span>
+              <span>Launch Deep Atlas</span>
               <ArrowRightIcon size={16} />
             </button>
             <button
@@ -366,11 +368,24 @@ export function LandingPage({ onLogin }: LandingPageProps) {
           <div className="landing-hero-card" ref={heroCardRef}>
             <div className="landing-hero-specular-light" />
 
+            <div className="landing-atlas-hero-preview">
+              <div className="landing-atlas-halo-glow" />
+              <img
+                src="/deep-atlas-hero.png"
+                alt="Deep Atlas Bioluminescent Core"
+                className="landing-atlas-hero-ray"
+              />
+              <div className="landing-atlas-hero-badge-pill">
+                <span className="landing-live-indicator" />
+                <span>DEEP ATLAS NEURAL CORE · ONLINE</span>
+              </div>
+            </div>
+
             <div className="landing-hero-card-header">
               <div className="landing-hero-card-dots">
                 <span /><span /><span />
               </div>
-              <span className="landing-hero-card-label">Field Desk Intelligence · Live Model Graph</span>
+              <span className="landing-hero-card-label">Deep Atlas Intelligence · Live Model Graph</span>
               <div className="landing-hero-header-badge">
                 <span className="landing-live-indicator" />
                 <span>ONLINE</span>
@@ -459,6 +474,57 @@ export function LandingPage({ onLogin }: LandingPageProps) {
                 <span className="landing-marquee-name">{p.name}</span>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Deep Atlas Bioluminescent Architecture Spotlight ─────── */}
+      <section className="landing-atlas-spotlight-section">
+        <div className="landing-atlas-spotlight-inner">
+          <div className="landing-atlas-spotlight-badge">
+            <span className="landing-live-indicator" />
+            <span>Autonomous Knowledge Architecture</span>
+          </div>
+          <h2 className="landing-atlas-spotlight-title">
+            Oceanic Depth. Neural Precision.
+          </h2>
+          <p className="landing-atlas-spotlight-desc">
+            Like a manta ray navigating deep trenches with hydrodynamic grace, Deep Atlas traverses millions of high-dimensional document vectors with effortless 14ms recall and verifiable truth.
+          </p>
+
+          <div className="landing-atlas-spotlight-display">
+            <div className="landing-atlas-ray-frame">
+              <img
+                src="/deep-atlas-hero.png"
+                alt="Deep Atlas Manta Ray Knowledge Engine"
+                className="landing-atlas-ray-art"
+              />
+              <div className="landing-atlas-ray-aura" />
+            </div>
+
+            <div className="landing-atlas-hotspots">
+              <div className="landing-atlas-hotspot landing-hotspot-1">
+                <div className="landing-hotspot-dot" />
+                <div className="landing-hotspot-card">
+                  <h4>Deep Trench Vector Ingestion</h4>
+                  <p>1536-D HNSW indexing across multi-tenant PostgreSQL vector graphs with 14ms recall.</p>
+                </div>
+              </div>
+              <div className="landing-atlas-hotspot landing-hotspot-2">
+                <div className="landing-hotspot-dot" />
+                <div className="landing-hotspot-card">
+                  <h4>Bioluminescent Grounding</h4>
+                  <p>Zero hallucinations. Cryptographic citation hashes anchored to exact source paragraphs.</p>
+                </div>
+              </div>
+              <div className="landing-atlas-hotspot landing-hotspot-3">
+                <div className="landing-hotspot-dot" />
+                <div className="landing-hotspot-card">
+                  <h4>Autonomous Exploration</h4>
+                  <p>Graph theory clustering, semantic backlink networks, and living markdown wikis.</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -620,7 +686,7 @@ export function LandingPage({ onLogin }: LandingPageProps) {
         <div className={`landing-cta-inner ${cta.visible ? "landing-reveal" : ""}`}>
           <div className="landing-cta-orb" aria-hidden="true" />
           <div className="landing-cta-glow-mesh" aria-hidden="true" />
-          <span className="landing-section-badge">Deploy Field Desk</span>
+          <span className="landing-section-badge">Deploy Deep Atlas</span>
           <h2 className="landing-cta-title">Ready to unlock your organization's collective intelligence?</h2>
           <p className="landing-cta-desc">
             Instantly ingest your documents, connect your existing tools, and interact with
@@ -640,12 +706,12 @@ export function LandingPage({ onLogin }: LandingPageProps) {
       <footer className="landing-footer">
         <div className="landing-footer-inner">
           <div className="landing-footer-brand">
-            <LogoMark size={24} />
-            <span>Field Desk</span>
+            <LogoMark size={26} />
+            <span>Deep Atlas</span>
             <span className="landing-footer-pill">v2.4 Enterprise</span>
           </div>
           <span className="landing-footer-copy">
-            © {new Date().getFullYear()} Field Desk AI · High-Precision Enterprise Knowledge Platform
+            © {new Date().getFullYear()} Deep Atlas AI · High-Precision Enterprise Knowledge Platform
           </span>
         </div>
       </footer>

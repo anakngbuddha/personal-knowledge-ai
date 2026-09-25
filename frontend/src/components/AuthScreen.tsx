@@ -102,7 +102,7 @@ export function AuthScreen({
           <div className="brand-emblem" style={{ width: 48, height: 48, margin: "0 auto 8px" }}>
             <LogoMark size={48} />
           </div>
-          <p className="kicker">Field Desk AI</p>
+          <p className="kicker">Deep Atlas AI</p>
           <h1>{mode === "login" ? "Welcome back" : "Create your workspace"}</h1>
           <p className="muted" style={{ margin: 0, fontSize: "13.5px" }}>
             {mode === "login"
@@ -240,7 +240,7 @@ export function AuthScreen({
         {error && <div className="banner error">{error}</div>}
 
         <button className="primary" disabled={busy} style={{ width: "100%", padding: "11px 16px", fontSize: "13.5px" }}>
-          {busy ? "Authenticating…" : mode === "login" ? "Sign in to Field Desk" : "Create Workspace"}
+          {busy ? "Authenticating…" : mode === "login" ? "Sign in to Deep Atlas" : "Create Workspace"}
         </button>
 
         <div

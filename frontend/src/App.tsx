@@ -3,6 +3,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { GraphExplorer } from "./components/GraphExplorer";
 import { GroundedChat } from "./components/GroundedChat";
 import { LandingPage } from "./components/LandingPage";
+import { SeaBubbles } from "./components/SeaBubbles";
 import {
   BellIcon,
   BookOpenIcon,
@@ -120,18 +121,19 @@ export default function App() {
 
   return (
     <div className="app">
+      <SeaBubbles count={14} variant="dashboard" className="app-ambient-bubbles" />
       {/* ── Top Glass Masthead ────────────────────────────────────────── */}
       <header className="masthead">
         <div className="brand">
-          <div className="brand-emblem" title="Field Desk AI">
+          <div className="brand-emblem" title="Deep Atlas AI">
             <LogoMark size={28} />
           </div>
           <div className="brand-info">
             <div className="brand-title-wrap">
-              <span className="brand-name">Field Desk</span>
+              <span className="brand-name">Deep Atlas</span>
               <span className="version-pill">v2.4</span>
             </div>
-            <span className="brand-kicker">KNOWLEDGE ENGINE &bull; ENTERPRISE CORE</span>
+            <span className="brand-kicker">AUTONOMOUS KNOWLEDGE ENGINE &bull; ENTERPRISE CORE</span>
           </div>
         </div>
 
@@ -180,7 +182,7 @@ export default function App() {
             <div className="user-avatar">{userInitials || "S"}</div>
             <div className="user-info">
               <span className="user-name">Enterprise Tenant</span>
-              <span className="user-org">Field Desk – Enterprise</span>
+              <span className="user-org">Deep Atlas – Enterprise</span>
             </div>
             <ChevronDownIcon size={12} className="user-chevron" />
           </div>

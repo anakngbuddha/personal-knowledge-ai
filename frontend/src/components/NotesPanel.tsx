@@ -1009,7 +1009,7 @@ export function NotesPanel() {
           <span>Active Model: <strong className="ribbon-strong">text-embedding-3-large (1536d)</strong></span>
         </div>
         <div className="ribbon-right">
-          <span>Synced with Field Desk Cloud</span>
+          <span>Synced with Deep Atlas Cloud</span>
           <span>•</span>
           <span>Zero Data Retention Active</span>
         </div>

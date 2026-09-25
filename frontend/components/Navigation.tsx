@@ -9,7 +9,7 @@ const Navigation: React.FC<{ sections: NavSection[]; onNavigate: (id: string) =>
 
   return (
     <nav className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col h-screen p-4">
-      <div className="mb-6"><h1 className="text-lg font-bold">NotebookLM</h1><p className="text-xs text-gray-600">Field Desk</p></div>
+      <div className="mb-6"><h1 className="text-lg font-bold">Deep Atlas</h1><p className="text-xs text-gray-600">Autonomous Knowledge Engine</p></div>
       <div className="space-y-2 flex-1 overflow-y-auto">
         {secs.map(sec => (
           <div key={sec.id} className="mb-4">

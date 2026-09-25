@@ -4,28 +4,40 @@ interface IconProps extends React.SVGProps<SVGSVGElement> {
   size?: number;
 }
 
-export function LogoMark({ size = 28, className, ...props }: IconProps) {
+export function LogoMark({ size = 28, className = "", style, ...props }: React.HTMLAttributes<HTMLSpanElement> & { size?: number; [key: string]: any }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 32 32"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
+    <span
+      className={`deep-atlas-logo-mark ${className}`}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+        position: "relative",
+        flexShrink: 0,
+        background: "radial-gradient(circle at 35% 35%, rgba(30, 58, 138, 0.6), rgba(6, 11, 22, 0.95))",
+        boxShadow: "0 0 14px rgba(56, 189, 248, 0.35), inset 0 0 6px rgba(99, 102, 241, 0.3)",
+        border: "1px solid rgba(56, 189, 248, 0.4)",
+        ...style,
+      }}
       {...props}
     >
-      <rect width="32" height="32" rx="8" fill="url(#brand-grad)" />
-      <circle cx="16" cy="16" r="7.5" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="16" cy="16" r="3" fill="#FFFFFF" />
-      <circle cx="21" cy="11" r="1.5" fill="#FFFFFF" />
-      <defs>
-        <linearGradient id="brand-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#3B82F6" />
-          <stop offset="1" stopColor="#1D4ED8" />
-        </linearGradient>
-      </defs>
-    </svg>
+      <img
+        src="/deep-atlas-logo.png"
+        alt="Deep Atlas"
+        width={size}
+        height={size}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "contain",
+          filter: "drop-shadow(0 0 4px rgba(56, 189, 248, 0.5))",
+        }}
+      />
+    </span>
   );
 }
 
