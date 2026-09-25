@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { AuthScreen } from "./components/AuthScreen";
 import { GraphExplorer } from "./components/GraphExplorer";
 import { GroundedChat } from "./components/GroundedChat";
+import { LandingPage } from "./components/LandingPage";
 import {
   BellIcon,
   BookOpenIcon,
@@ -37,6 +38,7 @@ interface TabItem {
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(Boolean(getAccessToken()));
+  const [showAuth, setShowAuth] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ask");
   const { documents, loading, error, refresh, setError } = useDocuments(authenticated);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -85,7 +87,20 @@ export default function App() {
     setAuthenticated(false);
   }
 
-  if (!authenticated) return <AuthScreen onAuthenticated={() => setAuthenticated(true)} />;
+  if (!authenticated) {
+    if (showAuth) {
+      return (
+        <AuthScreen
+          onAuthenticated={() => {
+            setAuthenticated(true);
+            setShowAuth(false);
+          }}
+          onBack={() => setShowAuth(false)}
+        />
+      );
+    }
+    return <LandingPage onLogin={() => setShowAuth(true)} />;
+  }
 
   const tabs: TabItem[] = [
     { id: "ask", name: "Ask Intelligence", icon: StarIcon, badge: "AI" },

@@ -3,7 +3,13 @@ import { LogoMark, ShieldCheckIcon } from "./Icons";
 import { api } from "../services/api";
 import { setAccessToken } from "../services/http";
 
-export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
+export function AuthScreen({
+  onAuthenticated,
+  onBack,
+}: {
+  onAuthenticated: () => void;
+  onBack?: () => void;
+}) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -67,6 +73,31 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
   return (
     <div className="auth-screen">
       <form className="auth-card" onSubmit={submit}>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="auth-back-btn"
+            style={{
+              alignSelf: "flex-start",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "transparent",
+              border: "none",
+              color: "var(--text-muted)",
+              fontSize: "12.5px",
+              fontWeight: 500,
+              cursor: "pointer",
+              padding: "4px 8px",
+              borderRadius: 6,
+              marginBottom: 4,
+              transition: "color 150ms ease, background 150ms ease",
+            }}
+          >
+            ← Back to Overview
+          </button>
+        )}
         <div className="auth-header">
           <div className="brand-emblem" style={{ width: 48, height: 48, margin: "0 auto 8px" }}>
             <LogoMark size={48} />
