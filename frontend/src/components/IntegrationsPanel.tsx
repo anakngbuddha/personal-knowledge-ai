@@ -1,6 +1,72 @@
 import { useEffect, useState } from "react";
 import { api } from "../services/api";
 import type { McpIntegration, McpIntegrationList } from "../types";
+import {
+  ZapIcon,
+  CheckIcon,
+  ExternalLinkIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  InfoIcon,
+  ActivityIcon,
+  NetworkIcon,
+  DatabaseIcon,
+  SparkleSquircleIcon,
+} from "./Icons";
+
+/* ── Per-connector metadata: label, icon, description, color accent ── */
+const CONNECTOR_META: Record<
+  string,
+  {
+    label: string;
+    blurb: string;
+    station: string;
+    accent: string;
+    accentSoft: string;
+    category: string;
+    IconComponent: React.ComponentType<{ size?: number; className?: string }>;
+  }
+> = {
+  brave: {
+    label: "Brave Search",
+    blurb: "Public web and news search powered by Brave. Add your API key to enable live web queries within grounded answers.",
+    station: "02.1",
+    accent: "#f97316",
+    accentSoft: "rgba(249, 115, 22, 0.12)",
+    category: "Search",
+    IconComponent: SearchIcon,
+  },
+  playwright: {
+    label: "Playwright Browser",
+    blurb: "Headless browser for reading vendor documentation and public web pages. Configure an optional host allowlist for security.",
+    station: "02.2",
+    accent: "#06b6d4",
+    accentSoft: "rgba(6, 182, 212, 0.12)",
+    category: "Browser",
+    IconComponent: NetworkIcon,
+  },
+  ms365: {
+    label: "Microsoft 365",
+    blurb: "Read-only access to Outlook mail, calendar events, OneDrive / SharePoint files, Excel workbooks, and contacts via Microsoft Graph.",
+    station: "02.3",
+    accent: "#6366f1",
+    accentSoft: "rgba(99, 102, 241, 0.12)",
+    category: "Productivity",
+    IconComponent: DatabaseIcon,
+  },
+};
+
+function getConnectorMeta(slug: string) {
+  return CONNECTOR_META[slug] ?? {
+    label: slug,
+    blurb: `External connector: ${slug}`,
+    station: "02.x",
+    accent: "#64748b",
+    accentSoft: "rgba(100, 116, 139, 0.12)",
+    category: "Custom",
+    IconComponent: ZapIcon,
+  };
+}
 
 export function IntegrationsPanel() {
   const [data, setData] = useState<McpIntegrationList | null>(null);
@@ -9,6 +75,8 @@ export function IntegrationsPanel() {
   const [secretDraft, setSecretDraft] = useState<Record<string, string>>({});
   const [hostDraft, setHostDraft] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
+  const [expandedSlug, setExpandedSlug] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { status: string; toolCount: number } | null>>({});
 
   async function refresh() {
     try {
@@ -45,7 +113,7 @@ export function IntegrationsPanel() {
       });
       setSecretDraft((prev) => ({ ...prev, [row.server_slug]: "" }));
       await refresh();
-      setMessage(`Saved ${row.server_slug}`);
+      setMessage(`${enabled ? "Enabled" : "Disabled"} ${getConnectorMeta(row.server_slug).label}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -58,122 +126,271 @@ export function IntegrationsPanel() {
     setMessage(null);
     try {
       const result = await api.testMcpIntegration(slug);
-      setMessage(`${slug}: ${result.status} (${result.tools.length} tools)`);
+      setTestResults((prev) => ({ ...prev, [slug]: { status: result.status, toolCount: result.tools.length } }));
+      setMessage(`${getConnectorMeta(slug).label}: ${result.status} — ${result.tools.length} tool${result.tools.length !== 1 ? "s" : ""} available`);
       await refresh();
     } catch (err) {
+      setTestResults((prev) => ({ ...prev, [slug]: null }));
       setError(err instanceof Error ? err.message : "Test failed");
     } finally {
       setSaving(null);
     }
   }
 
-  const labels: Record<string, string> = {
-    brave: "Brave Search",
-    playwright: "Playwright browser",
-    ms365: "Microsoft 365 / Graph",
-  };
-  const blurb: Record<string, string> = {
-    brave: "Public web and news search. Store a Brave Search API key.",
-    playwright: "Headless browser for vendor docs and public forms. Optional host allowlist.",
-    ms365: "Read-only Outlook, calendar, OneDrive/SharePoint, Excel, and contacts.",
-  };
-  const station: Record<string, string> = {
-    brave: "02.1",
-    playwright: "02.2",
-    ms365: "02.3",
-  };
+  const enabledCount = data?.integrations.filter((r) => r.enabled).length ?? 0;
+  const totalCount = data?.integrations.length ?? 0;
 
   return (
-    <div className="integrations-panel">
-      <div className="panel-head">
-        <div>
-          <h2>Connections</h2>
+    <div className="connectors-workspace">
+      {/* ── Hero Header ── */}
+      <header className="connectors-hero">
+        <div className="connectors-hero-left">
+          <div className="connectors-hero-icon-wrap">
+            <ZapIcon size={28} />
+          </div>
+          <div className="connectors-hero-text">
+            <h1 className="connectors-title">Connectors</h1>
+            <p className="connectors-subtitle">
+              External services that extend grounded intelligence with live web search, browser access, and enterprise productivity data.
+            </p>
+          </div>
         </div>
-        <span className={`stamp ${data?.mcp_enabled ? "live" : "cold"}`}>
-          {data?.mcp_enabled ? "Live tools on" : "Live tools off"}
-        </span>
+        <div className="connectors-hero-right">
+          {/* Global MCP status badge */}
+          <div className={`connectors-global-badge ${data?.mcp_enabled ? "live" : "cold"}`}>
+            <span className={`connector-pulse-dot ${data?.mcp_enabled ? "live" : ""}`} />
+            <span>{data?.mcp_enabled ? "Live Tools Active" : "Live Tools Inactive"}</span>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Summary Stats Strip ── */}
+      <div className="connectors-stats-strip">
+        <div className="connectors-stat-cell">
+          <span className="connectors-stat-num">{totalCount}</span>
+          <span className="connectors-stat-label">Total Connectors</span>
+        </div>
+        <div className="connectors-stat-divider" />
+        <div className="connectors-stat-cell">
+          <span className="connectors-stat-num accent">{enabledCount}</span>
+          <span className="connectors-stat-label">Active</span>
+        </div>
+        <div className="connectors-stat-divider" />
+        <div className="connectors-stat-cell">
+          <span className="connectors-stat-num muted">{totalCount - enabledCount}</span>
+          <span className="connectors-stat-label">Disabled</span>
+        </div>
       </div>
-      <p className="integrations-lead">
-        Connect web search, a browser for public pages, and Microsoft 365. Secrets stay on the server
-        and are never shown again. Product answers keep working when these are off.
-      </p>
-      {error && <div className="banner error">{error}</div>}
-      {message && <div className="banner info">{message}</div>}
-      {data && data.integrations.length === 0 && (
-        <div className="empty-desk">
-          <h3>No connections yet.</h3>
-          <p>Ask an administrator to turn on web search, the browser, or mailbox access.</p>
+
+      {/* ── Alerts ── */}
+      {error && (
+        <div className="connectors-alert error" role="alert">
+          <span className="connectors-alert-icon">⚠</span>
+          <span>{error}</span>
+          <button type="button" className="connectors-alert-dismiss" onClick={() => setError(null)}>×</button>
         </div>
       )}
-      <div className="integration-grid">
-        {(data?.integrations || []).map((row) => (
-          <section key={row.server_slug} className="panel integration-card">
-            <div className="panel-head">
-              <div>
-                <span className="playbook-index">{station[row.server_slug] || row.server_slug}</span>
-                <h2>{labels[row.server_slug] || row.server_slug}</h2>
+      {message && (
+        <div className="connectors-alert success" role="status">
+          <CheckIcon size={14} />
+          <span>{message}</span>
+          <button type="button" className="connectors-alert-dismiss" onClick={() => setMessage(null)}>×</button>
+        </div>
+      )}
+
+      {/* ── Empty State ── */}
+      {data && data.integrations.length === 0 && (
+        <div className="connectors-empty">
+          <div className="connectors-empty-icon">
+            <SparkleSquircleIcon size={56} />
+          </div>
+          <h3 className="connectors-empty-title">No Connectors Registered</h3>
+          <p className="connectors-empty-desc">
+            Ask an administrator to configure web search, browser access, or Microsoft 365 integration to extend the intelligence engine.
+          </p>
+        </div>
+      )}
+
+      {/* ── Connector Cards Grid ── */}
+      <div className="connectors-grid">
+        {(data?.integrations || []).map((row, idx) => {
+          const meta = getConnectorMeta(row.server_slug);
+          const isExpanded = expandedSlug === row.server_slug;
+          const isSaving = saving === row.server_slug;
+          const test = testResults[row.server_slug];
+          const IconComponent = meta.IconComponent;
+
+          return (
+            <article
+              key={row.server_slug}
+              className={`connector-card ${row.enabled ? "enabled" : "disabled"} ${isExpanded ? "expanded" : ""}`}
+              style={{ "--card-accent": meta.accent, "--card-accent-soft": meta.accentSoft, "--stagger-index": idx } as React.CSSProperties}
+            >
+              {/* Card Header */}
+              <div className="connector-card-header" onClick={() => setExpandedSlug(isExpanded ? null : row.server_slug)}>
+                <div className="connector-card-icon-squircle" style={{ background: meta.accentSoft, color: meta.accent }}>
+                  <IconComponent size={20} />
+                </div>
+                <div className="connector-card-titles">
+                  <div className="connector-card-name-row">
+                    <h3 className="connector-card-name">{meta.label}</h3>
+                    <span className="connector-card-station">{meta.station}</span>
+                  </div>
+                  <span className="connector-card-category">{meta.category}</span>
+                </div>
+                <div className="connector-card-status-area">
+                  <span className={`connector-status-pill ${row.enabled ? "enabled" : "disabled"}`}>
+                    <span className={`connector-status-dot ${row.enabled ? (row.status === "healthy" || row.status === "ok" ? "healthy" : "warn") : "off"}`} />
+                    {row.enabled ? row.status : "off"}
+                  </span>
+                  <span className={`connector-expand-chevron ${isExpanded ? "open" : ""}`}>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                </div>
               </div>
-              <span className={`stamp ${row.enabled ? "live" : "cold"}`}>
-                {row.enabled ? row.status : "off"}
-              </span>
-            </div>
-            <p className="muted">{blurb[row.server_slug]}</p>
-            {row.last_error && <p className="danger-text">{row.last_error}</p>}
-            <label className="field-label">
-              {row.server_slug === "playwright" ? "Allowed hosts (comma-separated)" : "Secret"}
-            </label>
-            {row.server_slug === "playwright" ? (
-              <input
-                className="chat-input"
-                placeholder="docs.vendor.com, learn.microsoft.com"
-                value={hostDraft[row.server_slug] || ""}
-                onChange={(e) =>
-                  setHostDraft((prev) => ({ ...prev, [row.server_slug]: e.target.value }))
-                }
-              />
-            ) : (
-              <input
-                className="chat-input"
-                type="password"
-                autoComplete="off"
-                placeholder={row.has_secret ? "Stored — paste to rotate" : "Paste secret"}
-                value={secretDraft[row.server_slug] || ""}
-                onChange={(e) =>
-                  setSecretDraft((prev) => ({ ...prev, [row.server_slug]: e.target.value }))
-                }
-              />
-            )}
-            {row.server_slug !== "playwright" && (
-              <>
-                <label className="field-label">Allowed hosts (optional)</label>
-                <input
-                  className="chat-input"
-                  placeholder="optional host allowlist"
-                  value={hostDraft[row.server_slug] || ""}
-                  onChange={(e) =>
-                    setHostDraft((prev) => ({ ...prev, [row.server_slug]: e.target.value }))
-                  }
-                />
-              </>
-            )}
-            <div className="integration-actions">
-              <button
-                className="primary"
-                disabled={saving === row.server_slug}
-                onClick={() => void save(row, true)}
-              >
-                Save &amp; enable
-              </button>
-              <button disabled={saving === row.server_slug} onClick={() => void save(row, false)}>
-                Disable
-              </button>
-              <button disabled={saving === row.server_slug} onClick={() => void ping(row.server_slug)}>
-                Test
-              </button>
-            </div>
-            <p className="muted">Allowlisted tools: {(row.allowed_tools || []).join(", ") || "none"}</p>
-          </section>
-        ))}
+
+              {/* Card Description */}
+              <p className="connector-card-blurb">{meta.blurb}</p>
+
+              {/* Last Error Banner */}
+              {row.last_error && (
+                <div className="connector-error-banner">
+                  <InfoIcon size={13} />
+                  <span>{row.last_error}</span>
+                </div>
+              )}
+
+              {/* Allowed Tools Summary */}
+              {row.allowed_tools && row.allowed_tools.length > 0 && (
+                <div className="connector-tools-row">
+                  <span className="connector-tools-label">Tools:</span>
+                  <div className="connector-tools-chips">
+                    {row.allowed_tools.map((tool) => (
+                      <span key={tool} className="connector-tool-chip">{tool}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Test Result Inline */}
+              {test && (
+                <div className="connector-test-result">
+                  <ActivityIcon size={13} />
+                  <span>{test.status} — {test.toolCount} tool{test.toolCount !== 1 ? "s" : ""}</span>
+                </div>
+              )}
+
+              {/* Expandable Configuration Form */}
+              <div className={`connector-config-panel ${isExpanded ? "open" : ""}`}>
+                <div className="connector-config-inner">
+                  <div className="connector-config-divider" />
+
+                  {/* Secret / Host Configuration */}
+                  {row.server_slug === "playwright" ? (
+                    <div className="connector-field-group">
+                      <label className="connector-field-label">
+                        <NetworkIcon size={13} />
+                        <span>Allowed Hosts</span>
+                      </label>
+                      <input
+                        className="connector-field-input"
+                        placeholder="docs.vendor.com, learn.microsoft.com"
+                        value={hostDraft[row.server_slug] || ""}
+                        onChange={(e) =>
+                          setHostDraft((prev) => ({ ...prev, [row.server_slug]: e.target.value }))
+                        }
+                      />
+                      <span className="connector-field-hint">Comma-separated hostnames the browser is allowed to visit</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="connector-field-group">
+                        <label className="connector-field-label">
+                          <ZapIcon size={13} />
+                          <span>Secret / API Key</span>
+                        </label>
+                        <input
+                          className="connector-field-input"
+                          type="password"
+                          autoComplete="off"
+                          placeholder={row.has_secret ? "Stored securely — paste to rotate" : "Paste your API key or secret"}
+                          value={secretDraft[row.server_slug] || ""}
+                          onChange={(e) =>
+                            setSecretDraft((prev) => ({ ...prev, [row.server_slug]: e.target.value }))
+                          }
+                        />
+                        {row.has_secret && (
+                          <span className="connector-field-hint secure">
+                            <CheckIcon size={11} /> Secret stored — never displayed
+                          </span>
+                        )}
+                      </div>
+                      <div className="connector-field-group">
+                        <label className="connector-field-label">
+                          <NetworkIcon size={13} />
+                          <span>Allowed Hosts (optional)</span>
+                        </label>
+                        <input
+                          className="connector-field-input"
+                          placeholder="Optional host allowlist"
+                          value={hostDraft[row.server_slug] || ""}
+                          onChange={(e) =>
+                            setHostDraft((prev) => ({ ...prev, [row.server_slug]: e.target.value }))
+                          }
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Actions */}
+                  <div className="connector-actions-bar">
+                    <button
+                      type="button"
+                      className="connector-action-btn primary"
+                      disabled={isSaving}
+                      onClick={() => void save(row, true)}
+                    >
+                      {isSaving ? (
+                        <RefreshCwIcon size={13} className="connector-spinner" />
+                      ) : (
+                        <CheckIcon size={13} />
+                      )}
+                      <span>{isSaving ? "Saving…" : "Save & Enable"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="connector-action-btn secondary"
+                      disabled={isSaving}
+                      onClick={() => void save(row, false)}
+                    >
+                      <span>Disable</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="connector-action-btn test"
+                      disabled={isSaving}
+                      onClick={() => void ping(row.server_slug)}
+                      title="Test connection and list available tools"
+                    >
+                      <ActivityIcon size={13} />
+                      <span>Test</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {/* ── Bottom Security Note ── */}
+      <div className="connectors-security-footer">
+        <InfoIcon size={14} />
+        <p>
+          Secrets are encrypted at rest and never returned to the browser. Product answers continue working when connectors are disabled.
+        </p>
       </div>
     </div>
   );
