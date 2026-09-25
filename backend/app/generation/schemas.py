@@ -77,6 +77,8 @@ class AskIn(BaseModel):
     enable_tools: bool = False
     # Knowledge mode: False = expert (sources + general knowledge), True = strict (sources only)
     strict_mode: bool = False
+    # Web search mode: None = auto (search when documents weak), True = force web search, False = disabled
+    web_search: bool | None = None
 
 
 class AskOut(BaseModel):

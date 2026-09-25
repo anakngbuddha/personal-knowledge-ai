@@ -1,4 +1,4 @@
-import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, LinkTargetOut, McpIntegration, McpIntegrationList, McpPingResult, NoteGraphOut, NoteList, NoteRecord, NotebookList, NotebookRecord, NotebookSource, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, StudioResult, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
+import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, LinkTargetOut, McpExecuteResult, McpIntegration, McpIntegrationList, McpPingResult, McpServerConfig, McpServerStatus, NoteGraphOut, NoteList, NoteRecord, NotebookList, NotebookRecord, NotebookSource, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, StudioResult, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
 import { fetchResponse, request, requestBlob } from "./http";
 
 export const api = {
@@ -51,7 +51,7 @@ export const api = {
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({query, mode:options?.mode??"hybrid", top_k:options?.top_k??8, filters:options?.filters?? {}})
     }),
-  ask: (payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean}) =>
+  ask: (payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean; web_search?:boolean}) =>
     request<AskResponse>("/ask", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
@@ -64,7 +64,7 @@ export const api = {
       body: JSON.stringify(body)
     }),
   askStream: async (
-    payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean},
+    payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean; web_search?:boolean},
     onDelta: (text: string) => void,
     onStatus?: (status: string) => void
   ): Promise<Partial<AskResponse>> => {
@@ -273,4 +273,18 @@ export const api = {
         }
       >;
     }>("/health/dependencies"),
+  getCustomMcpStatus: () => request<McpServerStatus>("/api/mcp/custom-server/status"),
+  getCustomMcpConfig: () => request<McpServerConfig>("/api/mcp/custom-server/config"),
+  generateMcpToken: (role?: string, expires_minutes?: number) =>
+    request<{ token: string; server_name: string; expires_minutes: number }>("/api/mcp/custom-server/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: role ?? "solutions_engineer", expires_minutes: expires_minutes ?? 43200 }),
+    }),
+  executeMcpTool: (name: string, args: Record<string, unknown>) =>
+    request<McpExecuteResult>("/api/mcp/custom-server/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, arguments: args }),
+    }),
 };

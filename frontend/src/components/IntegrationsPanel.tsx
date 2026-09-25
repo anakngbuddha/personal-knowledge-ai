@@ -13,6 +13,7 @@ import {
   DatabaseIcon,
   SparkleSquircleIcon,
 } from "./Icons";
+import { CustomMcpStudio } from "./CustomMcpStudio";
 
 /* ── Per-connector metadata: label, icon, description, color accent ── */
 const CONNECTOR_META: Record<
@@ -77,6 +78,7 @@ export function IntegrationsPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [expandedSlug, setExpandedSlug] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { status: string; toolCount: number } | null>>({});
+  const [subTab, setSubTab] = useState<"connectors" | "custom_server">("connectors");
 
   async function refresh() {
     try {
@@ -142,8 +144,65 @@ export function IntegrationsPanel() {
 
   return (
     <div className="connectors-workspace">
-      {/* ── Hero Header ── */}
-      <header className="connectors-hero">
+      {/* ── Top Level Navigation Switcher ── */}
+      <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+        <button
+          type="button"
+          onClick={() => setSubTab("connectors")}
+          style={{
+            padding: "10px 20px",
+            borderRadius: "10px",
+            border: subTab === "connectors" ? "1.5px solid var(--accent-color, #4f46e5)" : "1px solid var(--border-color, #e2e8f0)",
+            background: subTab === "connectors" ? "rgba(99, 102, 241, 0.1)" : "var(--card-bg, #fff)",
+            color: subTab === "connectors" ? "var(--accent-color, #4f46e5)" : "var(--text-muted, #64748b)",
+            fontWeight: 700,
+            fontSize: "13px",
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+          }}
+        >
+          External Connectors
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubTab("custom_server")}
+          style={{
+            padding: "10px 20px",
+            borderRadius: "10px",
+            border: subTab === "custom_server" ? "1.5px solid var(--accent-color, #4f46e5)" : "1px solid var(--border-color, #e2e8f0)",
+            background: subTab === "custom_server" ? "rgba(99, 102, 241, 0.1)" : "var(--card-bg, #fff)",
+            color: subTab === "custom_server" ? "var(--accent-color, #4f46e5)" : "var(--text-muted, #64748b)",
+            fontWeight: 700,
+            fontSize: "13px",
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            transition: "all 0.15s ease",
+          }}
+        >
+          <span>Custom MCP Server</span>
+          <span
+            style={{
+              fontSize: "10px",
+              padding: "2px 6px",
+              borderRadius: "4px",
+              background: "#10b981",
+              color: "#fff",
+              fontWeight: 700,
+            }}
+          >
+            Claude Desktop &bull; Read/Write
+          </span>
+        </button>
+      </div>
+
+      {subTab === "custom_server" ? (
+        <CustomMcpStudio />
+      ) : (
+        <>
+          {/* ── Hero Header ── */}
+          <header className="connectors-hero">
         <div className="connectors-hero-left">
           <div className="connectors-hero-icon-wrap">
             <ZapIcon size={28} />
@@ -392,6 +451,8 @@ export function IntegrationsPanel() {
           Secrets are encrypted at rest and never returned to the browser. Product answers continue working when connectors are disabled.
         </p>
       </div>
+        </>
+      )}
     </div>
   );
 }

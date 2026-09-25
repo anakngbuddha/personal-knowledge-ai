@@ -353,18 +353,18 @@ export function LandingPage({ onLogin }: LandingPageProps) {
 
         {/* Hero visual — 3D Tilt Glass Card with Live Query Simulation */}
         <div className="landing-hero-visual">
+          {/* Satellite Floating Accents */}
+          <div className="landing-hero-satellite landing-satellite-top">
+            <span className="landing-satellite-dot" />
+            <span>✦ HNSW Ingest: 1.2M vectors/sec</span>
+          </div>
+          <div className="landing-hero-satellite landing-satellite-bottom">
+            <span className="landing-satellite-pulse" />
+            <span>Verified Citation Precision: 99.8%</span>
+          </div>
+
           <div className="landing-hero-card" ref={heroCardRef}>
             <div className="landing-hero-specular-light" />
-            
-            {/* Satellite Floating Accents */}
-            <div className="landing-hero-satellite landing-satellite-top">
-              <span className="landing-satellite-dot" />
-              <span>✦ HNSW Ingest: 1.2M vectors/sec</span>
-            </div>
-            <div className="landing-hero-satellite landing-satellite-bottom">
-              <span className="landing-satellite-pulse" />
-              <span>Verified Citation Precision: 99.8%</span>
-            </div>
 
             <div className="landing-hero-card-header">
               <div className="landing-hero-card-dots">

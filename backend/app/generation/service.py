@@ -301,9 +301,15 @@ def _prepare_context(
     )
 
 
-def _attach_web(prepared: PreparedContext) -> PreparedContext:
-    """Fetch web passages and append them as fenced, labeled sources."""
-    if not prepared.needs_web:
+def _attach_web(prepared: PreparedContext, web_search: bool | None = None) -> PreparedContext:
+    """Fetch web passages and append them as fenced, labeled sources.
+
+    If web_search is False, web search is disabled.
+    If web_search is True, web search is forced.
+    If web_search is None (default), web search runs automatically when context needs web.
+    """
+    should_search = (web_search is True) or (web_search is None and prepared.needs_web)
+    if not should_search:
         return prepared
     fallback = gather_web_fallback(prepared.search_query)
     prepared.web_note = fallback.note
@@ -364,6 +370,7 @@ def ask(
     strict_mode: bool = False,
     persist: bool = True,
     notebook_id: uuid.UUID | None = None,
+    web_search: bool | None = None,
 ) -> GroundedAnswer:
     """Generate a grounded answer (synchronous).
 
@@ -415,7 +422,8 @@ def ask(
             exclude_document_ids,
             history,
             workspace_id=workspace_id,
-        )
+        ),
+        web_search=web_search,
     )
     context_chunks = prepared.chunks
     all_sources = prepared.sources
@@ -513,6 +521,7 @@ def ask_stream(
     enable_tools: bool = True,
     strict_mode: bool = False,
     notebook_id: uuid.UUID | None = None,
+    web_search: bool | None = None,
 ) -> Iterator[GroundedAnswerChunk]:
     """Generate a grounded answer with streaming.
 
@@ -531,6 +540,7 @@ def ask_stream(
             strict_mode=strict_mode,
             persist=False,
             notebook_id=notebook_id,
+            web_search=web_search,
         )
         words = (answer.text or "").split()
         for i, word in enumerate(words):
@@ -606,9 +616,10 @@ def ask_stream(
         history,
         workspace_id=workspace_id,
     )
-    if prepared.needs_web:
+    should_search = (web_search is True) or (web_search is None and prepared.needs_web)
+    if should_search:
         yield GroundedAnswerChunk(delta="", status="searching the web")
-        prepared = _attach_web(prepared)
+        prepared = _attach_web(prepared, web_search=web_search)
     context_chunks = prepared.chunks
     all_sources = prepared.sources
     relationships_block = prepared.relationships_block

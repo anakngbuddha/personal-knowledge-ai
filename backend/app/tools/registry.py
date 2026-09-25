@@ -64,6 +64,13 @@ class AdvisorRecommendArgs(BaseModel):
     requirements: str = Field(min_length=1, max_length=50_000)
 
 
+class WebSearchArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=500)
+    max_results: int = Field(default=5, ge=1, le=10)
+
+
 @dataclass(frozen=True)
 class RegisteredTool:
     name: str
@@ -115,6 +122,23 @@ def _advisor_recommend(ctx: ToolContext, args: BaseModel) -> dict[str, Any]:
 
     assert isinstance(args, AdvisorRecommendArgs)
     return advisor_recommend_tool(ctx, args.requirements)
+
+
+def _web_search(ctx: ToolContext, args: BaseModel) -> dict[str, Any]:
+    from app.retrieval.web import gather_web_fallback
+
+    assert isinstance(args, WebSearchArgs)
+    fallback = gather_web_fallback(args.query)
+    passages = [
+        {"title": p.title, "url": p.url, "snippet": p.text[:500]}
+        for p in fallback.passages[:args.max_results]
+    ]
+    return {
+        "query": args.query,
+        "results_count": len(passages),
+        "passages": passages,
+        "note": fallback.note,
+    }
 
 
 _TOOLS: dict[str, RegisteredTool] = {
@@ -169,6 +193,15 @@ _TOOLS: dict[str, RegisteredTool] = {
         ),
         args_model=AdvisorRecommendArgs,
         handler=_advisor_recommend,
+    ),
+    "tool_web_search": RegisteredTool(
+        name="tool_web_search",
+        description=(
+            "Search the live web for external information, documentation, news, or technical specs. "
+            "Use when user query is not answered by internal documents, or requires current web knowledge."
+        ),
+        args_model=WebSearchArgs,
+        handler=_web_search,
     ),
 }
 

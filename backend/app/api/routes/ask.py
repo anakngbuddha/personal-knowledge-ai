@@ -142,6 +142,7 @@ def ask_endpoint(
             enable_tools=payload.enable_tools,
             strict_mode=payload.strict_mode,
             notebook_id=notebook_id,
+            web_search=payload.web_search,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -249,6 +250,7 @@ def _stream_response(
                 enable_tools=payload.enable_tools,
                 strict_mode=payload.strict_mode,
                 notebook_id=notebook_id,
+                web_search=payload.web_search,
             ):
                 event_data = {
                     "delta": chunk.delta,
@@ -423,6 +425,7 @@ def ask_in_conversation_endpoint(
             enable_tools=payload.enable_tools,
             strict_mode=payload.strict_mode,
             notebook_id=notebook_uuid,
+            web_search=payload.web_search,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc

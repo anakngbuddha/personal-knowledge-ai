@@ -546,3 +546,41 @@ export interface LinkTargetOut {
   title: string;
 }
 
+export interface CustomMcpTool {
+  name: string;
+  description: string;
+  category: "read" | "write";
+  inputSchema: {
+    type: string;
+    properties: Record<string, { type: string; description: string; default?: unknown }>;
+    required?: string[];
+  };
+}
+
+export interface McpServerStatus {
+  status: string;
+  server_name: string;
+  version: string;
+  protocol_version: string;
+  tools_count: number;
+  read_tools_count: number;
+  write_tools_count: number;
+  tools: CustomMcpTool[];
+}
+
+export interface McpServerConfig {
+  server_name: string;
+  server_script_path: string;
+  api_url: string;
+  claude_desktop_config: Record<string, unknown>;
+  cursor_config: Record<string, unknown>;
+  instructions: Record<string, string>;
+}
+
+export interface McpExecuteResult {
+  tool: string;
+  result: Record<string, unknown>;
+  is_error: boolean;
+}
+
+

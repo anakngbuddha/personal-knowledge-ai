@@ -16,6 +16,7 @@ from app.api.routes import (
     integrations,
     jobs,
     map_edit,
+    mcp_server,
     notebooks,
     notes,
     ops,
@@ -98,6 +99,7 @@ app.include_router(workflows.router)
 app.include_router(phase8.router)
 app.include_router(advisor.router)
 app.include_router(integrations.router)
+app.include_router(mcp_server.router)
 app.include_router(notebooks.router)
 app.include_router(notes.router)
 app.include_router(freshness.router)

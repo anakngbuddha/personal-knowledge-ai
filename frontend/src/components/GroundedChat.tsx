@@ -75,6 +75,7 @@ export function GroundedChat({
   const [studioBusy, setStudioBusy] = useState(false);
   const [hybridRag, setHybridRag] = useState(true);
   const [sourcesExpertKnowledge, setSourcesExpertKnowledge] = useState(true);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [activeFilter, setActiveFilter] = useState<"briefing" | "faq" | "compare" | null>(null);
 
@@ -187,6 +188,7 @@ export function GroundedChat({
           filters: { document_ids: enabledIds() },
           enable_tools: false,
           strict_mode: strictMode,
+          web_search: webSearchEnabled,
         },
         setStreamText,
         setStatusNote
@@ -562,6 +564,23 @@ export function GroundedChat({
                 aria-checked={hybridRag}
                 onClick={() => setHybridRag(!hybridRag)}
                 title="Toggle Hybrid RAG Mode"
+              >
+                <span className="ios-toggle-knob" />
+              </button>
+            </div>
+
+            <div className="hybrid-rag-control" style={{ marginLeft: "14px" }}>
+              <span className="info-circle" title="Automatically perform live web search if information does not exist in knowledge base or to augment AI training data">
+                <InfoIcon size={13} />
+              </span>
+              <span className="hybrid-rag-label">Web Search (Auto / Live)</span>
+              <button
+                type="button"
+                className={`ios-toggle ${webSearchEnabled ? "active" : ""}`}
+                role="switch"
+                aria-checked={webSearchEnabled}
+                onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                title="Toggle Live Web Search"
               >
                 <span className="ios-toggle-knob" />
               </button>

@@ -100,23 +100,101 @@ def brave_search(query: str, *, client: httpx.Client | None = None) -> list[dict
     return found[: settings.web_fallback_max_results]
 
 
+def duckduckgo_search(
+    query: str,
+    *,
+    client: httpx.Client | None = None,
+    max_results: int | None = None,
+) -> list[dict]:
+    """Search DuckDuckGo HTML without requiring any API keys."""
+    limit = max_results or settings.web_fallback_max_results
+    import urllib.parse
+    owns_client = client is None
+    http = client or httpx.Client(timeout=10.0)
+    try:
+        response = http.post(
+            "https://html.duckduckgo.com/html/",
+            data={"q": query[:400]},
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
+        )
+        response.raise_for_status()
+        html_content = response.text
+    except Exception:
+        logger.warning("duckduckgo search request failed", exc_info=True)
+        return []
+    finally:
+        if owns_client:
+            http.close()
+
+    found: list[dict] = []
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html_content, "html.parser")
+        for el in soup.select(".result"):
+            a = (
+                el.select_one("a.result__title")
+                or el.select_one(".result__title a")
+                or el.select_one("a.result__url")
+                or el.select_one("a.result__snippet")
+                or el.select_one("a")
+            )
+            if not a:
+                continue
+            title = a.get_text(strip=True)
+            href = str(a.get("href") or "").strip()
+            if "uddg=" in href:
+                parsed_qs = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+                href = parsed_qs.get("uddg", [href])[0]
+            snip_el = el.select_one(".result__snippet")
+            snippet = snip_el.get_text(strip=True) if snip_el else ""
+            if href and (href.startswith("http://") or href.startswith("https://")):
+                found.append({"url": href, "title": title or href, "description": snippet})
+            if len(found) >= limit:
+                break
+    except Exception:
+        logger.warning("duckduckgo parsing failed", exc_info=True)
+
+    return found[:limit]
+
+
+def search_web(
+    query: str,
+    *,
+    client: httpx.Client | None = None,
+    max_results: int | None = None,
+) -> list[dict]:
+    """Search the web using Brave if configured, otherwise fallback to DuckDuckGo."""
+    limit = max_results or settings.web_fallback_max_results
+    if settings.brave_api_key:
+        try:
+            brave_hits = brave_search(query, client=client)
+            if brave_hits:
+                return brave_hits[:limit]
+        except Exception:
+            logger.info("brave search failed, falling back to duckduckgo", exc_info=True)
+
+    return duckduckgo_search(query, client=client, max_results=limit)
+
+
 def gather_web_fallback(
     query: str,
     *,
     search_fn=None,
     fetch_fn=None,
     robots_fn=None,
+    force: bool = False,
 ) -> WebFallback:
     """Search, then read the top pages that robots.txt and SSRF allow."""
-    if not settings.brave_api_key and search_fn is None:
-        return WebFallback(note="Web search is not configured.")
-
-    lookup = search_fn or brave_search
+    lookup = search_fn or search_web
     try:
         hits = list(lookup(query) or [])
     except Exception:
         logger.warning("web search failed", exc_info=True)
         return WebFallback(note="Web search failed.", searched=True)
+
+    if not hits:
+        return WebFallback(note="No matching web results found.", searched=True)
 
     fetch_page = fetch_fn or fetch
     robots_for = robots_fn or fetch_robots
@@ -132,10 +210,13 @@ def gather_web_fallback(
                 continue
             resource = fetch_page(url)
         except SsrfBlocked:
-            logger.info("skipped blocked web result %s", url)
+            logger.info("skipped SSRF-blocked web result %s", url)
             continue
         except Exception:
-            logger.info("skipped unreadable web result %s", url, exc_info=True)
+            logger.info("skipped unreadable web result %s, fallback to snippet", url)
+            desc = str(hit.get("description") or "").strip()
+            if desc:
+                passages.append(WebPassage(url=url, title=title, text=desc))
             continue
         body = getattr(resource, "data", b"") or b""
         content_type = (getattr(resource, "content_type", None) or "").lower()
