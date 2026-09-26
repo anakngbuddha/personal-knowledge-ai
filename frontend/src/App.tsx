@@ -122,9 +122,9 @@ export default function App() {
 
   const tabs: TabItem[] = [
     { id: "ask", name: "Ask Intelligence", icon: StarIcon, badge: "AI" },
-    { id: "notes", name: "Notes", icon: BookOpenIcon, badge: "18" },
-    { id: "sources", name: "Sources", icon: FileTextIcon, badge: String(documents.length || 50) },
-    { id: "connections", name: "Connectors", icon: ZapIcon, badge: "11 ●" },
+    { id: "notes", name: "Notes", icon: BookOpenIcon },
+    { id: "sources", name: "Sources", icon: FileTextIcon, badge: documents.length > 0 ? String(documents.length) : undefined },
+    { id: "connections", name: "Connectors", icon: ZapIcon },
     { id: "map", name: "Knowledge Map", icon: NetworkIcon },
     { id: "settings", name: "Settings", icon: SettingsIcon },
   ];
@@ -198,8 +198,8 @@ export default function App() {
           <div className="user-profile-chip">
             <div className="user-avatar">{userInitials || "S"}</div>
             <div className="user-info">
-              <span className="user-name">Enterprise Tenant</span>
-              <span className="user-org">Deep Atlas – Enterprise</span>
+              <span className="user-name">{principal?.organization_name || "Enterprise Workspace"}</span>
+              <span className="user-org">{principal?.role ? `${principal.role.charAt(0).toUpperCase() + principal.role.slice(1)} • Org ID ${principal.org_id.slice(0, 8)}` : "Personal Knowledge AI"}</span>
             </div>
             <ChevronDownIcon size={12} className="user-chevron" />
           </div>
@@ -281,7 +281,7 @@ export default function App() {
                   </span>
                 </div>
                 <div className="telemetry-sub" style={{ lineHeight: 1.45 }}>
-                  {documents.length || 50} sources indexed<br />
+                  {documents.length} sources indexed<br />
                   Tenant isolation: <span style={{ color: "#10b981", fontWeight: 600 }}>Enforced</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px", fontSize: "10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>

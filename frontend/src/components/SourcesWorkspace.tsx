@@ -771,7 +771,7 @@ export function SourcesWorkspace({
                 <span className="vector-memory-hnsw">HNSW</span>
               </div>
               <div className="vector-memory-meta">
-                {documents.length || 50} sources indexed &bull; isolation active
+                {documents.length} sources indexed &bull; isolation active
               </div>
             </div>
           </div>
@@ -1022,7 +1022,7 @@ export function SourcesWorkspace({
             ) : viewMode === "grid" ? (
               /* Grid View of Cupertino Document Cards */
               <div className="source-cards-grid">
-                {filteredDocuments.map((doc) => {
+                {filteredDocuments.map((doc, idx) => {
                   const isSelected = doc.id === selectedId;
                   const format = getFileFormatMeta(doc.original_filename);
 
@@ -1030,6 +1030,7 @@ export function SourcesWorkspace({
                     <article
                       key={doc.id}
                       className={`source-card ${isSelected ? "selected" : ""}`}
+                      style={{ "--card-idx": Math.min(idx, 12) } as React.CSSProperties}
                       onClick={() => onSelect(doc.id)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
@@ -1145,7 +1146,7 @@ export function SourcesWorkspace({
                   <span className="col-status">STATUS</span>
                   <span className="col-actions">ACTIONS</span>
                 </div>
-                {filteredDocuments.map((doc) => {
+                {filteredDocuments.map((doc, idx) => {
                   const isSelected = doc.id === selectedId;
                   const format = getFileFormatMeta(doc.original_filename);
 
@@ -1153,6 +1154,7 @@ export function SourcesWorkspace({
                     <div
                       key={doc.id}
                       className={`table-row ${isSelected ? "selected" : ""}`}
+                      style={{ "--card-idx": Math.min(idx, 12) } as React.CSSProperties}
                       onClick={() => onSelect(doc.id)}
                     >
                       <div className="col-name cell-name">

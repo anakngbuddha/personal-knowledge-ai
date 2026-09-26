@@ -1254,6 +1254,52 @@ export function GraphExplorer({
                 onMouseLeave={handleCanvasMouseUp}
               />
 
+              {!loading && filtered.nodes.length === 0 && (
+                <div className="map-empty-overlay">
+                  <div className="map-empty-card">
+                    <SparklesIcon size={36} className="map-empty-icon" />
+                    <h3 className="map-empty-title">Knowledge Map Topology</h3>
+                    <p className="map-empty-desc">
+                      {graph?.nodes.length === 0
+                        ? "Import or configure products and their relationships in the Catalog Editor to view interactive topology."
+                        : "No products match the selected filters."}
+                    </p>
+                    {graph?.nodes.length === 0 ? (
+                      <div className="map-empty-actions">
+                        <button
+                          type="button"
+                          className="primary map-empty-btn"
+                          onClick={() => setViewMode("editor")}
+                        >
+                          <PlusIcon size={14} />
+                          <span>Open Catalog Editor</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="map-empty-btn secondary"
+                          onClick={() => setViewMode("import")}
+                        >
+                          <UploadCloudIcon size={14} />
+                          <span>Import Products</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="map-empty-btn secondary"
+                        onClick={() => {
+                          setVendorFilter("");
+                          setOwnershipFilter("");
+                          setEdgeTypeFilter(new Set());
+                        }}
+                      >
+                        Reset Filters
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Floating Bottom HUD: Legend */}
               <div className="map-floating-legend">
                 <div className="legend-section">

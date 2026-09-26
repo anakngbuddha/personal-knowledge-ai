@@ -399,22 +399,6 @@ export function GroundedChat({
           </div>
 
           <div className="threads-list">
-            {[
-              { id: "sample-1", title: "prem server and they want to m...", time: "2h", fullPrompt: "prem server and they want to migrate to cloud" },
-              { id: "sample-2", title: "build requirements for Addasou...", time: "5h", fullPrompt: "build requirements for Addasound integration" },
-              { id: "sample-3", title: "Huawei Cloud Data Ingestion ...", time: "1d", fullPrompt: "Huawei Cloud Data Ingestion Kafka pipeline specifications" },
-              { id: "sample-4", title: "HNSW Accuracy Benchmark", time: "2d", fullPrompt: "HNSW Accuracy Benchmark recall specifications" },
-              { id: "sample-5", title: "compatible services on huawei...", time: "3d", fullPrompt: "compatible services on huawei cloud compute engine" },
-            ].map((st) => (
-              <div
-                key={st.id}
-                className="conv-item sample-thread-item"
-                onClick={() => setQuestion(st.fullPrompt)}
-              >
-                <span className="conv-open">{st.title}</span>
-                <span className="conv-time">{st.time}</span>
-              </div>
-            ))}
             {conversations.map((c) => (
               <div key={c.id} className={`conv-item ${selectedConvId === c.id ? "active" : ""}`}>
                 <button type="button" className="conv-open" onClick={() => setSelectedConvId(c.id)}>
@@ -462,8 +446,8 @@ export function GroundedChat({
               <div className="prompt-cards-container">
                 {[
                   "Summarize key capabilities across all sources",
-                  "Compare SLA specifications against Huawei Cloud benchmarks",
-                  "Extract compatibility requirements for Addasound integration",
+                  "Compare specifications from my uploaded documents",
+                  "Extract requirements mentioned in my sources",
                 ].map((promptText) => (
                   <button
                     key={promptText}
@@ -682,25 +666,7 @@ export function GroundedChat({
                 <FileTextIcon size={22} />
               </div>
               <p className="citation-empty-text">Citations you open will show here.</p>
-              <button
-                type="button"
-                className="citation-click-link"
-                onClick={() => {
-                  setSelectedCitation({
-                    chunk_id: "demo-c1",
-                    document_id: "demo-d1",
-                    heading_path: ["3.2 Hardware Integration"],
-                    is_stale: false,
-                    citation: "Addasound Spec §3.2",
-                    document_title: "Addasound Hardware & Peripheral Guide",
-                    vendor: "Addasound Corporation",
-                    page_number: 14,
-                    snippet: "Acoustic matrix and hardware audio peripheral specifications for enterprise cloud telephony."
-                  });
-                }}
-              >
-                Click any inline reference
-              </button>
+              <p className="citation-empty-hint">Click any inline reference in an answer to inspect its source passage.</p>
             </div>
           )}
         </div>
@@ -718,109 +684,38 @@ export function GroundedChat({
         <div className="side-section saved-outputs-section">
           <div className="side-section-header">
             <span className="side-title">SAVED OUTPUTS</span>
-            <span className="saved-count-pill">{Math.max(4, savedNotes.length)} items</span>
+            <span className="saved-count-pill">{savedNotes.length} items</span>
           </div>
 
           <div className="saved-outputs-list">
-            <div className="saved-output-card">
-              <div className="saved-card-header">
-                <span className="saved-card-title">Addasound</span>
-                <span className="saved-card-date">Oct 24</span>
+            {savedNotes.length === 0 ? (
+              <div className="citation-inspector-empty" style={{ padding: "24px 12px" }}>
+                <p className="citation-empty-text">No saved outputs yet.</p>
+                <p className="citation-empty-hint">Ask a question and save the output to see it here.</p>
               </div>
-              <p className="saved-card-snippet">
-                Acoustic materials, peripheral certifications, ...
-              </p>
-              <div className="saved-card-footer">
-                <div className="saved-card-tags">
-                  <span className="saved-tag tag-lavender">Hardware</span>
-                  <span className="saved-tag tag-mint">Verified</span>
-                </div>
-                <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
-                  <MoreVerticalIcon size={14} />
-                </button>
-              </div>
-            </div>
-
-            <div className="saved-output-card">
-              <div className="saved-card-header">
-                <span className="saved-card-title">compatible services on huawei cloud</span>
-                <span className="saved-card-date">Oct 22</span>
-              </div>
-              <p className="saved-card-snippet">
-                Service mesh mapping, compute engine sc...
-              </p>
-              <div className="saved-card-footer">
-                <div className="saved-card-tags">
-                  <span className="saved-tag tag-lavender">Infrastructure</span>
-                  <span className="saved-tag tag-blue">Cloud</span>
-                </div>
-                <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
-                  <MoreVerticalIcon size={14} />
-                </button>
-              </div>
-            </div>
-
-            <div className="saved-output-card">
-              <div className="saved-card-header">
-                <span className="saved-card-title">Huawei Cloud Data Ingestion</span>
-                <span className="saved-card-date">Oct 19</span>
-              </div>
-              <p className="saved-card-snippet">
-                Kafka pipelines, real-time ingestion...
-              </p>
-              <div className="saved-card-footer">
-                <div className="saved-card-tags">
-                  <span className="saved-tag tag-blue">Pipeline</span>
-                  <span className="saved-tag tag-blue">ETL</span>
-                </div>
-                <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
-                  <MoreVerticalIcon size={14} />
-                </button>
-              </div>
-            </div>
-
-            <div className="saved-output-card">
-              <div className="saved-card-header">
-                <span className="saved-card-title">HNSW Accuracy Benchmark</span>
-                <span className="saved-card-date">Sep 24</span>
-              </div>
-              <p className="saved-card-snippet">
-                Recall@10 achieved 99.4% on 1M document test set...
-              </p>
-              <div className="saved-card-footer">
-                <div className="saved-card-tags">
-                  <span className="saved-tag tag-mint">Verified</span>
-                  <span className="saved-tag tag-blue">Synthesis</span>
-                </div>
-                <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
-                  <MoreVerticalIcon size={14} />
-                </button>
-              </div>
-            </div>
-
-            {/* Custom user notes rendered seamlessly */}
-            {savedNotes.filter(n => !["Addasound", "compatible services on huawei cloud", "Huawei Cloud Data Ingestion", "HNSW Accuracy Benchmark"].includes(n.title)).map((note) => (
-              <div key={note.id} className="saved-output-card">
-                <div className="saved-card-header">
-                  <span className="saved-card-title">{note.title}</span>
-                  <span className="saved-card-date">
-                    {new Date(note.created_at || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </span>
-                </div>
-                <p className="saved-card-snippet">
-                  {note.body ? note.body.replace(/[#*\[\]_`-]/g, "").slice(0, 52) + "..." : "Synthesis output"}
-                </p>
-                <div className="saved-card-footer">
-                  <div className="saved-card-tags">
-                    <span className="saved-tag tag-mint">Verified</span>
-                    <span className="saved-tag tag-blue">Synthesis</span>
+            ) : (
+              savedNotes.map((note) => (
+                <div key={note.id} className="saved-output-card">
+                  <div className="saved-card-header">
+                    <span className="saved-card-title">{note.title}</span>
+                    <span className="saved-card-date">
+                      {new Date(note.created_at || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
                   </div>
-                  <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
-                    <MoreVerticalIcon size={14} />
-                  </button>
+                  <p className="saved-card-snippet">
+                    {note.body ? note.body.replace(/[#*\[\]_`-]/g, "").slice(0, 52) + "..." : "Synthesis output"}
+                  </p>
+                  <div className="saved-card-footer">
+                    <div className="saved-card-tags">
+                      <span className="saved-tag tag-mint">Note</span>
+                    </div>
+                    <button type="button" className="saved-card-menu-btn" title="More options" aria-label="More options">
+                      <MoreVerticalIcon size={14} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </aside>
