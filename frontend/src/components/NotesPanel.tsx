@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { api } from "../services/api";
-import type { LinkTargetOut, NoteGraphOut, NoteRecord, NotebookRecord } from "../types";
+import type { LinkTargetOut, NoteGraphOut, NotebookRecord } from "../types";
 import "./NotesEditor.css";
 
 type ViewMode = "editor" | "split" | "graph";
@@ -16,95 +16,21 @@ interface DealNoteItem {
   links?: Array<{ target_kind: string; target_ref: string; resolved: boolean }>;
 }
 
-const DEFAULT_DEAL_NOTES: DealNoteItem[] = [
-  {
-    id: "deal-note-1",
-    title: "Acme on-prem sizing",
-    slug: "acme-on-prem-sizing",
-    timeAgo: "NOW",
-    isNow: true,
-    tags: ["#sizing", "#on-prem"],
-    body: `Met with Acme VP of Infrastructure today to finalize requirements for their on-prem private vector cache cluster. The primary goal is delivering sub-15ms semantic matching over **50M active customer tickets** with zero public egress.
-
-### Hardware & Algorithm Architecture Linked:
-[[product:HNSW]] [[note:Huawei Cloud Ingestion 1]] [[sku:Dell-PowerEdge-R750xa]]
-
-### Recommended Cluster Sizing Calculation:
-| Component | Specification | Cluster Qty | Est. Cost |
-| :--- | :--- | :--- | :--- |
-| Inference Host | Dual Xeon 6430 / 512GB ECC | 4 Nodes | $42,800 |
-| Vector GPU | NVIDIA A100 80GB SXM4 | 8 Units | $112,000 |
-| Storage Plane | 30TB NVMe U.2 Enterprise | 12 Drives | $18,400 |
-| **Total Hardware Commitment** | | | **$173,200** |
-
-Action Item: Check SLA compatibility with [[note:EMEA Latency Audit]] before submitting formal proposal.`,
-    links: [
-      { target_kind: "product", target_ref: "HNSW", resolved: true },
-      { target_kind: "note", target_ref: "Huawei Cloud Ingestion 1", resolved: true },
-      { target_kind: "sku", target_ref: "Dell-PowerEdge-R750xa", resolved: true },
-    ],
-  },
-  {
-    id: "deal-note-2",
-    title: "Infra & Power Requirements",
-    slug: "infra-power-requirements",
-    timeAgo: "2h ago",
-    tags: ["#datacenter"],
-    body: `Rack thermal dissipation specifications and dual 20A redundant PDUs validated for datacenter pod 4. Verified floor weight tolerances for 4x 2U nodes and high-density liquid-assist airflow clearances.
-
-- Redundant power feeds A+B confirmed
-- 10Gbps optical uplink to core spine switch verified
-- Target Ambient temp: 21°C stabilized`,
-    links: [{ target_kind: "product", target_ref: "PowerEdge-R750xa", resolved: true }],
-  },
-  {
-    id: "deal-note-3",
-    title: "Procurement Meeting Notes",
-    slug: "procurement-meeting-notes",
-    timeAgo: "Yesterday",
-    tags: ["#commercials"],
-    body: `CTO signed off on self-hosted vector database instance sizing and licensing term sheets. Legal review scheduled for next Tuesday regarding confidential enterprise data boundaries and zero public egress guarantees.
-
-- Total budget approved: $180,000
-- Payment milestone: 50% upfront, 50% post burn-in validation`,
-    links: [],
-  },
-  {
-    id: "deal-note-4",
-    title: "HNSW Accuracy Benchmarks",
-    slug: "hnsw-accuracy-benchmarks",
-    timeAgo: "3d ago",
-    tags: ["#performance"],
-    body: `Recall@10 achieved 99.4% on 12M documents test set with ef_construction=200 and M=32. Cosine distance queries average 13.8ms across 16 concurrent client workers under synthetic load.
-
-- Target SLA: < 15ms
-- Measured p95: 14.1ms
-- Measured p99: 14.8ms`,
-    links: [{ target_kind: "product", target_ref: "HNSW", resolved: true }],
-  },
-];
-
-const DEFAULT_NOTEBOOKS: NotebookRecord[] = [
-  { id: "nb-acme", name: "Acme on-prem sizing deal", workspace_id: "default" },
-  { id: "nb-emea", name: "EMEA Retail Banking RFI", workspace_id: "default" },
-  { id: "nb-specs", name: "HNSW Hardware Specs Q3", workspace_id: "default" },
-];
-
 export function NotesPanel() {
   const [viewMode, setViewMode] = useState<ViewMode>("editor");
   const [previewActive, setPreviewActive] = useState(false);
-  const [notebooks, setNotebooks] = useState<NotebookRecord[]>(DEFAULT_NOTEBOOKS);
-  const [selectedNotebookId, setSelectedNotebookId] = useState<string>("nb-acme");
+  const [notebooks, setNotebooks] = useState<NotebookRecord[]>([]);
+  const [selectedNotebookId, setSelectedNotebookId] = useState<string>("");
   const [showNotebookPicker, setShowNotebookPicker] = useState(false);
   const [newNotebookName, setNewNotebookName] = useState("");
 
-  // Notes state
-  const [notes, setNotes] = useState<DealNoteItem[]>(DEFAULT_DEAL_NOTES);
-  const [selectedNoteId, setSelectedNoteId] = useState<string>("deal-note-1");
-  const [title, setTitle] = useState(DEFAULT_DEAL_NOTES[0].title);
-  const [body, setBody] = useState(DEFAULT_DEAL_NOTES[0].body);
+  // Notes state - clean default empty state for newly created accounts
+  const [notes, setNotes] = useState<DealNoteItem[]>([]);
+  const [selectedNoteId, setSelectedNoteId] = useState<string>("");
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saveStatusText, setSaveStatusText] = useState("Autosaved 14s ago");
+  const [saveStatusText, setSaveStatusText] = useState("Ready");
   const [isDrafting, setIsDrafting] = useState(false);
 
   // Wikilink Autocomplete State
@@ -117,23 +43,22 @@ export function NotesPanel() {
   // Full Graph View State
   const [graphData, setGraphData] = useState<NoteGraphOut | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
-  // Load Notebooks from Backend API with Fallback
+  // Load Notebooks from Backend API
   useEffect(() => {
     let active = true;
     api
       .listNotebooks()
       .then((res) => {
-        if (active && res.notebooks && res.notebooks.length > 0) {
+        if (active && res.notebooks) {
           setNotebooks(res.notebooks);
-          if (!selectedNotebookId || selectedNotebookId === "nb-acme") {
+          if (res.notebooks.length > 0 && !selectedNotebookId) {
             setSelectedNotebookId(res.notebooks[0].id);
           }
         }
       })
       .catch(() => {
-        /* keep default fallback notebooks */
+        /* no notebooks loaded */
       });
     return () => {
       active = false;
@@ -144,9 +69,10 @@ export function NotesPanel() {
   useEffect(() => {
     let active = true;
     api
-      .listNotes(50, 0, selectedNotebookId)
+      .listNotes(50, 0, selectedNotebookId || undefined)
       .then((res) => {
-        if (active && res.notes && res.notes.length > 0) {
+        if (!active) return;
+        if (res.notes && res.notes.length > 0) {
           const mapped: DealNoteItem[] = res.notes.map((n, idx) => ({
             id: n.id,
             title: n.title,
@@ -154,7 +80,7 @@ export function NotesPanel() {
             body: n.body,
             timeAgo: idx === 0 ? "NOW" : "Recent",
             isNow: idx === 0,
-            tags: n.links && n.links.length > 0 ? n.links.map((l) => `#${l.target_ref}`) : ["#deal"],
+            tags: n.links && n.links.length > 0 ? n.links.map((l) => `#${l.target_ref}`) : ["#note"],
             links: (n.links || []).map((l) => ({
               target_kind: l.target_kind,
               target_ref: l.target_ref,
@@ -165,12 +91,26 @@ export function NotesPanel() {
           setSelectedNoteId(mapped[0].id);
           setTitle(mapped[0].title);
           setBody(mapped[0].body);
-        } else if (active && selectedNotebookId === "nb-acme") {
-          setNotes(DEFAULT_DEAL_NOTES);
+          setIsDrafting(false);
+          setSaveStatusText("Saved");
+        } else {
+          setNotes([]);
+          setSelectedNoteId("");
+          setTitle("");
+          setBody("");
+          setIsDrafting(false);
+          setSaveStatusText("Ready");
         }
       })
       .catch(() => {
-        /* keep defaults */
+        if (active) {
+          setNotes([]);
+          setSelectedNoteId("");
+          setTitle("");
+          setBody("");
+          setIsDrafting(false);
+          setSaveStatusText("Ready");
+        }
       });
     return () => {
       active = false;
@@ -200,7 +140,7 @@ export function NotesPanel() {
 
   // Current Active Note
   const currentNote = useMemo(() => {
-    return notes.find((n) => n.id === selectedNoteId) || notes[0];
+    return notes.find((n) => n.id === selectedNoteId) || null;
   }, [notes, selectedNoteId]);
 
   // Switch Active Note
@@ -210,7 +150,7 @@ export function NotesPanel() {
     setBody(item.body);
     setShowSuggestions(false);
     setIsDrafting(false);
-    setSaveStatusText("Saved just now");
+    setSaveStatusText("Saved");
   }
 
   // Create New Note
@@ -218,18 +158,18 @@ export function NotesPanel() {
     const newId = `note-${Date.now()}`;
     const newNote: DealNoteItem = {
       id: newId,
-      title: "Untitled Note",
-      slug: "untitled-note",
+      title: "",
+      slug: "new-note",
       timeAgo: "NOW",
       isNow: true,
-      tags: ["#new"],
-      body: "Write your note here. Link catalog products with [[product:slug]] or notes with [[note:slug]].",
+      tags: [],
+      body: "",
       links: [],
     };
-    setNotes([newNote, ...notes]);
+    setNotes([newNote, ...notes.filter((n) => n.id !== newId)]);
     setSelectedNoteId(newId);
-    setTitle(newNote.title);
-    setBody(newNote.body);
+    setTitle("");
+    setBody("");
     setIsDrafting(true);
     setSaveStatusText("Draft • Unsaved");
     if (viewMode === "graph") setViewMode("editor");
@@ -237,33 +177,36 @@ export function NotesPanel() {
 
   // Save Note Mutation
   async function handleSave() {
+    if (!title.trim() && !body.trim()) return;
     setSaving(true);
     try {
-      if (selectedNoteId.startsWith("deal-note-") || selectedNoteId.startsWith("note-")) {
+      const isNew = !selectedNoteId || selectedNoteId.startsWith("deal-note-") || selectedNoteId.startsWith("note-") || selectedNoteId.startsWith("imported-");
+      if (isNew) {
         // Try creating on server
         const saved = await api.createNote({
-          title: title.trim() || "Untitled",
+          title: title.trim() || "Untitled Note",
           body,
-          notebook_id: selectedNotebookId.startsWith("nb-") ? undefined : selectedNotebookId,
+          notebook_id: selectedNotebookId && !selectedNotebookId.startsWith("nb-") ? selectedNotebookId : undefined,
         });
-        setNotes((prev) =>
-          prev.map((n) =>
-            n.id === selectedNoteId
-              ? {
-                  ...n,
-                  id: saved.id,
-                  title: saved.title,
-                  slug: saved.slug,
-                  body: saved.body,
-                  isNow: true,
-                }
-              : n
-          )
-        );
+        const mappedNote: DealNoteItem = {
+          id: saved.id,
+          title: saved.title,
+          slug: saved.slug,
+          body: saved.body,
+          timeAgo: "NOW",
+          isNow: true,
+          tags: (saved.links || []).map((l) => `#${l.target_ref}`),
+          links: (saved.links || []).map((l) => ({
+            target_kind: l.target_kind,
+            target_ref: l.target_ref,
+            resolved: l.resolved,
+          })),
+        };
+        setNotes((prev) => [mappedNote, ...prev.filter((n) => n.id !== selectedNoteId)]);
         setSelectedNoteId(saved.id);
       } else {
         // Update existing note
-        const updated = await api.updateNote(selectedNoteId, { title, body });
+        const updated = await api.updateNote(selectedNoteId, { title: title.trim() || "Untitled Note", body });
         setNotes((prev) =>
           prev.map((n) =>
             n.id === selectedNoteId
@@ -272,6 +215,12 @@ export function NotesPanel() {
                   title: updated.title,
                   slug: updated.slug,
                   body: updated.body,
+                  tags: (updated.links || []).map((l) => `#${l.target_ref}`),
+                  links: (updated.links || []).map((l) => ({
+                    target_kind: l.target_kind,
+                    target_ref: l.target_ref,
+                    resolved: l.resolved,
+                  })),
                 }
               : n
           )
@@ -284,7 +233,7 @@ export function NotesPanel() {
       setNotes((prev) =>
         prev.map((n) =>
           n.id === selectedNoteId
-            ? { ...n, title, body }
+            ? { ...n, title: title.trim() || "Untitled Note", body }
             : n
         )
       );
@@ -292,6 +241,29 @@ export function NotesPanel() {
       setSaveStatusText("Saved locally");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Delete Note
+  async function handleDeleteNote(idToDelete: string) {
+    if (!window.confirm("Are you sure you want to delete this note?")) return;
+    try {
+      if (!idToDelete.startsWith("note-") && !idToDelete.startsWith("deal-note-") && !idToDelete.startsWith("imported-")) {
+        await api.deleteNote(idToDelete);
+      }
+      const remaining = notes.filter((n) => n.id !== idToDelete);
+      setNotes(remaining);
+      if (remaining.length > 0) {
+        selectNote(remaining[0]);
+      } else {
+        setSelectedNoteId("");
+        setTitle("");
+        setBody("");
+        setIsDrafting(false);
+        setSaveStatusText("Ready");
+      }
+    } catch (err) {
+      console.error("Failed to delete note", err);
     }
   }
 
@@ -317,23 +289,13 @@ export function NotesPanel() {
             setSuggestions(res);
             setShowSuggestions(true);
           } else {
-            // Provide sensible suggestions matching reference architecture
-            setSuggestions([
-              { kind: "product", ref: "HNSW", title: "HNSW Indexer" },
-              { kind: "catalog", ref: "Dell-PowerEdge-R750xa", title: "Dell PowerEdge R750xa" },
-              { kind: "note", ref: "Huawei Cloud Ingestion 1", title: "Huawei Cloud Ingestion 1" },
-              { kind: "note", ref: "EMEA Latency Audit", title: "EMEA Latency Audit" },
-            ]);
-            setShowSuggestions(true);
+            setSuggestions([]);
+            setShowSuggestions(false);
           }
         })
         .catch(() => {
-          setSuggestions([
-            { kind: "product", ref: "HNSW", title: "HNSW Indexer" },
-            { kind: "catalog", ref: "Dell-PowerEdge-R750xa", title: "Dell PowerEdge R750xa" },
-            { kind: "note", ref: "Huawei Cloud Ingestion 1", title: "Huawei Cloud Ingestion 1" },
-          ]);
-          setShowSuggestions(true);
+          setSuggestions([]);
+          setShowSuggestions(false);
         });
     } else {
       setShowSuggestions(false);
@@ -386,7 +348,7 @@ export function NotesPanel() {
   }
 
   function insertTableTemplate() {
-    const tableTemplate = `\n| Component | Specification | Cluster Qty | Est. Cost |\n| :--- | :--- | :--- | :--- |\n| Inference Host | Dual Xeon 6430 / 512GB ECC | 4 Nodes | $42,800 |\n| Vector GPU | NVIDIA A100 80GB SXM4 | 8 Units | $112,000 |\n| Storage Plane | 30TB NVMe U.2 Enterprise | 12 Drives | $18,400 |\n| **Total Hardware Commitment** | | | **$173,200** |\n`;
+    const tableTemplate = `\n| Item | Specification | Qty | Notes |\n| :--- | :--- | :--- | :--- |\n| | | | |\n`;
     if (!textareaRef.current) {
       setBody((prev) => prev + tableTemplate);
       return;
@@ -421,6 +383,8 @@ export function NotesPanel() {
         setSelectedNoteId(newId);
         setTitle(newNote.title);
         setBody(newNote.body);
+        setIsDrafting(true);
+        setSaveStatusText("Draft • Unsaved");
       }
     };
     reader.readAsText(file);
@@ -435,8 +399,38 @@ export function NotesPanel() {
     return body.length >= 1000 ? `${(body.length / 1000).toFixed(1)}k` : body.length;
   }, [body]);
 
+  const totalWikilinks = useMemo(() => {
+    return notes.reduce((acc, n) => acc + (n.links?.length || 0), 0);
+  }, [notes]);
+
   // Current Notebook Name
-  const currentNotebook = notebooks.find((nb) => nb.id === selectedNotebookId) || notebooks[0];
+  const currentNotebook = notebooks.find((nb) => nb.id === selectedNotebookId) || null;
+
+  async function handleCreateNotebook() {
+    const trimmed = newNotebookName.trim();
+    if (!trimmed) return;
+    try {
+      const created = await api.createNotebook(trimmed);
+      setNotebooks((prev) => [...prev, created]);
+      setSelectedNotebookId(created.id);
+      setNewNotebookName("");
+      setShowNotebookPicker(false);
+    } catch {
+      // offline fallback
+      const fallbackNb: NotebookRecord = {
+        id: `nb-${Date.now()}`,
+        name: trimmed,
+        workspace_id: "default",
+      };
+      setNotebooks((prev) => [...prev, fallbackNb]);
+      setSelectedNotebookId(fallbackNb.id);
+      setNewNotebookName("");
+      setShowNotebookPicker(false);
+    }
+  }
+
+  // Active note links for inspector
+  const activeLinks = currentNote?.links || [];
 
   return (
     <div className="notes-desk-root">
@@ -463,7 +457,7 @@ export function NotesPanel() {
               onClick={() => setShowNotebookPicker(!showNotebookPicker)}
               aria-expanded={showNotebookPicker}
             >
-              <span>{currentNotebook ? currentNotebook.name : "Acme on-prem sizing deal"}</span>
+              <span>{currentNotebook ? currentNotebook.name : (notebooks.length === 0 ? "Workspace Notes" : "All Notes")}</span>
               <span className="notebook-chevron">⌵</span>
             </button>
           </div>
@@ -475,6 +469,17 @@ export function NotesPanel() {
                 Switch Notebook
               </div>
               <div className="notebook-dropdown-list">
+                <button
+                  type="button"
+                  className={`notebook-dropdown-item ${!selectedNotebookId ? "active" : ""}`}
+                  onClick={() => {
+                    setSelectedNotebookId("");
+                    setShowNotebookPicker(false);
+                  }}
+                >
+                  <span>All Workspace Notes</span>
+                  {!selectedNotebookId && <span>✓</span>}
+                </button>
                 {notebooks.map((nb) => (
                   <button
                     key={nb.id}
@@ -494,20 +499,12 @@ export function NotesPanel() {
               <div className="notebook-create-row">
                 <input
                   className="notebook-create-input"
-                  placeholder="New deal notebook..."
+                  placeholder="New notebook name..."
                   value={newNotebookName}
                   onChange={(e) => setNewNotebookName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && newNotebookName.trim()) {
-                      const newNb: NotebookRecord = {
-                        id: `nb-${Date.now()}`,
-                        name: newNotebookName.trim(),
-                        workspace_id: "default",
-                      };
-                      setNotebooks([...notebooks, newNb]);
-                      setSelectedNotebookId(newNb.id);
-                      setNewNotebookName("");
-                      setShowNotebookPicker(false);
+                    if (e.key === "Enter") {
+                      void handleCreateNotebook();
                     }
                   }}
                 />
@@ -515,17 +512,7 @@ export function NotesPanel() {
                   type="button"
                   className="notebook-create-btn"
                   disabled={!newNotebookName.trim()}
-                  onClick={() => {
-                    const newNb: NotebookRecord = {
-                      id: `nb-${Date.now()}`,
-                      name: newNotebookName.trim(),
-                      workspace_id: "default",
-                    };
-                    setNotebooks([...notebooks, newNb]);
-                    setSelectedNotebookId(newNb.id);
-                    setNewNotebookName("");
-                    setShowNotebookPicker(false);
-                  }}
+                  onClick={() => void handleCreateNotebook()}
                 >
                   Create
                 </button>
@@ -539,19 +526,19 @@ export function NotesPanel() {
           <div className="notebook-stats-ribbon">
             <div className="notebook-stat-item">
               <span className="notebook-stat-label">NOTES</span>
-              <span className="notebook-stat-val">18</span>
+              <span className="notebook-stat-val">{notes.length}</span>
             </div>
             <div className="notebook-stat-item">
               <span className="notebook-stat-label">WIKILINKS</span>
-              <span className="notebook-stat-val accent">42</span>
+              <span className="notebook-stat-val accent">{totalWikilinks}</span>
             </div>
             <div className="notebook-stat-item">
-              <span className="notebook-stat-label">CITATIONS</span>
-              <span className="notebook-stat-val">9</span>
+              <span className="notebook-stat-label">NOTEBOOKS</span>
+              <span className="notebook-stat-val">{notebooks.length}</span>
             </div>
           </div>
 
-          {/* Apple Segmented View Controller */}
+          {/* Segmented View Controller */}
           <div className="segmented-control" role="tablist" aria-label="Editor View Modes">
             <button
               type="button"
@@ -595,7 +582,7 @@ export function NotesPanel() {
         <div className="notes-full-graph-container">
           <div className="full-graph-header">
             <div>
-              <span className="inspector-section-label">OBSIDIAN KNOWLEDGE GRAPH</span>
+              <span className="inspector-section-label">KNOWLEDGE GRAPH</span>
               <h2 style={{ margin: "2px 0 0", fontSize: "17px", fontWeight: 700 }}>
                 Notes & Products Graph Topology
               </h2>
@@ -616,6 +603,14 @@ export function NotesPanel() {
               <div style={{ display: "grid", placeItems: "center", height: "100%", color: "var(--text-muted)" }}>
                 Loading knowledge graph...
               </div>
+            ) : !graphData || graphData.nodes.length === 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)", padding: "40px" }}>
+                <div style={{ fontSize: "36px", marginBottom: "12px" }}>🕸️</div>
+                <div style={{ fontWeight: 600, fontSize: "16px", color: "var(--text-primary)", marginBottom: "6px" }}>No Graph Nodes Yet</div>
+                <p style={{ fontSize: "13px", maxWidth: "380px", textAlign: "center", lineHeight: "1.5" }}>
+                  Create notes and link them to catalog products or other notes using <code>[[wikilinks]]</code> to view their connections.
+                </p>
+              </div>
             ) : (
               <svg width="100%" height="100%" viewBox="0 0 800 500" style={{ width: "100%", height: "100%" }}>
                 <defs>
@@ -624,49 +619,23 @@ export function NotesPanel() {
                     <stop offset="100%" stopColor="#4f46e5" stopOpacity="0" />
                   </radialGradient>
                 </defs>
-
-                {/* Connecting Edges */}
-                <line x1="400" y1="250" x2="220" y2="150" stroke="#c7d2fe" strokeWidth="2" strokeDasharray="3 3" />
-                <line x1="400" y1="250" x2="580" y2="150" stroke="#c7d2fe" strokeWidth="2" />
-                <line x1="400" y1="250" x2="260" y2="370" stroke="#a7f3d0" strokeWidth="2" />
-                <line x1="400" y1="250" x2="560" y2="370" stroke="#fed7aa" strokeWidth="2" />
-                <line x1="220" y1="150" x2="140" y2="240" stroke="#e2e8f0" strokeWidth="1.5" />
-                <line x1="580" y1="150" x2="680" y2="230" stroke="#e2e8f0" strokeWidth="1.5" />
-
-                {/* Satellite Nodes */}
-                <g transform="translate(220, 150)" style={{ cursor: "pointer" }}>
-                  <circle r="18" fill="#eef2ff" stroke="#4f46e5" strokeWidth="2" />
-                  <text textAnchor="middle" dy="4" fontSize="10" fontWeight="700" fill="#4338ca">HNSW</text>
-                  <text textAnchor="middle" dy="32" fontSize="11" fill="var(--text-secondary)">HNSW Indexer</text>
-                </g>
-
-                <g transform="translate(580, 150)" style={{ cursor: "pointer" }}>
-                  <circle r="18" fill="#ecfdf5" stroke="#10b981" strokeWidth="2" />
-                  <text textAnchor="middle" dy="4" fontSize="10" fontWeight="700" fill="#065f46">R750</text>
-                  <text textAnchor="middle" dy="32" fontSize="11" fill="var(--text-secondary)">Dell-PowerEdge</text>
-                </g>
-
-                <g transform="translate(260, 370)" style={{ cursor: "pointer" }}>
-                  <circle r="18" fill="#fff7ed" stroke="#f59e0b" strokeWidth="2" />
-                  <text textAnchor="middle" dy="4" fontSize="10" fontWeight="700" fill="#92400e">HW-1</text>
-                  <text textAnchor="middle" dy="32" fontSize="11" fill="var(--text-secondary)">Huawei Ingestion</text>
-                </g>
-
-                <g transform="translate(560, 370)" style={{ cursor: "pointer" }}>
-                  <circle r="16" fill="#f1f5f9" stroke="#94a3b8" strokeWidth="1.5" />
-                  <text textAnchor="middle" dy="4" fontSize="10" fontWeight="600" fill="#64748b">Q3</text>
-                  <text textAnchor="middle" dy="30" fontSize="11" fill="var(--text-secondary)">2024 Q3 Forecast</text>
-                </g>
-
-                {/* Center Active Note Node */}
-                <g transform="translate(400, 250)" style={{ cursor: "pointer" }}>
-                  <circle r="36" fill="url(#nodeActiveGlow)" />
-                  <circle r="22" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
-                  <text textAnchor="middle" dy="4" fontSize="11" fontWeight="700" fill="#ffffff">Acme</text>
-                  <text textAnchor="middle" dy="40" fontSize="13" fontWeight="700" fill="var(--text-primary)">
-                    Acme on-prem sizing
-                  </text>
-                </g>
+                {graphData.nodes.map((node, i) => {
+                  const angle = (i / graphData.nodes.length) * 2 * Math.PI;
+                  const radius = graphData.nodes.length === 1 ? 0 : 160;
+                  const cx = 400 + radius * Math.cos(angle);
+                  const cy = 250 + radius * Math.sin(angle);
+                  return (
+                    <g key={node.id} transform={`translate(${cx}, ${cy})`} style={{ cursor: "pointer" }}>
+                      <circle r="18" fill={node.kind === "product" ? "#ecfdf5" : "#eef2ff"} stroke={node.kind === "product" ? "#10b981" : "#4f46e5"} strokeWidth="2" />
+                      <text textAnchor="middle" dy="4" fontSize="10" fontWeight="700" fill={node.kind === "product" ? "#065f46" : "#4338ca"}>
+                        {node.title.slice(0, 4).toUpperCase()}
+                      </text>
+                      <text textAnchor="middle" dy="32" fontSize="11" fill="var(--text-secondary)">
+                        {node.title.slice(0, 16)}
+                      </text>
+                    </g>
+                  );
+                })}
               </svg>
             )}
           </div>
@@ -684,33 +653,49 @@ export function NotesPanel() {
             </div>
 
             <div className="notes-cards-scroll">
-              {notes.map((note) => {
-                const isActive = selectedNoteId === note.id;
-                return (
-                  <div
-                    key={note.id}
-                    className={`deal-note-card ${isActive ? "active" : ""}`}
-                    onClick={() => selectNote(note)}
+              {notes.length === 0 ? (
+                <div style={{ padding: "40px 16px", textAlign: "center", color: "var(--text-muted)" }}>
+                  <p style={{ margin: "0 0 12px", fontSize: "13px" }}>No notes in this notebook yet.</p>
+                  <button
+                    type="button"
+                    className="btn-primary-new"
+                    style={{ margin: "0 auto", padding: "6px 14px", fontSize: "12px" }}
+                    onClick={handleNewNote}
                   >
-                    <div className="deal-note-top-row">
-                      <span className="deal-note-title">{note.title}</span>
-                      <span className={`deal-note-time-badge ${note.isNow ? "now" : ""}`}>
-                        {note.timeAgo}
-                      </span>
-                    </div>
-
-                    <p className="deal-note-excerpt">{note.body.replace(/[#*|`]/g, "").slice(0, 110)}...</p>
-
-                    <div className="deal-note-tags-row">
-                      {note.tags.map((tag) => (
-                        <span key={tag} className="deal-tag-pill">
-                          {tag}
+                    + Create Note
+                  </button>
+                </div>
+              ) : (
+                notes.map((note) => {
+                  const isActive = selectedNoteId === note.id;
+                  return (
+                    <div
+                      key={note.id}
+                      className={`deal-note-card ${isActive ? "active" : ""}`}
+                      onClick={() => selectNote(note)}
+                    >
+                      <div className="deal-note-top-row">
+                        <span className="deal-note-title">{note.title || "Untitled Note"}</span>
+                        <span className={`deal-note-time-badge ${note.isNow ? "now" : ""}`}>
+                          {note.timeAgo}
                         </span>
-                      ))}
+                      </div>
+
+                      <p className="deal-note-excerpt">
+                        {(note.body || "").replace(/[#*|`]/g, "").slice(0, 110) || "No content"}...
+                      </p>
+
+                      <div className="deal-note-tags-row">
+                        {(note.tags || []).map((tag) => (
+                          <span key={tag} className="deal-tag-pill">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
 
             <div className="notes-col-list-footer">
@@ -733,170 +718,196 @@ export function NotesPanel() {
                 </svg>
                 <span>Import Markdown</span>
               </button>
-              <span className="notes-storage-telemetry">Storage: 1.2 MB</span>
+              <span className="notes-storage-telemetry">{notes.length} {notes.length === 1 ? "note" : "notes"}</span>
             </div>
           </section>
 
           {/* ── Column 2: Main Note Editor / Preview Canvas ────────────── */}
           <section className="notes-col-editor" aria-label="Note Editor">
-            {/* Top Bar: Autosave & Actions */}
-            <div className="editor-header-bar">
-              <div className="editor-status-indicator">
-                <span className={`status-pip ${isDrafting ? "drafting" : ""}`} />
-                <span>{saveStatusText}</span>
-              </div>
-
-              <div className="editor-header-actions">
-                <button
-                  type="button"
-                  className={`btn-editor-preview ${previewActive ? "active" : ""}`}
-                  onClick={() => setPreviewActive(!previewActive)}
-                >
-                  {previewActive ? "Edit Raw" : "Preview"}
-                </button>
-                <button
-                  type="button"
-                  className="btn-editor-save"
-                  disabled={saving || !title.trim()}
-                  onClick={() => void handleSave()}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  <span>{saving ? "Saving..." : "Save"}</span>
+            {notes.length === 0 && !isDrafting ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: "40px 20px", textAlign: "center", color: "var(--text-muted)" }}>
+                <div style={{ fontSize: "36px", marginBottom: "12px" }}>📝</div>
+                <div style={{ fontWeight: 600, fontSize: "15px", color: "var(--text-primary)", marginBottom: "6px" }}>No note selected</div>
+                <p style={{ fontSize: "13px", maxWidth: "340px", margin: "0 0 16px", lineHeight: "1.5" }}>
+                  Create a new note or select one from the list to start editing.
+                </p>
+                <button type="button" className="btn-primary-new" onClick={handleNewNote}>
+                  + New Note
                 </button>
               </div>
-            </div>
-
-            {/* Note Title Input */}
-            <div className="editor-title-container">
-              <span className="editor-title-label">TITLE</span>
-              <input
-                className="editor-title-input"
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
-                  setIsDrafting(true);
-                  setSaveStatusText("Draft • Editing");
-                }}
-                placeholder="Acme on-prem sizing"
-              />
-            </div>
-
-            {/* Utility Formatting Toolbar */}
-            <div className="editor-format-toolbar">
-              <button
-                type="button"
-                className="format-btn"
-                title="Bold"
-                onClick={() => insertFormatting("**")}
-              >
-                B
-              </button>
-              <button
-                type="button"
-                className="format-btn"
-                title="Italic"
-                onClick={() => insertFormatting("*")}
-              >
-                I
-              </button>
-              <button
-                type="button"
-                className="format-btn"
-                title="Underline"
-                onClick={() => insertFormatting("<u>", "</u>")}
-              >
-                U
-              </button>
-              <button
-                type="button"
-                className="format-btn format-btn-wide"
-                title="Insert [[wikilink]]"
-                onClick={() => insertFormatting("[[", "]]")}
-              >
-                [[wikilink]]
-              </button>
-              <button
-                type="button"
-                className="format-btn format-btn-wide"
-                title="Insert Table"
-                onClick={insertTableTemplate}
-              >
-                ⊞ Table
-              </button>
-              <span className="toolbar-sep" />
-              <span className="toolbar-hint">Type // to insert wikilinks</span>
-            </div>
-
-            {/* Body Content Area (Editor / Preview / Split) */}
-            <div className="editor-body-canvas">
-              {viewMode === "split" ? (
-                <div className="editor-split-container">
-                  <div className="editor-split-pane">
-                    <textarea
-                      ref={textareaRef}
-                      className="editor-textarea"
-                      value={body}
-                      onChange={handleBodyChange}
-                      placeholder="Type your deal notes here. Use [[ to link catalog & notes..."
-                      spellCheck={false}
-                    />
+            ) : (
+              <>
+                {/* Top Bar: Autosave & Actions */}
+                <div className="editor-header-bar">
+                  <div className="editor-status-indicator">
+                    <span className={`status-pip ${isDrafting ? "drafting" : ""}`} />
+                    <span>{saveStatusText}</span>
                   </div>
-                  <div className="editor-split-pane">
-                    <RenderedNotePreview body={body} />
+
+                  <div className="editor-header-actions">
+                    {selectedNoteId && (
+                      <button
+                        type="button"
+                        className="btn-editor-preview"
+                        style={{ color: "#ef4444" }}
+                        title="Delete this note"
+                        onClick={() => void handleDeleteNote(selectedNoteId)}
+                      >
+                        Delete
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={`btn-editor-preview ${previewActive ? "active" : ""}`}
+                      onClick={() => setPreviewActive(!previewActive)}
+                    >
+                      {previewActive ? "Edit Raw" : "Preview"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-editor-save"
+                      disabled={saving || (!title.trim() && !body.trim())}
+                      onClick={() => void handleSave()}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>{saving ? "Saving..." : "Save"}</span>
+                    </button>
                   </div>
                 </div>
-              ) : previewActive ? (
-                <RenderedNotePreview body={body} />
-              ) : (
-                <>
-                  <textarea
-                    ref={textareaRef}
-                    className="editor-textarea"
-                    value={body}
-                    onChange={handleBodyChange}
-                    placeholder="Type your deal notes here. Use [[ to link catalog & notes..."
-                    spellCheck={false}
+
+                {/* Note Title Input */}
+                <div className="editor-title-container">
+                  <span className="editor-title-label">TITLE</span>
+                  <input
+                    className="editor-title-input"
+                    value={title}
+                    onChange={(e) => {
+                      setTitle(e.target.value);
+                      setIsDrafting(true);
+                      setSaveStatusText("Draft • Editing");
+                    }}
+                    placeholder="Enter note title..."
                   />
+                </div>
 
-                  {/* Wikilink Autocomplete Dropdown */}
-                  {showSuggestions && (
-                    <div className="wikilink-autocomplete-popup">
-                      <div style={{ padding: "6px 12px", fontSize: "10px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>
-                        Linked Entities
+                {/* Utility Formatting Toolbar */}
+                <div className="editor-format-toolbar">
+                  <button
+                    type="button"
+                    className="format-btn"
+                    title="Bold"
+                    onClick={() => insertFormatting("**")}
+                  >
+                    B
+                  </button>
+                  <button
+                    type="button"
+                    className="format-btn"
+                    title="Italic"
+                    onClick={() => insertFormatting("*")}
+                  >
+                    I
+                  </button>
+                  <button
+                    type="button"
+                    className="format-btn"
+                    title="Underline"
+                    onClick={() => insertFormatting("<u>", "</u>")}
+                  >
+                    U
+                  </button>
+                  <button
+                    type="button"
+                    className="format-btn format-btn-wide"
+                    title="Insert [[wikilink]]"
+                    onClick={() => insertFormatting("[[", "]]")}
+                  >
+                    [[wikilink]]
+                  </button>
+                  <button
+                    type="button"
+                    className="format-btn format-btn-wide"
+                    title="Insert Table"
+                    onClick={insertTableTemplate}
+                  >
+                    ⊞ Table
+                  </button>
+                  <span className="toolbar-sep" />
+                  <span className="toolbar-hint">Type [[ to insert wikilinks</span>
+                </div>
+
+                {/* Body Content Area (Editor / Preview / Split) */}
+                <div className="editor-body-canvas">
+                  {viewMode === "split" ? (
+                    <div className="editor-split-container">
+                      <div className="editor-split-pane">
+                        <textarea
+                          ref={textareaRef}
+                          className="editor-textarea"
+                          value={body}
+                          onChange={handleBodyChange}
+                          placeholder="Type your notes here. Use [[ to link catalog & notes..."
+                          spellCheck={false}
+                        />
                       </div>
-                      {suggestions.map((item) => (
-                        <div
-                          key={`${item.kind}:${item.ref}`}
-                          className="autocomplete-item"
-                          onClick={() => insertSuggestion(item)}
-                        >
-                          <span className="autocomplete-badge">{item.kind}</span>
-                          <span className="autocomplete-title">{item.title}</span>
-                          <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                            [[{item.ref}]]
-                          </span>
-                        </div>
-                      ))}
+                      <div className="editor-split-pane">
+                        <RenderedNotePreview title={title} body={body} />
+                      </div>
                     </div>
-                  )}
-                </>
-              )}
-            </div>
+                  ) : previewActive ? (
+                    <RenderedNotePreview title={title} body={body} />
+                  ) : (
+                    <>
+                      <textarea
+                        ref={textareaRef}
+                        className="editor-textarea"
+                        value={body}
+                        onChange={handleBodyChange}
+                        placeholder="Type your notes here. Use [[ to link catalog & notes..."
+                        spellCheck={false}
+                      />
 
-            {/* Editor Footer Status Bar */}
-            <div className="editor-footer-status-bar">
-              <div className="editor-footer-left">
-                <span className="pulse-dot" style={{ width: "6px", height: "6px" }} />
-                <span>Catalog Grounded • 50 Sources Indexed</span>
-              </div>
-              <div className="editor-footer-stats">
-                <span>{wordCount} Words</span>
-                <span style={{ margin: "0 6px" }}>•</span>
-                <span>{charCount} Chars</span>
-              </div>
-            </div>
+                      {/* Wikilink Autocomplete Dropdown */}
+                      {showSuggestions && suggestions.length > 0 && (
+                        <div className="wikilink-autocomplete-popup">
+                          <div style={{ padding: "6px 12px", fontSize: "10px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                            Linked Entities
+                          </div>
+                          {suggestions.map((item) => (
+                            <div
+                              key={`${item.kind}:${item.ref}`}
+                              className="autocomplete-item"
+                              onClick={() => insertSuggestion(item)}
+                            >
+                              <span className="autocomplete-badge">{item.kind}</span>
+                              <span className="autocomplete-title">{item.title}</span>
+                              <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                                [[{item.ref}]]
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Editor Footer Status Bar */}
+                <div className="editor-footer-status-bar">
+                  <div className="editor-footer-left">
+                    <span className="pulse-dot" style={{ width: "6px", height: "6px" }} />
+                    <span>Catalog Grounded</span>
+                  </div>
+                  <div className="editor-footer-stats">
+                    <span>{wordCount} Words</span>
+                    <span style={{ margin: "0 6px" }}>•</span>
+                    <span>{charCount} Chars</span>
+                  </div>
+                </div>
+              </>
+            )}
           </section>
 
           {/* ── Column 3: Inspector & Links Panel ───────────────────────── */}
@@ -906,7 +917,7 @@ export function NotesPanel() {
                 <span>🔗</span>
                 <span>INSPECTOR & LINKS</span>
               </div>
-              <span className="inspector-connected-badge">3 Connected</span>
+              <span className="inspector-connected-badge">{activeLinks.length} Connected</span>
             </div>
 
             <div className="inspector-content-scroll">
@@ -914,72 +925,70 @@ export function NotesPanel() {
               <div className="mini-graph-box">
                 <div className="mini-graph-svg-wrap">
                   <svg width="100%" height="100" viewBox="0 0 240 100">
-                    <line x1="120" y1="50" x2="60" y2="25" stroke="#cbd5e1" strokeWidth="1.5" />
-                    <line x1="120" y1="50" x2="180" y2="35" stroke="#cbd5e1" strokeWidth="1.5" />
-                    <line x1="120" y1="50" x2="80" y2="78" stroke="#cbd5e1" strokeWidth="1.5" />
-
-                    {/* Satellite 1 */}
-                    <circle cx="60" cy="25" r="9" fill="#94a3b8" />
-                    {/* Satellite 2 (Emerald) */}
-                    <circle cx="180" cy="35" r="10" fill="#10b981" />
-                    {/* Satellite 3 (Slate) */}
-                    <circle cx="80" cy="78" r="8" fill="#cbd5e1" />
-
-                    {/* Center Active Note (Indigo) */}
-                    <circle cx="120" cy="50" r="13" fill="#4f46e5" stroke="#ffffff" strokeWidth="2" />
-                    <text x="210" y="88" textAnchor="end" fontSize="9" fontFamily="var(--font-mono)" fill="#94a3b8">
-                      Topology: Star-Mesh
-                    </text>
+                    {activeLinks.length === 0 ? (
+                      <>
+                        <circle cx="120" cy="50" r="14" fill="#4f46e5" stroke="#ffffff" strokeWidth="2" />
+                        <text x="120" y="76" textAnchor="middle" fontSize="10" fill="var(--text-muted)">
+                          {title ? title.slice(0, 16) : "Active Note"}
+                        </text>
+                      </>
+                    ) : (
+                      <>
+                        {activeLinks.map((_, i) => {
+                          const angle = (i / activeLinks.length) * 2 * Math.PI;
+                          const sx = 120 + 55 * Math.cos(angle);
+                          const sy = 50 + 30 * Math.sin(angle);
+                          return (
+                            <line key={i} x1="120" y1="50" x2={sx} y2={sy} stroke="#cbd5e1" strokeWidth="1.5" />
+                          );
+                        })}
+                        {activeLinks.map((link, i) => {
+                          const angle = (i / activeLinks.length) * 2 * Math.PI;
+                          const sx = 120 + 55 * Math.cos(angle);
+                          const sy = 50 + 30 * Math.sin(angle);
+                          return (
+                            <circle key={i} cx={sx} cy={sy} r="8" fill={link.target_kind === "product" ? "#10b981" : "#94a3b8"} />
+                          );
+                        })}
+                        <circle cx="120" cy="50" r="13" fill="#4f46e5" stroke="#ffffff" strokeWidth="2" />
+                      </>
+                    )}
                   </svg>
                 </div>
-                <div className="mini-graph-caption">Local 1-Hop Graph Relationship</div>
+                <div className="mini-graph-caption">
+                  {activeLinks.length === 0 ? "No active link topology" : `${activeLinks.length} Link Connection${activeLinks.length > 1 ? "s" : ""}`}
+                </div>
               </div>
 
               {/* Referenced Entities */}
               <div className="referenced-entities-section">
                 <span className="inspector-section-label">REFERENCED ENTITIES</span>
                 <div className="entity-items-list">
-                  <div className="entity-item-card">
-                    <div className="entity-item-top">
-                      <div className="entity-name-wrap">
-                        <span className="entity-dot product" />
-                        <span className="entity-name">HNSW Indexer</span>
-                      </div>
-                      <span className="entity-kind-badge">PRODUCT</span>
+                  {activeLinks.length === 0 ? (
+                    <div style={{ padding: "12px", fontSize: "12px", color: "var(--text-muted)", textAlign: "center" }}>
+                      No linked entities. Type <code>[[</code> in your note to reference products or notes.
                     </div>
-                    <div className="entity-desc">Vector proximity index optimized for cosine similarity.</div>
-                  </div>
-
-                  <div className="entity-item-card">
-                    <div className="entity-item-top">
-                      <div className="entity-name-wrap">
-                        <span className="entity-dot catalog" />
-                        <span className="entity-name">Dell-PowerEdge-R750xa</span>
+                  ) : (
+                    activeLinks.map((link, idx) => (
+                      <div key={idx} className="entity-item-card">
+                        <div className="entity-item-top">
+                          <div className="entity-name-wrap">
+                            <span className={`entity-dot ${link.target_kind || "note"}`} />
+                            <span className="entity-name">{link.target_ref}</span>
+                          </div>
+                          <span className="entity-kind-badge">{(link.target_kind || "LINK").toUpperCase()}</span>
+                        </div>
                       </div>
-                      <span className="entity-kind-badge">CATALOG</span>
-                    </div>
-                    <div className="entity-desc">Dual-socket 2U rack server supporting up to 4 GPUs.</div>
-                  </div>
-
-                  <div className="entity-item-card">
-                    <div className="entity-item-top">
-                      <div className="entity-name-wrap">
-                        <span className="entity-dot note" />
-                        <span className="entity-name">Huawei Cloud Ingestion 1</span>
-                      </div>
-                      <span className="entity-kind-badge">NOTE</span>
-                    </div>
-                    <div className="entity-desc">Connector latency benchmarks and edge gateway config.</div>
-                  </div>
+                    ))
+                  )}
                 </div>
               </div>
 
               {/* Backlinks */}
               <div className="backlinks-section">
-                <span className="inspector-section-label">BACKLINKS (1)</span>
-                <div className="backlink-nav-card" onClick={() => {}}>
-                  <span>2024 Q3 Strategic Forecast</span>
-                  <span className="backlink-arrow">›</span>
+                <span className="inspector-section-label">BACKLINKS (0)</span>
+                <div style={{ padding: "8px 12px", fontSize: "12px", color: "var(--text-muted)" }}>
+                  No backlinks yet
                 </div>
               </div>
             </div>
@@ -1020,73 +1029,65 @@ export function NotesPanel() {
 
 // ── Rich Rendered Preview Subcomponent ──────────────────────────────────
 
-function RenderedNotePreview({ body }: { body: string }) {
+function RenderedNotePreview({ title, body }: { title: string; body: string }) {
+  if (!body.trim() && !title.trim()) {
+    return (
+      <div className="editor-preview-canvas" style={{ color: "var(--text-muted)", fontStyle: "italic", padding: "24px" }}>
+        Empty note. Switch to edit mode to add content.
+      </div>
+    );
+  }
+
+  const lines = body.split("\n");
+
   return (
     <div className="editor-preview-canvas">
-      <p className="preview-paragraph">
-        Met with Acme VP of Infrastructure today to finalize requirements for their on-prem private vector cache cluster.
-        The primary goal is delivering sub-15ms semantic matching over <strong>50M active customer tickets</strong> with zero public egress.
-      </p>
-
-      {/* Linked Architecture Block */}
-      <div className="preview-linked-box">
-        <span className="preview-linked-title">Hardware & Algorithm Architecture Linked:</span>
-        <div className="preview-pills-row">
-          <span className="wikilink-pill product">[[ product:HNSW ]]</span>
-          <span className="wikilink-pill note">[[ note:Huawei Cloud Ingestion 1 ]]</span>
-          <span className="wikilink-pill sku">[[ sku:Dell-PowerEdge-R750xa ]]</span>
-        </div>
-      </div>
-
-      {/* Recommended Cluster Sizing Calculation Table */}
-      <div className="preview-table-section">
-        <span className="preview-table-label">Recommended Cluster Sizing Calculation:</span>
-        <table className="sizing-calculation-table">
-          <thead>
-            <tr>
-              <th>Component</th>
-              <th>Specification</th>
-              <th>Cluster Qty</th>
-              <th>Est. Cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style={{ fontWeight: 600 }}>Inference Host</td>
-              <td>Dual Xeon 6430 / 512GB ECC</td>
-              <td>4 Nodes</td>
-              <td>$42,800</td>
-            </tr>
-            <tr>
-              <td style={{ fontWeight: 600 }}>Vector GPU</td>
-              <td>NVIDIA A100 80GB SXM4</td>
-              <td>8 Units</td>
-              <td>$112,000</td>
-            </tr>
-            <tr>
-              <td style={{ fontWeight: 600 }}>Storage Plane</td>
-              <td>30TB NVMe U.2 Enterprise</td>
-              <td>12 Drives</td>
-              <td>$18,400</td>
-            </tr>
-            <tr className="total-row">
-              <td colSpan={3}>Total Hardware Commitment</td>
-              <td className="total-cost">$173,200</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* Action Item */}
-      <div className="preview-action-item">
-        <span>Action Item: Check SLA compatibility with </span>
-        <span className="wikilink-pill note" style={{ display: "inline-flex", padding: "2px 8px", fontSize: "11px" }}>
-          [[note:EMEA Latency Audit]]
-        </span>
-        <span> before submitting formal proposal.</span>
-      </div>
+      {title && <h1 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "16px", color: "var(--text-primary)" }}>{title}</h1>}
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={idx} style={{ height: "10px" }} />;
+        }
+        if (trimmed.startsWith("### ")) {
+          return <h3 key={idx} style={{ fontSize: "15px", fontWeight: 600, margin: "14px 0 6px" }}>{trimmed.replace(/^###\s+/, "")}</h3>;
+        }
+        if (trimmed.startsWith("## ")) {
+          return <h2 key={idx} style={{ fontSize: "17px", fontWeight: 600, margin: "16px 0 8px" }}>{trimmed.replace(/^##\s+/, "")}</h2>;
+        }
+        if (trimmed.startsWith("# ")) {
+          return <h1 key={idx} style={{ fontSize: "19px", fontWeight: 700, margin: "18px 0 10px" }}>{trimmed.replace(/^#\s+/, "")}</h1>;
+        }
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+          return (
+            <li key={idx} style={{ marginLeft: "20px", marginBottom: "4px", fontSize: "13.5px", lineHeight: "1.6" }}>
+              {renderWikilinksInText(trimmed.replace(/^[-*]\s+/, ""))}
+            </li>
+          );
+        }
+        return (
+          <p key={idx} className="preview-paragraph" style={{ margin: "0 0 10px", fontSize: "13.5px", lineHeight: "1.6" }}>
+            {renderWikilinksInText(line)}
+          </p>
+        );
+      })}
     </div>
   );
+}
+
+function renderWikilinksInText(text: string) {
+  const parts = text.split(/(\[\[.*?\]\])/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("[[") && part.endsWith("]]")) {
+      const inner = part.slice(2, -2).trim();
+      const [kind] = inner.includes(":") ? inner.split(":") : ["note"];
+      return (
+        <span key={i} className={`wikilink-pill ${kind || "note"}`}>
+          [[ {inner} ]]
+        </span>
+      );
+    }
+    return part;
+  });
 }
 
 export default NotesPanel;

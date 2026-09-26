@@ -22,7 +22,7 @@ export function AssistantMarkdown({
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeSanitize]}
         components={{
-          a: ({ href, children }) => {
+          a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
             if (href?.startsWith("#cite-")) {
               const n = Number(href.slice(6));
               const src = citations[n - 1];

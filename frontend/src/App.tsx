@@ -27,6 +27,8 @@ import { useDocuments } from "./hooks/useDocuments";
 import { usePrincipal } from "./hooks/useWorkflows";
 import { apiPointsAtLocalhostFromRemote, getAccessToken, onServerWake, setAccessToken } from "./services/http";
 import { SERVER_WAKING } from "./services/errors";
+import { api } from "./services/api";
+import type { NotebookRecord } from "./types";
 
 type Tab = "sources" | "ask" | "notes" | "map" | "connections" | "settings";
 
@@ -82,6 +84,21 @@ export default function App() {
       stop();
     };
   }, []);
+
+  const [sidebarNotebooks, setSidebarNotebooks] = useState<NotebookRecord[]>([]);
+
+  useEffect(() => {
+    if (authenticated) {
+      api
+        .listNotebooks()
+        .then((res) => {
+          if (res?.notebooks) {
+            setSidebarNotebooks(res.notebooks);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [authenticated, activeTab]);
 
   function signOut() {
     setAccessToken(null);
@@ -234,32 +251,25 @@ export default function App() {
                   +
                 </button>
               </div>
-              <button
-                type="button"
-                className={`index-item notebook-item ${activeTab === "notes" ? "active" : ""}`}
-                onClick={() => setActiveTab("notes")}
-              >
-                <span className="notebook-dot active" />
-                <span className="index-name">Acme on-prem sizing deal</span>
-              </button>
-              <button
-                type="button"
-                className="index-item notebook-item"
-                onClick={() => setActiveTab("notes")}
-              >
-                <span className="index-name" style={{ paddingLeft: "14px" }}>
-                  EMEA Retail Banking RFI
-                </span>
-              </button>
-              <button
-                type="button"
-                className="index-item notebook-item"
-                onClick={() => setActiveTab("notes")}
-              >
-                <span className="index-name" style={{ paddingLeft: "14px" }}>
-                  HNSW Hardware Specs Q3
-                </span>
-              </button>
+              {sidebarNotebooks.length === 0 ? (
+                <div style={{ padding: "6px 14px", fontSize: "12px", color: "var(--text-muted)" }}>
+                  No notebooks yet
+                </div>
+              ) : (
+                sidebarNotebooks.map((nb, i) => (
+                  <button
+                    key={nb.id}
+                    type="button"
+                    className={`index-item notebook-item ${activeTab === "notes" && i === 0 ? "active" : ""}`}
+                    onClick={() => setActiveTab("notes")}
+                  >
+                    {i === 0 && <span className="notebook-dot active" />}
+                    <span className="index-name" style={{ paddingLeft: i === 0 ? "0" : "14px" }}>
+                      {nb.name}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
 
             <div className="sidebar-footer">

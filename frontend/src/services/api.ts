@@ -237,6 +237,7 @@ export const api = {
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(body)
     }),
+  deleteNote: (id: string) => request<void>(`/notes/${id}`, { method: "DELETE" }),
   listVendorSources: () => request<VendorSourceList>("/freshness/sources"),
   createVendorSource: (body:{label:string; url:string}) =>
     request<VendorSource>("/freshness/sources", {
