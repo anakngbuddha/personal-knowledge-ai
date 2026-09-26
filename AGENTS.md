@@ -1,6 +1,6 @@
 # Workspace Rules - Personal Knowledge AI
 
-This file defines project-wide development rules for AI pair programmers operating in this repository.
+This file defines project-wide development rules for AI pair programmerstest operating in this repository.
 
 ## 1. Graphify Knowledge Graph (Active & Enforced)
 - **Prompt Trigger**: On every incoming prompt, consult the Graphify knowledge graph under `graphify-out/graph.json` or query it via CLI (`python -m graphify query "<topic>"` or `path` / `explain`). Do this before proposing architecture changes or exploring random files.
