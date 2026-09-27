@@ -431,6 +431,7 @@ def ask(
     persist: bool = True,
     notebook_id: uuid.UUID | None = None,
     web_search: bool | None = None,
+    attachment_document_ids: list[uuid.UUID] | None = None,
 ) -> GroundedAnswer:
     """Generate a grounded answer (synchronous).
 
@@ -458,11 +459,8 @@ def ask(
             conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
             if conv is None:
                 raise ValueError(f"Conversation {conversation_id} not found")
-            if notebook_id is not None and conv.notebook_id not in (None, notebook_id):
+            if conv.notebook_id != notebook_id:
                 raise ValueError(f"Conversation {conversation_id} not found")
-            if notebook_id is not None and conv.notebook_id is None:
-                conv.notebook_id = notebook_id
-                db.commit()
         history = get_history(db, conversation_id=conv_uuid)
     elif workspace_id:
         conv = create_conversation(
@@ -498,14 +496,16 @@ def ask(
 
     # Generate
     provider = get_llm_provider()
-    use_tools = enable_tools and not prepared.needs_web
+    use_tools = enable_tools
     if use_tools:
         if workspace_id is None:
             raise ValueError("enable_tools requires a workspace")
         from app.tools.loop import run_tool_loop
         from app.tools.registry import ToolContext, default_definitions, execute_tool
 
-        ctx = ToolContext(db=db, principal=principal, workspace_id=workspace_id)
+        ctx = ToolContext(db=db, principal=principal, workspace_id=workspace_id,
+                          notebook_id=notebook_id, conversation_id=conv_uuid,
+                          attachment_document_ids=attachment_document_ids)
 
         def _execute(call):
             return execute_tool(call, ctx)
@@ -590,6 +590,7 @@ def ask_stream(
     strict_mode: bool | None = None,
     notebook_id: uuid.UUID | None = None,
     web_search: bool | None = None,
+    attachment_document_ids: list[uuid.UUID] | None = None,
 ) -> Iterator[GroundedAnswerChunk]:
     """Generate a grounded answer with streaming.
 
@@ -613,6 +614,7 @@ def ask_stream(
             persist=False,
             notebook_id=notebook_id,
             web_search=web_search,
+            attachment_document_ids=attachment_document_ids,
         )
         if answer.text:
             yield GroundedAnswerChunk(delta=answer.text)
@@ -626,6 +628,8 @@ def ask_stream(
             conversation_id=answer.conversation_id,
             web_note=answer.web_note,
             web_sources=list(answer.web_sources),
+            tool_calls=list(answer.tool_calls),
+            tool_results=list(answer.tool_results),
         )
         conv_uuid = uuid.UUID(answer.conversation_id) if answer.conversation_id else None
         if conv_uuid:
@@ -662,11 +666,8 @@ def ask_stream(
             conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
             if conv is None:
                 raise ValueError(f"Conversation {conversation_id} not found")
-            if notebook_id is not None and conv.notebook_id not in (None, notebook_id):
+            if conv.notebook_id != notebook_id:
                 raise ValueError(f"Conversation {conversation_id} not found")
-            if notebook_id is not None and conv.notebook_id is None:
-                conv.notebook_id = notebook_id
-                db.commit()
         history = get_history(db, conversation_id=conv_uuid)
     elif workspace_id:
         conv = create_conversation(

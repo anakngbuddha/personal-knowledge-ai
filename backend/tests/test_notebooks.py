@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.models import (
     AccessGrant,
     AuditLog,
+    AgentAction,
     Base,
     Conversation,
     Document,
@@ -24,6 +26,7 @@ from app.db.models import (
     Notebook,
     NotebookSource,
     Organization,
+    Product,
     Workspace,
 )
 from app.db.session import get_db
@@ -60,6 +63,8 @@ def _tables():
         NoteLink.__table__,
         Conversation.__table__,
         AuditLog.__table__,
+        AgentAction.__table__,
+        Product.__table__,
     ]
 
 
@@ -249,6 +254,105 @@ def test_empty_notebook_does_not_search_the_whole_library(nb_db, monkeypatch):
     )
     assert response.status_code == 200, response.text
     assert captured["filters"]["document_ids"] == [str(EMPTY_SCOPE_ID)]
+
+
+def test_ask_rejects_conversation_from_another_notebook(nb_db):
+    headers = _auth(nb_db.org_a_id)
+    first = client.post("/notebooks", headers=headers, json={"name": "First"}).json()["id"]
+    second = client.post("/notebooks", headers=headers, json={"name": "Second"}).json()["id"]
+    conversation = client.post(f"/conversations?notebook_id={first}", headers=headers).json()["id"]
+    response = client.post("/ask", headers=headers, json={
+        "question": "What is here?", "conversation_id": conversation, "notebook_id": second,
+    })
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Conversation not found"
+
+
+def test_stream_reports_conversation_deleted_during_request(nb_db, monkeypatch):
+    def stale(*args, **kwargs):
+        raise ValueError("Conversation deleted-id not found")
+        yield  # pragma: no cover - keep this a generator
+
+    monkeypatch.setattr("app.api.routes.ask.generation_ask_stream", stale)
+    response = client.post("/ask", headers=_auth(nb_db.org_a_id),
+        json={"question": "What changed?", "stream": True})
+    assert response.status_code == 200
+    assert '"status_code": 404' in response.text
+
+
+def test_agent_delete_note_requires_confirmation_and_is_idempotent(nb_db):
+    from app.security.principal import owner_principal
+    from app.tools.registry import ToolContext, execute_tool
+    from app.tools.schema import ToolCall
+
+    note = Note(org_id=nb_db.org_a_id, workspace_id=nb_db.ws_a_id,
+                title="Draft", slug="draft", body="internal")
+    nb_db.add(note)
+    nb_db.commit()
+    note_id = note.id
+    headers = _auth(nb_db.org_a_id)
+    from app.security.jwt import decode_jwt
+    # Use the same authenticated user for proposal and confirmation.
+    principal = owner_principal(nb_db.org_a_id, uuid.UUID(decode_jwt(headers["Authorization"].split()[1])["sub"]))
+    ctx = ToolContext(db=nb_db, principal=principal, workspace_id=nb_db.ws_a_id)
+    result = execute_tool(ToolCall(id="1", name="tool_propose_delete_note",
+                                   arguments={"note_id": str(note.id)}), ctx)
+    assert result.error is None
+    assert nb_db.get(Note, note.id) is not None
+    action_id = result.content["pending_action"]["id"]
+    first = client.post(f"/agent/actions/{action_id}/confirm", headers=headers)
+    assert first.status_code == 200, first.text
+    assert first.json()["status"] == "confirmed"
+    again = client.post(f"/agent/actions/{action_id}/confirm", headers=headers)
+    assert again.status_code == 200
+    nb_db.expire_all()
+    assert nb_db.get(Note, note_id) is None
+
+
+def test_agent_action_is_hidden_from_another_tenant(nb_db):
+    from datetime import datetime, timedelta, timezone
+    action = AgentAction(org_id=nb_db.org_a_id, workspace_id=nb_db.ws_a_id,
+        kind="delete_note", arguments={"note_id": str(uuid.uuid4())}, status="pending",
+        idempotency_key=uuid.uuid4().hex, expires_at=datetime.now(timezone.utc) + timedelta(minutes=15))
+    nb_db.add(action)
+    nb_db.commit()
+    response = client.post(f"/agent/actions/{action.id}/confirm", headers=_auth(nb_db.org_b_id))
+    assert response.status_code == 404
+
+
+def test_agent_confirmation_rechecks_current_role(nb_db):
+    user_id = uuid.uuid4()
+    action = AgentAction(org_id=nb_db.org_a_id, workspace_id=nb_db.ws_a_id, user_id=user_id,
+        kind="publish_product", arguments={"name": "Atlas Hub", "vendor": "Acme", "category": "Software"},
+        status="pending", idempotency_key=uuid.uuid4().hex,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15))
+    nb_db.add(action)
+    nb_db.commit()
+    token = mint_token(org_id=nb_db.org_a_id, user_id=user_id, role=Role.VIEWER)
+    response = client.post(f"/agent/actions/{action.id}/confirm", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 403
+    assert nb_db.query(Product).count() == 0
+
+
+def test_catalog_publish_requires_in_chat_confirmation(nb_db):
+    from app.tools.registry import ToolContext, execute_tool
+    from app.tools.schema import ToolCall
+    from app.security.principal import owner_principal
+    from app.security.jwt import decode_jwt
+
+    headers = _auth(nb_db.org_a_id)
+    user_id = uuid.UUID(decode_jwt(headers["Authorization"].split()[1])["sub"])
+    ctx = ToolContext(db=nb_db, principal=owner_principal(nb_db.org_a_id, user_id),
+                      workspace_id=nb_db.ws_a_id)
+    proposal = execute_tool(ToolCall(id="publish", name="tool_propose_publish_product",
+        arguments={"name": "Atlas Hub", "vendor": "Acme", "category": "Software"}), ctx)
+    assert proposal.error is None
+    assert nb_db.query(Product).count() == 0
+    action_id = proposal.content["pending_action"]["id"]
+    confirmed = client.post(f"/agent/actions/{action_id}/confirm", headers=headers)
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["result"]["name"] == "Atlas Hub"
+    assert nb_db.query(Product).count() == 1
 
 
 def test_note_brief_and_conversation_stay_inside_the_notebook(nb_db):

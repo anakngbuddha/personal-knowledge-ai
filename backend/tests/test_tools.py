@@ -141,6 +141,64 @@ def test_invalid_extra_json_fields_rejected():
         HybridSearchArgs.model_validate({"query": "sso", "rm": "-rf"})
 
 
+def test_workspace_agent_tools_exclude_account_settings_and_require_write_role():
+    from app.security.principal import restricted_principal
+    names = {tool.name for tool in default_definitions()}
+    assert {"tool_create_note", "tool_create_requirements", "tool_create_unpriced_proposal",
+            "tool_start_rfp", "tool_propose_delete_note"} <= names
+    assert not any("credential" in name or "sso" in name or "settings" in name for name in names)
+    ctx = ToolContext(db=None, principal=restricted_principal(uuid.uuid4()), workspace_id=uuid.uuid4())
+    result = execute_tool(ToolCall(id="draft", name="tool_create_note",
+        arguments={"title": "Private", "body": "content"}), ctx)
+    assert "PermissionError" in (result.error or "")
+
+
+def test_proposal_tool_refuses_priced_text(monkeypatch):
+    import app.tools.workspace as workspace
+    monkeypatch.setattr(workspace, "_create_note", lambda _ctx, _args: {"artifact": {"kind": "note"}})
+    ctx = ToolContext(db=None, principal=owner_principal(uuid.uuid4()), workspace_id=uuid.uuid4())
+    priced = execute_tool(ToolCall(id="priced", name="tool_create_unpriced_proposal",
+        arguments={"title": "Quote", "body": "Total: $900"}), ctx)
+    assert "unpriced" in (priced.error or "").lower()
+    draft = execute_tool(ToolCall(id="draft", name="tool_create_unpriced_proposal",
+        arguments={"title": "Proposal", "body": "Proposed scope and assumptions"}), ctx)
+    assert draft.error is None
+
+
+def test_tool_loop_supports_multiple_actions_before_answer():
+    from app.llm.base import GroundedAnswer
+    from app.tools.schema import ToolResult
+
+    class Provider:
+        def __init__(self):
+            self.round = 0
+
+        def generate_grounded_answer(self, *args, **kwargs):
+            self.round += 1
+            calls = ([ToolCall(id=str(self.round), name="tool_list_notes", arguments={"limit": 2})]
+                     if self.round < 3 else [])
+            return GroundedAnswer(text="Prepared from workspace notes", citations=[], model_id="fake",
+                                  prompt_version="test", tool_calls=calls)
+
+    provider = Provider()
+    answer = run_tool_loop(provider, "Prepare a draft", [], system_prompt="test", history=None,
+        tools=default_definitions(), execute=lambda call: ToolResult(id=call.id, name=call.name, content={"notes": []}),
+        max_rounds=4)
+    assert provider.round == 3
+    assert len(answer.tool_results) == 2
+
+
+def test_expert_answer_prompt_keeps_sources_and_general_guidance_separate():
+    from app.generation.claim_support import GENERAL_GUIDANCE_HEADING
+    from app.llm.prompts import system_prompt_for
+    expert = system_prompt_for(enable_tools=True, strict_mode=False)
+    strict = system_prompt_for(enable_tools=False, strict_mode=True)
+    assert "Check sources first" in expert
+    assert GENERAL_GUIDANCE_HEADING in expert
+    assert "ONLY from the provided context" in strict
+    assert "Never invent products" in strict
+
+
 def test_no_dangerous_execution_in_tools_package():
     import app.tools.loop as loop_mod
     import app.tools.registry as registry_mod

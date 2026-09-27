@@ -1,5 +1,5 @@
 import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, LinkTargetOut, McpExecuteResult, McpIntegration, McpIntegrationList, McpPingResult, McpServerConfig, McpServerStatus, NoteGraphOut, NoteList, NoteRecord, NotebookList, NotebookRecord, NotebookSource, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, StudioResult, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
-import { fetchResponse, request, requestBlob } from "./http";
+import { ApiError, fetchResponse, request, requestBlob } from "./http";
 
 type AuthTokenResponse = { access_token: string; role: string; expires_in_seconds: number };
 
@@ -66,7 +66,7 @@ export const api = {
       body: JSON.stringify(body)
     }),
   askStream: async (
-    payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean; web_search?:boolean},
+    payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; attachment_document_ids?:string[]; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean; web_search?:boolean},
     onDelta: (text: string) => void,
     onStatus?: (status: string) => void
   ): Promise<Partial<AskResponse>> => {
@@ -96,8 +96,8 @@ export const api = {
           if (!line) continue;
           const data = line.slice(6).trim();
           if (data === "[DONE]") continue;
-          const event = JSON.parse(data) as {delta?: string; done?: boolean; error?: string; status?: string; citations?: SourceMetadata[]; conversation_id?: string; message_id?: string; refused?: boolean; web_note?: string | null; web_sources?: SourceMetadata[]};
-          if (event.error) throw new Error(event.error);
+          const event = JSON.parse(data) as {delta?: string; done?: boolean; error?: string; status_code?: number; status?: string; citations?: SourceMetadata[]; conversation_id?: string; message_id?: string; refused?: boolean; web_note?: string | null; web_sources?: SourceMetadata[]; tool_calls?: AskResponse["tool_calls"]};
+          if (event.error) throw event.status_code ? new ApiError(event.status_code, event.error) : new Error(event.error);
           if (event.status) onStatus?.(event.status);
           if (event.delta) {
             assembled += event.delta;
@@ -111,7 +111,8 @@ export const api = {
               message_id: event.message_id,
               refused: Boolean(event.refused),
               web_note: event.web_note,
-              web_sources: event.web_sources || []
+              web_sources: event.web_sources || [],
+              tool_calls: event.tool_calls || []
             };
           }
         }
@@ -129,6 +130,8 @@ export const api = {
   getConversation: (id:string) => request<Conversation>(`/conversations/${id}`),
   deleteConversation: (id:string) => request<void>(`/conversations/${id}`, {method:"DELETE"}),
   getConversationSources: (id:string) => request<SourceMetadata[]>(`/conversations/${id}/sources`),
+  confirmAgentAction: (id:string) => request<{id:string; status:string; result?:Record<string,unknown>}>(`/agent/actions/${id}/confirm`, {method:"POST"}),
+  rejectAgentAction: (id:string) => request<{id:string; status:string}>(`/agent/actions/${id}/reject`, {method:"POST"}),
   me: () => request<PrincipalProfile>("/auth/me"),
   listPlaybooks: () => request<PlaybookListResponse>("/playbooks"),
   listEdges: (params?: {status?:string; relation_type?:string; product_id?:string}) => {

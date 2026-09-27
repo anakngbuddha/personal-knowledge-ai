@@ -198,6 +198,7 @@ export interface Message {
   citations: SourceMetadata[];
   sources: SourceMetadata[];
   usage?: TokenUsage | null;
+  tool_calls?: ToolCallInfo[];
   prompt_version?: string | null;
   refused: boolean;
   model_id?: string | null;

@@ -7,6 +7,8 @@ frontend can render freshness, approval state, and vendor inline.
 
 from __future__ import annotations
 
+import uuid
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -77,6 +79,7 @@ class AskIn(BaseModel):
     # Source toggling: exclude specific documents from context
     exclude_document_ids: list[str] = Field(default_factory=list)
     notebook_id: str | None = None
+    attachment_document_ids: list[uuid.UUID] = Field(default_factory=list, max_length=12)
     # Tool-enabled answers are not streamed token by token (see ask_stream).
     enable_tools: bool = False
     # Knowledge mode. True (default) = strict, sources only. False = expert: general
@@ -125,6 +128,7 @@ class MessageOut(BaseModel):
     citations: list[SourceMetadataOut] = Field(default_factory=list)
     sources: list[SourceMetadataOut] = Field(default_factory=list)
     usage: TokenUsageOut | None = None
+    tool_calls: list[ToolCallOut] = Field(default_factory=list)
     prompt_version: str | None = None
     refused: bool = False
     model_id: str | None = None

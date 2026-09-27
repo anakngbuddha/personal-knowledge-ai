@@ -1,5 +1,12 @@
 import { SERVER_ASLEEP, friendlyError } from "./errors";
 
+export class ApiError extends Error {
+  constructor(public readonly status: number, public readonly detail: string) {
+    super(`[${status}] ${friendlyError(status, detail)}`);
+    this.name = "ApiError";
+  }
+}
+
 function isBrowserLocalHost() {
   if (typeof window === "undefined") return true;
   const h = window.location.hostname;
@@ -257,7 +264,7 @@ export async function fetchResponse(
   }
   if (!response.ok) {
     const detail = await readDetail(response);
-    throw new Error(`[${response.status}] ${friendlyError(response.status, detail)}`);
+    throw new ApiError(response.status, detail);
   }
   return response;
 }

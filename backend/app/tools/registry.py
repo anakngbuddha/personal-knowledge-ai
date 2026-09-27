@@ -26,10 +26,16 @@ class ToolContext:
         db: Session,
         principal: Principal,
         workspace_id: uuid.UUID,
+        notebook_id: uuid.UUID | None = None,
+        conversation_id: uuid.UUID | None = None,
+        attachment_document_ids: list[uuid.UUID] | None = None,
     ) -> None:
         self.db = db
         self.principal = principal
         self.workspace_id = workspace_id
+        self.notebook_id = notebook_id
+        self.conversation_id = conversation_id
+        self.attachment_document_ids = attachment_document_ids or []
 
 
 class CatalogImpactArgs(BaseModel):
@@ -207,7 +213,8 @@ _TOOLS: dict[str, RegisteredTool] = {
 
 
 def default_definitions(ctx: ToolContext | None = None) -> list[ToolDefinition]:
-    native = [_definition(tool) for tool in _TOOLS.values()]
+    from app.tools.workspace import WORKSPACE_TOOLS
+    native = [_definition(tool) for tool in (*_TOOLS.values(), *WORKSPACE_TOOLS.values())]
     if ctx is None:
         return native
     from app.mcp.registry_bridge import mcp_definitions_for
@@ -222,6 +229,9 @@ def execute_tool(call: ToolCall, ctx: ToolContext) -> ToolResult:
 
         return execute_mcp_tool(call, ctx)
     tool = _TOOLS.get(call.name)
+    if tool is None:
+        from app.tools.workspace import WORKSPACE_TOOLS
+        tool = WORKSPACE_TOOLS.get(call.name)
     if tool is None:
         return ToolResult(
             id=call.id,

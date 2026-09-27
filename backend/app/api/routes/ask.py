@@ -64,6 +64,14 @@ def _scoped_ask(
     """
     filters = payload.filters.model_dump() if payload.filters else None
     notebook_id = _notebook_uuid(payload.notebook_id)
+    if payload.conversation_id:
+        try:
+            conv_uuid = uuid.UUID(payload.conversation_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid conversation ID") from exc
+        conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
+        if conv is None or conv.notebook_id != notebook_id:
+            raise HTTPException(status_code=404, detail="Conversation not found")
     if notebook_id is None:
         return filters, None
     from app.core.errors import AppError
@@ -74,14 +82,6 @@ def _scoped_ask(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     if notebook.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Notebook not found.")
-    if payload.conversation_id:
-        try:
-            conv_uuid = uuid.UUID(payload.conversation_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Invalid conversation ID") from exc
-        conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
-        if conv is None or (conv.notebook_id is not None and conv.notebook_id != notebook_id):
-            raise HTTPException(status_code=404, detail="Conversation not found")
     scoped = dict(filters or {})
     scoped["document_ids"] = [str(item) for item in notebooks.enabled_document_ids(db, notebook=notebook)]
     return scoped, notebook_id
@@ -143,6 +143,7 @@ def ask_endpoint(
             strict_mode=payload.strict_mode,
             notebook_id=notebook_id,
             web_search=payload.web_search,
+            attachment_document_ids=payload.attachment_document_ids,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -251,6 +252,7 @@ def _stream_response(
                 strict_mode=payload.strict_mode,
                 notebook_id=notebook_id,
                 web_search=payload.web_search,
+                attachment_document_ids=payload.attachment_document_ids,
             ):
                 event_data = {
                     "delta": chunk.delta,
@@ -259,6 +261,13 @@ def _stream_response(
                 if chunk.status:
                     event_data["status"] = chunk.status
                 if chunk.done:
+                    results_by_id = {result.id: result for result in chunk.tool_results}
+                    event_data["tool_calls"] = [
+                        {"id": call.id, "name": call.name, "arguments": call.arguments,
+                         "error": results_by_id[call.id].error if call.id in results_by_id else None,
+                         "content": results_by_id[call.id].content if call.id in results_by_id else None}
+                        for call in chunk.tool_calls
+                    ]
                     event_data["citations"] = [
                         c.as_dict() for c in chunk.citations
                     ]
@@ -277,6 +286,11 @@ def _stream_response(
             yield f"data: {json.dumps({'error': str(exc), 'done': True})}\n\n"
         except (ProviderError, ProviderRateLimited) as exc:
             yield f"data: {json.dumps({'error': str(exc), 'done': True})}\n\n"
+        except ValueError as exc:
+            if "Conversation" in str(exc) and "not found" in str(exc):
+                yield f"data: {json.dumps({'error': 'Conversation not found', 'status_code': 404, 'done': True})}\n\n"
+            else:
+                yield f"data: {json.dumps({'error': str(exc), 'done': True})}\n\n"
 
         yield "data: [DONE]\n\n"
 
@@ -426,6 +440,7 @@ def ask_in_conversation_endpoint(
             strict_mode=payload.strict_mode,
             notebook_id=notebook_uuid,
             web_search=payload.web_search,
+            attachment_document_ids=payload.attachment_document_ids,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -528,6 +543,8 @@ def _conv_to_out(
         for msg in conv.messages:
             sources_raw = msg.sources or []
             citations_raw = (msg.citations or {}).get("items", []) if isinstance(msg.citations, dict) else []
+            trace = (msg.usage or {}).get("tool_trace", {})
+            results = {row.get("id"): row for row in trace.get("results", [])}
             messages.append(
                 schemas.MessageOut(
                     id=str(msg.id),
@@ -544,6 +561,11 @@ def _conv_to_out(
                         if msg.usage
                         else None
                     ),
+                    tool_calls=[schemas.ToolCallOut(id=call["id"], name=call["name"],
+                        arguments=call.get("arguments") or {},
+                        error=(results.get(call["id"]) or {}).get("error"),
+                        content=(results.get(call["id"]) or {}).get("content"))
+                        for call in trace.get("calls", [])],
                     prompt_version=msg.prompt_version,
                     refused=msg.refused,
                     model_id=msg.model_id,

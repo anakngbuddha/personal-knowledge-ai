@@ -181,6 +181,18 @@ MIGRATIONS=[
  ("0020_vendor_source_pages",_VENDOR_CRAWL,True),
  ("0021_document_chunk_hnsw",_VECTOR_HNSW,True),
  ("0022_row_level_security",[],True),
+ ("0023_agent_actions",["""CREATE TABLE IF NOT EXISTS agent_actions (
+ id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+ workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+ user_id uuid, conversation_id uuid REFERENCES conversations(id) ON DELETE SET NULL,
+ kind varchar(64) NOT NULL, arguments jsonb NOT NULL, status varchar(16) NOT NULL,
+ idempotency_key varchar(128) NOT NULL UNIQUE, result jsonb,
+ expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+ resolved_at timestamptz)
+ """, "CREATE INDEX IF NOT EXISTS ix_agent_actions_org_id ON agent_actions(org_id)",
+ "CREATE INDEX IF NOT EXISTS ix_agent_actions_workspace_id ON agent_actions(workspace_id)",
+ "CREATE INDEX IF NOT EXISTS ix_agent_actions_user_id ON agent_actions(user_id)"],True),
+ ("0024_agent_actions_rls",[],True),
 ]
 
 def applied_migrations(engine: Engine)->set[str]:
@@ -198,7 +210,7 @@ def run_migrations(engine: Engine)->list[str]:
   if postgres_only and not is_pg:
    with engine.begin() as conn: _record(conn,name)
    logger.info("migration %s skipped on %s; create_all already covers it",name,engine.dialect.name); continue
-  if name == "0022_row_level_security":
+  if name in ("0022_row_level_security", "0024_agent_actions_rls"):
    _apply_rls(engine)
    with engine.begin() as conn: _record(conn,name)
    ran.append(name)

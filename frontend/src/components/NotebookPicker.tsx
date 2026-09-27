@@ -18,8 +18,9 @@ export function NotebookPicker({ notebookId, onChange }: Props) {
     const listed = await api.listNotebooks();
     setNotebooks(listed.notebooks);
     const next = selectId ?? notebookId;
-    if (next && listed.notebooks.some((row) => row.id === next)) onChange(next);
-    else onChange(listed.notebooks[0]?.id ?? null);
+    const resolved = next && listed.notebooks.some((row) => row.id === next)
+      ? next : listed.notebooks[0]?.id ?? null;
+    if (resolved !== notebookId) onChange(resolved);
   }
 
   useEffect(() => {

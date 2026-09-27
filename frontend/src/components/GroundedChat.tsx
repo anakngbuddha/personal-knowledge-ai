@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import {
   ArrowRightIcon,
@@ -10,6 +10,7 @@ import {
 } from "./Icons";
 import { NotebookPicker } from "./NotebookPicker";
 import { api } from "../services/api";
+import { askWithConversationRecovery } from "../services/askRecovery";
 import type { Conversation, NotebookSource, SourceMetadata, StudioResult } from "../types";
 
 type Tab = "sources" | "ask" | "notes" | "map" | "connections" | "settings";
@@ -49,7 +50,7 @@ export function GroundedChat({
   const [error, setError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [selectedCitation, setSelectedCitation] = useState<SourceMetadata | null>(null);
-  const [strictMode, setStrictMode] = useState(true);
+  const [strictMode, setStrictMode] = useState(false);
   const [lastToolCalls, setLastToolCalls] = useState<string[]>([]);
   const [streamText, setStreamText] = useState("");
   const [statusNote, setStatusNote] = useState<string | null>(null);
@@ -60,8 +61,14 @@ export function GroundedChat({
   const [sources, setSources] = useState<NotebookSource[]>([]);
   const [studio, setStudio] = useState<StudioResult | null>(null);
   const [studioBusy, setStudioBusy] = useState(false);
-  const [sourcesExpertKnowledge, setSourcesExpertKnowledge] = useState(false);
+  const [sourcesExpertKnowledge, setSourcesExpertKnowledge] = useState(true);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const notebookRef = useRef<string | null>(null);
+  const selectedConversationRef = useRef<string | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const [attachedDocuments, setAttachedDocuments] = useState<{id:string; name:string}[]>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [resolvedActions, setResolvedActions] = useState<Record<string, string>>({});
   const [activeFilter, setActiveFilter] = useState<"briefing" | "faq" | "compare" | null>(null);
 
   useEffect(() => {
@@ -84,7 +91,7 @@ export function GroundedChat({
   async function loadConversations(id: string | null) {
     try {
       const res = await api.listConversations(30, 0, id ?? undefined);
-      setConversations(res.conversations);
+      if (notebookRef.current === id) setConversations(res.conversations);
     } catch {
       /* keep the previous list */
     }
@@ -93,7 +100,7 @@ export function GroundedChat({
   async function loadConversationDetails(id: string) {
     try {
       const conv = await api.getConversation(id);
-      setCurrentConv(conv);
+      if (selectedConversationRef.current === id) setCurrentConv(conv);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open that conversation");
     }
@@ -142,10 +149,36 @@ export function GroundedChat({
     }
   }
 
+  async function attachFiles(files: FileList | null) {
+    if (!files?.length) return;
+    const targetNotebookId = notebookRef.current;
+    setUploadingAttachment(true);
+    setError(null);
+    try {
+      const uploaded = await api.uploadDocuments(Array.from(files));
+      const additions = uploaded.results.filter((item) => item.document_id && item.status !== "rejected")
+        .map((item) => ({id: item.document_id!, name: item.original_filename}));
+      if (!additions.length) throw new Error(uploaded.results.map((item) => item.detail).filter(Boolean).join("; ") || "No files were attached");
+      if (targetNotebookId && notebookRef.current === targetNotebookId) {
+        const ids = [...new Set([...enabledIds(), ...additions.map((item) => item.id)])];
+        const saved = await api.setNotebookSources(targetNotebookId, ids);
+        if (notebookRef.current === targetNotebookId) setSources(saved);
+      }
+      if (notebookRef.current === targetNotebookId) setAttachedDocuments((current) => [...current, ...additions]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not attach files");
+    } finally {
+      setUploadingAttachment(false);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    }
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if (!question.trim() || loading) return;
     const q = question.trim();
+    const sentNotebookId = notebookId;
+    const sentConversationId = selectedConvId;
     setQuestion("");
     setLoading(true);
     setError(null);
@@ -154,33 +187,45 @@ export function GroundedChat({
     setStatusNote(null);
     setWebSources([]);
     setWebNote(null);
+    let streamedAny = false;
     try {
-      const answer = await api.askStream(
+      const request = (conversationId: string | null) => api.askStream(
         {
           question: q,
-          conversation_id: selectedConvId,
-          notebook_id: notebookId,
+          conversation_id: conversationId,
+          notebook_id: sentNotebookId,
+          attachment_document_ids: attachedDocuments.map((item) => item.id),
           filters: { document_ids: enabledIds() },
-          enable_tools: false,
+          enable_tools: true,
           strict_mode: strictMode,
-          web_search: webSearchEnabled,
+          web_search: webSearchEnabled ? undefined : false,
         },
-        setStreamText,
+        (delta) => { if (delta) streamedAny = true; setStreamText(delta); },
         setStatusNote
       );
+      const answer = await askWithConversationRecovery(sentConversationId, request,
+        () => !streamedAny && notebookRef.current === sentNotebookId, () => {
+        selectedConversationRef.current = null;
+        setSelectedConvId(null);
+        setCurrentConv(null);
+      });
+      if (notebookRef.current !== sentNotebookId) return;
       setWebSources(answer.web_sources || []);
       setWebNote(answer.web_note || null);
       setLastToolCalls((answer.tool_calls || []).map((c) => c.name));
-      if (!selectedConvId && answer.conversation_id) {
+      if ((!sentConversationId || selectedConversationRef.current === null) && answer.conversation_id) {
+        selectedConversationRef.current = answer.conversation_id;
         setSelectedConvId(answer.conversation_id);
-        await loadConversations(notebookId);
-      } else if (selectedConvId) {
-        await loadConversationDetails(selectedConvId);
+        await loadConversations(sentNotebookId);
+      } else if (sentConversationId) {
+        await loadConversationDetails(sentConversationId);
       }
       setStreamText("");
       setStatusNote(null);
+      setAttachedDocuments([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not write an answer");
+      setQuestion(q);
     } finally {
       setLoading(false);
     }
@@ -189,10 +234,21 @@ export function GroundedChat({
   async function handleDelete(id: string) {
     try {
       await api.deleteConversation(id);
-      if (selectedConvId === id) setSelectedConvId(null);
+      if (selectedConvId === id) { selectedConversationRef.current = null; setSelectedConvId(null); }
       await loadConversations(notebookId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete that conversation");
+    }
+  }
+
+  async function resolveAgentAction(id: string, confirm: boolean) {
+    try {
+      const result = confirm ? await api.confirmAgentAction(id) : await api.rejectAgentAction(id);
+      setResolvedActions((current) => ({...current, [id]: result.status}));
+      if (selectedConversationRef.current) await loadConversationDetails(selectedConversationRef.current);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resolve the action");
     }
   }
 
@@ -251,9 +307,12 @@ export function GroundedChat({
         <NotebookPicker
           notebookId={notebookId}
           onChange={(id) => {
+            notebookRef.current = id;
+            selectedConversationRef.current = null;
             setNotebookId(id);
             setSelectedConvId(null);
             setCurrentConv(null);
+            setAttachedDocuments([]);
           }}
         />
 
@@ -307,7 +366,7 @@ export function GroundedChat({
           <div className="threads-list">
             {conversations.map((c) => (
               <div key={c.id} className={`conv-item ${selectedConvId === c.id ? "active" : ""}`}>
-                <button type="button" className="conv-open" onClick={() => setSelectedConvId(c.id)}>
+                <button type="button" className="conv-open" onClick={() => { selectedConversationRef.current = c.id; setSelectedConvId(c.id); }}>
                   {c.title || "Untitled thread"}
                 </button>
                 <button
@@ -382,6 +441,24 @@ export function GroundedChat({
                     <p>{msg.content}</p>
                   )}
                 </div>
+                {msg.role === "assistant" && (
+                  <div className="agent-results">
+                    {(msg.tool_calls || []).map((call) => {
+                      const artifact = call.content?.artifact as {kind?:string; id?:string; title?:string} | undefined;
+                      const pending = call.content?.pending_action as {id?:string; label?:string} | undefined;
+                      return <div key={call.id} className="agent-result">
+                        {call.error && <span>{call.name}: {call.error}</span>}
+                        {artifact && <span>Created {artifact.kind}: {artifact.title || artifact.id} ({artifact.id})</span>}
+                        {pending?.id && <div><span>{pending.label}</span>{" "}
+                          {resolvedActions[pending.id] ? <span>{resolvedActions[pending.id]}</span> : <>
+                            <button type="button" onClick={() => void resolveAgentAction(pending.id!, true)}>Confirm</button>{" "}
+                            <button type="button" onClick={() => void resolveAgentAction(pending.id!, false)}>Reject</button>
+                          </>}
+                        </div>}
+                      </div>;
+                    })}
+                  </div>
+                )}
                 {msg.role === "assistant" && (
                   <div className="sources-used">
                     Sources used: {sourceKinds(msg.citations || [], lastToolCalls).join(" / ") || "none yet"}
@@ -461,12 +538,13 @@ export function GroundedChat({
           </details>
 
           <div className="composer-bar-container">
+            <input ref={attachmentInputRef} type="file" multiple hidden onChange={(e) => void attachFiles(e.target.files)} />
             <button
               type="button"
               className="composer-attach-btn"
               title="Attach document or note"
               aria-label="Attach source"
-              onClick={() => onNavigate("sources")}
+              onClick={() => attachmentInputRef.current?.click()}
             >
               <PaperclipIcon size={18} />
             </button>
@@ -477,12 +555,12 @@ export function GroundedChat({
               aria-label="Ask a question"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              disabled={loading}
+              disabled={loading || uploadingAttachment}
             />
             <button
               type="submit"
               className="composer-send-btn"
-              disabled={loading || !question.trim()}
+              disabled={loading || uploadingAttachment || !question.trim()}
             >
               <span>Send</span>
               <SendIcon size={14} />
@@ -499,6 +577,7 @@ export function GroundedChat({
           <div className="side-section-header">
             <span className="side-title">Source passage</span>
           </div>
+          {attachedDocuments.length > 0 && <div className="attached-source-list">Attached: {attachedDocuments.map((item) => item.name).join(", ")}</div>}
 
             <div className="citation-active-card">
               <div className="citation-title-row">

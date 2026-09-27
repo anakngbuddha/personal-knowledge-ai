@@ -137,6 +137,8 @@ class GroundedAnswerChunk:
     status: str | None = None
     web_note: str | None = None
     web_sources: list[SourceMetadata] = field(default_factory=list)
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_results: list[ToolResult] = field(default_factory=list)
 
 
 class LLMProvider(ABC):

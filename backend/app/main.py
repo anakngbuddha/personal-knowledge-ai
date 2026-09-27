@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
+    agent_actions,
     advisor,
     ask,
     auth,
@@ -107,6 +108,7 @@ app.include_router(search.router)
 app.include_router(studio.router)
 app.include_router(jobs.router)
 app.include_router(ask.router)
+app.include_router(agent_actions.router)
 app.include_router(catalog_import.router)
 app.include_router(catalog.router)
 app.include_router(map_edit.router)

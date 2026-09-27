@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     web_fallback_min_score: float = 0.15
     web_fallback_max_results: int = 3
     web_fallback_max_chars: int = 2500
-    tool_max_rounds: int = 1
+    tool_max_rounds: int = 4
     tool_max_calls_per_round: int = 4
 
     mcp_enabled: bool = False
