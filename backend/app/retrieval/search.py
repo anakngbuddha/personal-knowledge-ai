@@ -13,12 +13,18 @@ Both branches read from the **same** candidate CTE. That is what makes "filters 
 before fusion" a structural property rather than a promise: there is no path from an
 unfiltered chunk into either rank list.
 
+Latency shape (audit finding 9): the query embedding runs on a helper thread while
+the keyword SQL runs; the vector SQL starts once the embedding arrives. The two SQL
+branches are serial on one connection. Every stage is timed in `timings_ms` and logged,
+so the branch that dominates in production is measured, not guessed.
+
 `mode` exists so the plan's required baseline comparison (vector-only vs keyword-only
 vs hybrid) is one parameter, not three code paths that can drift apart.
 """
 
 from __future__ import annotations
 
+import contextvars
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -148,7 +154,11 @@ def search(
     embed_future = None
     if mode == "hybrid":
         embed_pool = ThreadPoolExecutor(max_workers=1)
-        embed_future = embed_pool.submit(get_embedding_provider().embed_query, query)
+        # copy_context so the helper thread keeps the caller's Gemini call class
+        # (interactive for requests, background for workers).
+        ctx = contextvars.copy_context()
+        embed_started = time.perf_counter()
+        embed_future = embed_pool.submit(ctx.run, get_embedding_provider().embed_query, query)
 
     if mode == "vector":
         mark = time.perf_counter()
@@ -182,7 +192,9 @@ def search(
             vector = embed_future.result()
         finally:
             embed_pool.shutdown(wait=False)
-        timings["embed_ms"] = _ms(mark)
+        # embed_wait_ms: time spent blocked after the keyword branch finished.
+        timings["embed_wait_ms"] = _ms(mark)
+        timings["embed_ms"] = _ms(embed_started)
         branches.append(_vector_branch(db, candidates, vector, candidate_k, timings))
 
     mark = time.perf_counter()
@@ -195,12 +207,12 @@ def search(
     timings["total_ms"] = _ms(started)
 
     logger.info(
-        "search mode=%s q=%r candidates=%s hits=%s total=%.1fms",
+        "search mode=%s q=%r candidates=%s hits=%s timings=%s",
         mode,
         query[:80],
         candidate_count,
         len(hits),
-        timings["total_ms"],
+        {key: round(value, 1) for key, value in timings.items()},
     )
 
     return SearchResponse(

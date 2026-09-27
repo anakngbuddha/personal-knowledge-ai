@@ -1,4 +1,9 @@
-"""Durable workflow task queue on PostgreSQL SKIP LOCKED."""
+"""Durable workflow task queue on PostgreSQL SKIP LOCKED.
+
+Leases (audit finding 13): `leased_until` is renewed by `renew_lease()` while a task
+runs. `reap_stale()` only requeues tasks whose lease lapsed, and `succeed()` /
+`waiting_approval()` / `fail()` do not overwrite a task another worker has reclaimed.
+"""
 
 from __future__ import annotations
 
@@ -119,7 +124,24 @@ def claim(db: Session, worker_id: str) -> TaskExecution | None:
     return None
 
 
+def _taken_over(db: Session, task: TaskExecution) -> bool:
+    mine = task.worker_id
+    if not mine:
+        return False
+    row = db.execute(
+        select(TaskExecution.status, TaskExecution.worker_id).where(TaskExecution.id == task.id)
+    ).one_or_none()
+    if row is None:
+        return False
+    status, owner = row
+    return status == TaskStatus.RUNNING and owner is not None and owner != mine
+
+
 def succeed(db: Session, task: TaskExecution, output: dict[str, Any] | None = None) -> None:
+    if _taken_over(db, task):
+        logger.warning("task %s finished after its lease was taken over; keeping the new owner's state", task.id)
+        db.expire(task)
+        return
     task.status = TaskStatus.SUCCEEDED
     task.output_payload = output or {}
     task.worker_id = None
@@ -129,6 +151,10 @@ def succeed(db: Session, task: TaskExecution, output: dict[str, Any] | None = No
 
 
 def waiting_approval(db: Session, task: TaskExecution, output: dict[str, Any] | None = None) -> None:
+    if _taken_over(db, task):
+        logger.warning("task %s finished after its lease was taken over; keeping the new owner's state", task.id)
+        db.expire(task)
+        return
     task.status = TaskStatus.WAITING_APPROVAL
     task.output_payload = output or {}
     task.worker_id = None
@@ -140,6 +166,10 @@ def waiting_approval(db: Session, task: TaskExecution, output: dict[str, Any] | 
 
 
 def fail(db: Session, task: TaskExecution, error: str, *, retryable: bool = True) -> None:
+    if _taken_over(db, task):
+        logger.warning("task %s failed after its lease was taken over; keeping the new owner's state", task.id)
+        db.expire(task)
+        return
     task.worker_id = None
     task.leased_until = None
     task.error_message = error[:4000]
@@ -175,7 +205,7 @@ def reap_stale(db: Session) -> int:
         .values(
             status=TaskStatus.PENDING,
             worker_id=None,
-            error_message="worker went away; requeued",
+            error_message="lease expired (worker went away); requeued",
             run_after=_now(),
             leased_until=None,
         )
@@ -187,9 +217,29 @@ def reap_stale(db: Session) -> int:
     return result.rowcount or 0
 
 
-def heartbeat(db: Session, task: TaskExecution) -> None:
-    task.leased_until = _now() + timedelta(seconds=settings.workflow_task_stale_seconds)
+def renew_lease(db: Session, task_id: uuid.UUID, worker_id: str) -> bool:
+    """Extend a running task's lease. False means another worker owns it now."""
+    result = db.execute(
+        update(TaskExecution)
+        .where(
+            TaskExecution.id == task_id,
+            TaskExecution.status == TaskStatus.RUNNING,
+            TaskExecution.worker_id == worker_id,
+        )
+        .values(leased_until=_now() + timedelta(seconds=settings.workflow_task_stale_seconds))
+        .execution_options(synchronize_session=False)
+    )
     db.commit()
+    return bool(result.rowcount)
+
+
+def heartbeat(db: Session, task: TaskExecution) -> None:
+    """Compatibility wrapper; prefer renew_lease from a LeaseKeeper."""
+    if task.worker_id:
+        renew_lease(db, task.id, task.worker_id)
+    else:
+        task.leased_until = _now() + timedelta(seconds=settings.workflow_task_stale_seconds)
+        db.commit()
 
 
 def collect_upstream(db: Session, task: TaskExecution) -> dict[str, Any]:

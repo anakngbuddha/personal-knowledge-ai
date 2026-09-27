@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
     environment: str = "development"
     log_level: str = "INFO"
+    port: int = 8000
     auto_migrate: bool = False
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/pka"
 
@@ -16,6 +17,12 @@ class Settings(BaseSettings):
             if v.startswith("postgres://"): return "postgresql+psycopg://" + v[11:]
             if v.startswith("postgresql://") and not v.startswith("postgresql+"): return "postgresql+psycopg://" + v[13:]
         return v
+
+    # Row-level security (audit finding 4). Unscoped sessions bypass RLS unless
+    # rls_default_deny is on; rls_required refuses to boot when the DB role can
+    # bypass policies or a tenant table is not ENABLE+FORCE.
+    rls_default_deny: bool = False
+    rls_required: bool = False
 
     storage_backend: str = "r2"
     local_storage_dir: str = "./.storage"
@@ -47,6 +54,11 @@ class Settings(BaseSettings):
     generation_rerank_enabled: bool = True
     generation_rerank_candidates: int = 12
     generation_search_candidate_k: int = 20
+    # Audit finding 5: strict (sources-only) is the default answer mode.
+    generation_strict_default: bool = True
+    # A cited sentence whose content words overlap the cited passage less than this
+    # is flagged as weakly supported (lexical check, not an entailment model).
+    claim_support_min_overlap: float = 0.25
     web_fallback_min_score: float = 0.15
     web_fallback_max_results: int = 3
     web_fallback_max_chars: int = 2500
@@ -62,6 +74,16 @@ class Settings(BaseSettings):
     mcp_call_timeout_seconds: float = 45.0
     mcp_max_result_bytes: int = 32768
     mcp_tool_max_rounds: int = 8
+    # Audit finding 3: external MCP tokens are short-lived and re-validated per call.
+    mcp_token_default_minutes: int = 480
+    mcp_token_max_minutes: int = 1440
+    mcp_max_sse_sessions: int = 500
+    # Audit finding 12: child MCP servers get a minimal environment and a private
+    # working directory. Optional OS sandbox wrapper, e.g. "bwrap --unshare-all ..."
+    # or "firejail --quiet --private"; empty means no wrapper.
+    mcp_child_env_allowlist: str = "PATH,LANG,LC_ALL,TZ,NODE_OPTIONS"
+    mcp_child_workdir: str = "./.mcp-sandbox"
+    mcp_child_sandbox_command: str = ""
 
     notes_max_body_chars: int = 200000
     freshness_worker_enabled: bool = True
@@ -128,6 +150,10 @@ class Settings(BaseSettings):
     graph_expansion_hops: int = 2
     graph_expansion_max_neighbours: int = 6
     graph_expansion_chunks_per_neighbour: int = 1
+    # Audit finding 9: each neighbour costs a full hybrid search (and an embedding
+    # call). Cap how many run per answer and stop when the time budget is spent.
+    graph_expansion_max_neighbour_searches: int = 3
+    graph_expansion_time_budget_ms: float = 1500.0
 
     # 4.1 the customer brief. Requirement text is read once into a structured brief and
     # kept as a note, so the rest of the conversation can use it. Off falls back to the
@@ -157,7 +183,12 @@ class Settings(BaseSettings):
     ocr_language: str = "eng"
     ocr_dpi: int = 200
     ocr_max_pages: int = 50
+    # Shared Gemini quota (OCR + embeddings + chat). Raise only after confirming the
+    # account's real limit: a higher local number just moves the wait to Gemini 429s.
     gemini_rpm: int = 10
+    # Audit finding 7: background calls may not take the last N slots of any rolling
+    # minute, so an interactive call never waits behind a full ingestion backlog.
+    gemini_interactive_reserve: int = 2
     auto_approve_uploads: bool = True
     url_fetch_enabled: bool = True
     url_fetch_timeout_seconds: float = 20.0
@@ -170,12 +201,20 @@ class Settings(BaseSettings):
     job_max_attempts: int = 4
     job_backoff_base_seconds: float = 15.0
     job_backoff_max_seconds: float = 900.0
-    job_stale_seconds: float = 1800.0
+    # Audit finding 13: running jobs renew their lease every heartbeat, so the stale
+    # interval only has to outlast a missed heartbeat or two, not the longest job.
+    job_stale_seconds: float = 600.0
+    job_heartbeat_seconds: float = 60.0
     workflow_worker_enabled: bool = True
     workflow_worker_concurrency: int = 1
-    workflow_task_stale_seconds: float = 1800.0
+    workflow_task_stale_seconds: float = 600.0
     workflow_task_max_attempts: int = 4
     cors_origins: str = "http://localhost:5173"
+
+    # Audit finding 8: log event-loop lag and DB-pool pressure so contention on the
+    # single web process is measured before paying for a separate worker service.
+    runtime_metrics_enabled: bool = True
+    runtime_metrics_interval_seconds: float = 30.0
 
     @model_validator(mode="after")
     def production_security(self):

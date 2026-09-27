@@ -6,8 +6,11 @@ This is the heart of Phase 3. The service:
 3. Wraps each search hit through wrap_untrusted() (injection containment)
 4. Builds the prompt using versioned templates from prompts.py
 5. Calls the LLM provider (sync or streaming)
-6. Maps citations back to SourceMetadata with provenance
+6. Maps citations back to SourceMetadata with provenance, and scores how well each
+   cited passage supports the claim it is attached to (audit finding 5)
 7. Records usage for budget tracking
+
+Strict (sources-only) is the default answer mode (GENERATION_STRICT_DEFAULT).
 
 Tool access is opt-in via enable_tools. Document content reaches the LLM only
 through wrap_untrusted(), and the system prompt states that document content
@@ -20,10 +23,13 @@ points at the child, so provenance does not get vaguer as context gets wider.
 3.5 adds another: when the question names a product the map knows, the accepted
 relationships around it are stated in the prompt, and the best passage for each
 neighbour is retrieved as well, so the model can cite the pairing rather than assert it.
+Each neighbour costs a full hybrid search, so the number of neighbour searches and
+their total time are capped (audit finding 9).
 """
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -35,6 +41,11 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import DocumentChunk
 from app.documents.injection import wrap_untrusted
+from app.generation.claim_support import (
+    annotate_citations,
+    sanitize_general_guidance,
+    weak_citation_count,
+)
 from app.generation.conversations import (
     add_message,
     auto_title,
@@ -67,6 +78,12 @@ from app.security.principal import Principal
 logger = get_logger(__name__)
 
 
+def resolve_strict_mode(strict_mode: bool | None) -> bool:
+    if strict_mode is None:
+        return bool(getattr(settings, "generation_strict_default", True))
+    return bool(strict_mode)
+
+
 @dataclass
 class PreparedContext:
     chunks: list[dict]
@@ -76,6 +93,7 @@ class PreparedContext:
     search_query: str
     web_note: str | None = None
     web_sources: list[SourceMetadata] = field(default_factory=list)
+    timings_ms: dict[str, float] = field(default_factory=dict)
 
 
 def hits_are_weak(hits: list, query: str) -> bool:
@@ -144,6 +162,57 @@ def _parent_passages(db: Session, chunk_ids: list[str]) -> dict[str, str]:
     return passages
 
 
+def _expand_neighbours(
+    db: Session,
+    principal: Principal,
+    names: list[str],
+    hits: list,
+    retrieval_filters: RetrievalFilters,
+    timings: dict[str, float],
+) -> None:
+    """Bring each neighbour's best passage along, within a count and time budget."""
+    known = {hit.chunk_id for hit in hits}
+    per_neighbour = max(1, settings.graph_expansion_chunks_per_neighbour)
+    max_searches = max(0, int(getattr(settings, "graph_expansion_max_neighbour_searches", 3)))
+    budget_ms = float(getattr(settings, "graph_expansion_time_budget_ms", 0) or 0)
+    started = time.perf_counter()
+    searched = 0
+    for name in names:
+        if searched >= max_searches:
+            break
+        elapsed = (time.perf_counter() - started) * 1000.0
+        if budget_ms and elapsed >= budget_ms:
+            logger.info("graph expansion stopped at time budget (%.0f ms)", elapsed)
+            break
+        searched += 1
+        try:
+            extra = run_search(
+                db,
+                principal=principal,
+                query=name,
+                filters=retrieval_filters,
+                mode="hybrid",
+                top_k=per_neighbour,
+                candidate_k=settings.generation_search_candidate_k,
+            )
+        except Exception:  # noqa: BLE001 - a neighbour is a bonus, never a blocker
+            logger.debug("neighbour lookup failed for %s", name, exc_info=True)
+            continue
+        for hit in extra.hits:
+            if hit.chunk_id in known:
+                continue
+            known.add(hit.chunk_id)
+            hits.append(hit)
+    timings["graph_expansion_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
+    timings["graph_neighbour_searches"] = float(searched)
+    logger.info(
+        "graph expansion searched %d of %d neighbour(s) in %.1f ms",
+        searched,
+        len(names),
+        timings["graph_expansion_ms"],
+    )
+
+
 def _prepare_context(
     db: Session,
     principal: Principal,
@@ -155,11 +224,13 @@ def _prepare_context(
 ) -> PreparedContext:
     """Retrieve and prepare context chunks for the LLM.
 
-    Rewrites follow-ups using conversation history, expands broad questions
-    into a few sub-queries, optionally reranks the fused hits, widens each
-    surviving hit to its parent section, and (3.5) brings in what the product
-    map knows about the products the question names.
+    Rewrites follow-ups using conversation history (deterministic, no LLM call),
+    expands broad questions into a few sub-queries, optionally reranks the fused hits,
+    widens each surviving hit to its parent section, and (3.5) brings in what the
+    product map knows about the products the question names.
     """
+    timings: dict[str, float] = {}
+    started = time.perf_counter()
     retrieval_filters = _build_retrieval_filters(filters, exclude_document_ids)
     max_chunks = settings.generation_max_context_chunks
     search_query = rewrite_query(question, history)
@@ -171,6 +242,7 @@ def _prepare_context(
     )
 
     merged: dict[str, object] = {}
+    mark = time.perf_counter()
     for query in queries:
         search_result = run_search(
             db,
@@ -186,6 +258,8 @@ def _prepare_context(
             score = float(getattr(hit, "rrf_score", 0) or 0)
             if previous is None or score > float(getattr(previous, "rrf_score", 0) or 0):
                 merged[hit.chunk_id] = hit
+    timings["search_ms"] = round((time.perf_counter() - mark) * 1000.0, 1)
+    timings["search_queries"] = float(len(queries))
 
     hits = list(merged.values())
     if settings.generation_rerank_enabled and hits:
@@ -200,31 +274,13 @@ def _prepare_context(
 
     # 3.5 The map. Its sentences go in the prompt; its neighbours bring their own best
     # passage so a pairing can be cited instead of asserted.
+    mark = time.perf_counter()
     graph = map_lookup.expand(db, workspace_id=workspace_id, question=question)
+    timings["graph_lookup_ms"] = round((time.perf_counter() - mark) * 1000.0, 1)
     relationships_block = build_relationships_block(graph.as_lines())
     covered = not hits_are_weak(hits, search_query)
     if graph.neighbour_names and not covered:
-        known = {hit.chunk_id for hit in hits}
-        per_neighbour = max(1, settings.graph_expansion_chunks_per_neighbour)
-        for name in graph.neighbour_names:
-            try:
-                extra = run_search(
-                    db,
-                    principal=principal,
-                    query=name,
-                    filters=retrieval_filters,
-                    mode="hybrid",
-                    top_k=per_neighbour,
-                    candidate_k=settings.generation_search_candidate_k,
-                )
-            except Exception:  # noqa: BLE001 - a neighbour is a bonus, never a blocker
-                logger.debug("neighbour lookup failed for %s", name, exc_info=True)
-                continue
-            for hit in extra.hits:
-                if hit.chunk_id in known:
-                    continue
-                known.add(hit.chunk_id)
-                hits.append(hit)
+        _expand_neighbours(db, principal, list(graph.neighbour_names), hits, retrieval_filters, timings)
 
     parents = _parent_passages(db, [hit.chunk_id for hit in hits])
 
@@ -292,12 +348,16 @@ def _prepare_context(
             )
         )
 
+    timings["prepare_total_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
+    logger.info("prepare_context timings %s", timings)
+
     return PreparedContext(
         chunks=context_chunks,
         sources=source_metadata,
         relationships_block=relationships_block,
         needs_web=hits_are_weak(hits, search_query),
         search_query=search_query,
+        timings_ms=timings,
     )
 
 
@@ -367,7 +427,7 @@ def ask(
     exclude_document_ids: list[str] | None = None,
     workspace_id: uuid.UUID | None = None,
     enable_tools: bool = True,
-    strict_mode: bool = False,
+    strict_mode: bool | None = None,
     persist: bool = True,
     notebook_id: uuid.UUID | None = None,
     web_search: bool | None = None,
@@ -380,8 +440,10 @@ def ask(
     3. Retrieve permission-aware context
     4. Build prompt with injection containment
     5. Generate answer (optional single-turn tool loop)
-    6. Record usage + persist message
+    6. Score citation support, record usage, persist message
     """
+    strict_mode = resolve_strict_mode(strict_mode)
+
     # Cost controls
     check_rate_limit(principal.user_id)
     check_token_budget(db, principal.org_id)
@@ -465,6 +527,10 @@ def ask(
             history=history,
         )
 
+    # Claim-level support and the unsourced-section rule.
+    answer.text = sanitize_general_guidance(answer.text or "")
+    answer.citations = annotate_citations(answer.text, list(answer.citations), context_chunks)
+
     # Record token usage
     if answer.usage:
         record_token_usage(
@@ -498,10 +564,12 @@ def ask(
     answer.web_sources = list(prepared.web_sources)
 
     logger.info(
-        "ask model=%s refused=%s citations=%d prompt_v=%s conv=%s",
+        "ask model=%s strict=%s refused=%s citations=%d weak=%d prompt_v=%s conv=%s",
         answer.model_id,
+        strict_mode,
         answer.refused,
         len(answer.citations),
+        weak_citation_count(answer.citations),
         answer.prompt_version,
         conv_uuid,
     )
@@ -519,15 +587,19 @@ def ask_stream(
     exclude_document_ids: list[str] | None = None,
     workspace_id: uuid.UUID | None = None,
     enable_tools: bool = True,
-    strict_mode: bool = False,
+    strict_mode: bool | None = None,
     notebook_id: uuid.UUID | None = None,
     web_search: bool | None = None,
 ) -> Iterator[GroundedAnswerChunk]:
     """Generate a grounded answer with streaming.
 
-    If tools are enabled, the tool loop runs first and the final prose is streamed.
+    Tool-enabled answers are NOT streamed (audit finding 10): the tool loop has to
+    finish before there is final prose, so the endpoint says so with a status chunk and
+    sends the answer in one piece instead of replaying it word by word.
     """
+    strict_mode = resolve_strict_mode(strict_mode)
     if enable_tools:
+        yield GroundedAnswerChunk(delta="", status="running tools; this answer is not streamed")
         answer = ask(
             db,
             principal=principal,
@@ -542,9 +614,8 @@ def ask_stream(
             notebook_id=notebook_id,
             web_search=web_search,
         )
-        words = (answer.text or "").split()
-        for i, word in enumerate(words):
-            yield GroundedAnswerChunk(delta=word if i == 0 else f" {word}")
+        if answer.text:
+            yield GroundedAnswerChunk(delta=answer.text)
         done = GroundedAnswerChunk(
             delta="",
             done=True,
@@ -641,6 +712,8 @@ def ask_stream(
     ):
         accumulated_text += chunk.delta
         if chunk.done:
+            persisted_text = sanitize_general_guidance(accumulated_text)
+            chunk.citations = annotate_citations(persisted_text, list(chunk.citations), context_chunks)
             chunk.web_note = prepared.web_note
             chunk.web_sources = list(prepared.web_sources)
             if chunk.usage:
@@ -656,7 +729,7 @@ def ask_stream(
                     db,
                     conversation_id=conv_uuid,
                     role="assistant",
-                    content=accumulated_text,
+                    content=persisted_text,
                     citations=[c.as_dict() for c in chunk.citations],
                     sources=[s.as_dict() for s in all_sources],
                     usage=chunk.usage.as_dict() if chunk.usage else None,
@@ -668,10 +741,12 @@ def ask_stream(
                 chunk.conversation_id = str(conv_uuid)
                 chunk.message_id = str(assistant_msg.id)
             logger.info(
-                "ask_stream done model=%s refused=%s citations=%d conv=%s",
+                "ask_stream done model=%s strict=%s refused=%s citations=%d weak=%d conv=%s",
                 provider.model_id,
+                strict_mode,
                 chunk.refused,
                 len(chunk.citations),
+                weak_citation_count(chunk.citations),
                 conv_uuid,
             )
         yield chunk

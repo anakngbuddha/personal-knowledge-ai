@@ -12,8 +12,10 @@ venv/
 .ruff_cache/
 *.egg-info/
 
-# Local object storage stand-in
+# Local object storage stand-in and test artifacts
 .storage/
+.test-storage/
+.mcp-sandbox/
 
 # Node
 node_modules/

@@ -6,8 +6,10 @@ loses every queued job when Render restarts the dyno, which makes per-job status
 fiction and retry impossible. A table costs one `SELECT ... FOR UPDATE SKIP LOCKED`
 and buys durability, visibility, and safe concurrency.
 
-Still a single worker. No Redis, no Celery, no distributed queue, exactly as the plan
-specifies for this corpus size.
+Leases (audit finding 13): a claimed job's `locked_at` is its lease. The worker renews
+it with `heartbeat()` while the job runs; `reap_stale()` only requeues jobs whose lease
+has not been renewed for `JOB_STALE_SECONDS`. `succeed()`/`fail()` refuse to overwrite
+a job that another worker has since reclaimed.
 """
 
 from __future__ import annotations
@@ -139,7 +141,41 @@ def claim(db: Session, worker_id: str) -> IngestionJob | None:
     return job
 
 
+def heartbeat(db: Session, job_id: uuid.UUID, worker_id: str) -> bool:
+    """Renew the lease on a running job. False means another worker owns it now."""
+    result = db.execute(
+        update(IngestionJob)
+        .where(
+            IngestionJob.id == job_id,
+            IngestionJob.status == JobStatus.RUNNING,
+            IngestionJob.locked_by == worker_id,
+        )
+        .values(locked_at=_now())
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    return bool(result.rowcount)
+
+
+def _taken_over(db: Session, job: IngestionJob) -> bool:
+    """True when the DB shows this job RUNNING under a different worker."""
+    mine = job.locked_by
+    if not mine:
+        return False
+    row = db.execute(
+        select(IngestionJob.status, IngestionJob.locked_by).where(IngestionJob.id == job.id)
+    ).one_or_none()
+    if row is None:
+        return False
+    status, owner = row
+    return status == JobStatus.RUNNING and owner is not None and owner != mine
+
+
 def succeed(db: Session, job: IngestionJob) -> None:
+    if _taken_over(db, job):
+        logger.warning("job %s finished after its lease was taken over; leaving the new owner's state", job.id)
+        db.expire(job)
+        return
     job.status = JobStatus.SUCCEEDED
     job.finished_at = _now()
     job.locked_by = None
@@ -150,6 +186,10 @@ def succeed(db: Session, job: IngestionJob) -> None:
 
 def fail(db: Session, job: IngestionJob, error: str, *, retryable: bool = True) -> None:
     """Record a failure and schedule the retry, or bury the job."""
+    if _taken_over(db, job):
+        logger.warning("job %s failed after its lease was taken over; leaving the new owner's state", job.id)
+        db.expire(job)
+        return
     job.finished_at = _now()
     job.locked_by = None
     job.error_message = error[:4000]
@@ -180,7 +220,7 @@ def fail(db: Session, job: IngestionJob, error: str, *, retryable: bool = True) 
 
 
 def reap_stale(db: Session) -> int:
-    """Return jobs abandoned by a crashed worker to the queue."""
+    """Return jobs whose lease expired (worker crashed or stopped renewing) to the queue."""
     cutoff = _now() - timedelta(seconds=settings.job_stale_seconds)
     result = db.execute(
         update(IngestionJob)
@@ -188,9 +228,10 @@ def reap_stale(db: Session) -> int:
         .values(
             status=JobStatus.FAILED,
             locked_by=None,
-            error_message="worker went away; requeued",
+            error_message="lease expired (worker went away); requeued",
             run_after=_now(),
         )
+        .execution_options(synchronize_session=False)
     )
     if result.rowcount:
         db.commit()

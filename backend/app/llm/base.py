@@ -7,7 +7,8 @@ generation, so the API layer can offer SSE streaming without a second code path.
 Every answer carries structured citations with provenance (freshness, approval
 state, vendor) so the frontend can render them inline, and every answer records
 its prompt version so the regression suite can detect regressions when a
-prompt changes.
+prompt changes. Citations also carry a claim-support score (see
+app.generation.claim_support).
 """
 
 from __future__ import annotations
@@ -40,6 +41,9 @@ class SourceMetadata:
     is_stale: bool = False
     source_url: str | None = None
     origin: str | None = None
+    # Weakest overlap between a claim citing this source and the source text (0..1).
+    support_score: float | None = None
+    weakly_supported: bool | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -60,6 +64,8 @@ class SourceMetadata:
             "is_stale": self.is_stale,
             "source_url": self.source_url,
             "origin": self.origin,
+            "support_score": self.support_score,
+            "weakly_supported": self.weakly_supported,
         }
 
 

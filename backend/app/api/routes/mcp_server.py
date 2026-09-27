@@ -3,9 +3,22 @@
 Provides:
 - GET  /api/mcp/custom-server/status: Server status and tools manifest.
 - GET  /api/mcp/custom-server/config: Claude Desktop & Cursor config snippets.
-- POST /api/mcp/custom-server/tokens: Mint API keys for external MCP clients.
+- POST /api/mcp/custom-server/tokens: Mint short-lived API keys for external MCP clients.
+- GET  /api/mcp/custom-server/sse + POST /message: MCP SSE transport.
 - POST /api/mcp/custom-server/rpc: Standard JSON-RPC 2.0 gateway for MCP clients.
 - POST /api/mcp/custom-server/execute: Interactive tool tester for website UI.
+
+Security model (audit findings 1 and 3):
+
+* Every SSE open, every /message POST and every /rpc call carries a bearer token.
+  The only exception is local owner_dev mode, and even then a /message without a
+  token is accepted only for a session that was itself opened anonymously.
+* A token becomes a Principal through `principal_from_claims`, the same membership +
+  grant lookup the web API uses, on every message. Revoking a membership takes
+  effect on the next call, not at token expiry.
+* A /message must name a live session, and the caller must be the session's owner.
+  There is no direct-HTTP fallback for unknown or disconnected sessions.
+* MCP tokens are short-lived and scoped (`mcp:read`, plus `mcp:write` for SE+).
 """
 
 from __future__ import annotations
@@ -13,18 +26,22 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
+import time
 import uuid
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.session import get_db
+from app.db.session import get_db, scope_session_to_org
 from app.mcp.custom_server import (
     MCP_PROTOCOL_VERSION,
     MCP_TOOLS,
@@ -33,47 +50,116 @@ from app.mcp.custom_server import (
     execute_mcp_tool_call,
     handle_mcp_jsonrpc_request,
 )
-from app.security.deps import _uuid, get_or_create_default_org, resolve_principal
+from app.security.deps import (
+    dev_fallback_allowed,
+    get_or_create_default_org,
+    principal_from_claims,
+    resolve_principal,
+)
 from app.security.jwt import JWTError, create_jwt, decode_jwt
-from app.security.labels import Role, Sensitivity, normalize
-from app.security.principal import Principal, owner_principal
+from app.security.principal import MCP_READ_SCOPE, MCP_WRITE_SCOPE, Principal, owner_principal
 
 router = APIRouter(prefix="/api/mcp/custom-server", tags=["custom-mcp-server"])
 
-# In-memory queues for active SSE MCP sessions: sessionId -> asyncio.Queue
-_SSE_SESSIONS: dict[str, asyncio.Queue] = {}
+
+@dataclass
+class McpSession:
+    queue: asyncio.Queue
+    org_id: str
+    user_id: str | None
+    anonymous_dev: bool
+    created_at: float
+
+    def owned_by(self, principal: Principal) -> bool:
+        user = str(principal.user_id) if principal.user_id else None
+        return self.org_id == str(principal.org_id) and self.user_id == user
 
 
-def _mint_mcp_jwt(principal: Principal, expires_minutes: int) -> str:
-    """Generate a JWT for external MCP clients."""
-    return create_jwt(
-        claims={
-            "sub": str(principal.user_id) if principal.user_id else str(uuid.uuid4()),
-            "org_id": str(principal.org_id),
-            "role": principal.role,
-        },
-        expires_delta=timedelta(minutes=expires_minutes),
+# In-memory registry of active SSE MCP sessions: sessionId -> McpSession
+_SSE_SESSIONS: dict[str, McpSession] = {}
+
+
+def register_mcp_session(principal: Principal, *, anonymous_dev: bool = False) -> str:
+    """Create a session bound to `principal`. Returns an unguessable session id."""
+    limit = max(1, int(getattr(settings, "mcp_max_sse_sessions", 500)))
+    if len(_SSE_SESSIONS) >= limit:
+        raise HTTPException(status_code=503, detail="too many open MCP sessions; retry later")
+    session_id = secrets.token_urlsafe(24)
+    _SSE_SESSIONS[session_id] = McpSession(
+        queue=asyncio.Queue(),
+        org_id=str(principal.org_id),
+        user_id=str(principal.user_id) if principal.user_id else None,
+        anonymous_dev=anonymous_dev,
+        created_at=time.time(),
     )
+    return session_id
+
+
+def _clamp_minutes(requested: int | None) -> int:
+    default = int(getattr(settings, "mcp_token_default_minutes", 480))
+    maximum = int(getattr(settings, "mcp_token_max_minutes", 1440))
+    value = default if requested is None else int(requested)
+    return max(5, min(value, maximum))
+
+
+def mcp_scopes_for(principal: Principal) -> list[str]:
+    scopes = [MCP_READ_SCOPE]
+    if principal.can_write_catalog and principal.has_scope(MCP_WRITE_SCOPE):
+        scopes.append(MCP_WRITE_SCOPE)
+    return scopes
+
+
+def _mint_mcp_jwt(principal: Principal, expires_minutes: int | None = None) -> str:
+    """Generate a short-lived, scoped JWT for external MCP clients.
+
+    The role claim is informational only: every call re-reads the membership.
+    """
+    claims: dict[str, Any] = {
+        "org_id": str(principal.org_id),
+        "role": principal.role,
+        "typ": "mcp",
+        "scope": " ".join(mcp_scopes_for(principal)),
+        "jti": uuid.uuid4().hex,
+    }
+    if principal.user_id:
+        claims["sub"] = str(principal.user_id)
+    return create_jwt(claims=claims, expires_delta=timedelta(minutes=_clamp_minutes(expires_minutes)))
+
+
+def _bearer(authorization: str | None) -> str | None:
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+        return token or None
+    return None
+
+
+def resolve_mcp_principal(db: Session, raw_token: str | None) -> Principal:
+    """Token -> Principal via the shared membership/grant lookup. Raises HTTPException."""
+    if not raw_token:
+        if dev_fallback_allowed():
+            principal = owner_principal(get_or_create_default_org(db).id)
+            scope_session_to_org(db, principal.org_id)
+            return principal
+        raise HTTPException(status_code=401, detail="Authentication token required (Bearer header)")
+    try:
+        payload = decode_jwt(raw_token)
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail="invalid or expired token") from exc
+    principal = principal_from_claims(db, payload, label="mcp")
+    scope_session_to_org(db, principal.org_id)
+    return principal
 
 
 def _principal_from_raw_token(token: str, db: Session) -> Principal:
-    """Decode token string and build a valid Principal."""
-    payload = decode_jwt(token)
-    default_org = get_or_create_default_org(db)
-    org_id = _uuid(payload.get("org_id")) or default_org.id
-    user_id = _uuid(payload.get("sub") or payload.get("user_id"))
-    role = normalize(payload.get("role", Role.SOLUTIONS_ENGINEER), Role, Role.SOLUTIONS_ENGINEER)
-    if role in (Role.OWNER, Role.ADMIN):
-        return owner_principal(org_id, user_id)
-    return Principal(
-        org_id=org_id,
-        user_id=user_id,
-        role=role,
-        max_sensitivity=Sensitivity.CUSTOMER_DATA,
-        allow_vendor_restricted=True,
-        account_refs=None,
-        include_unapproved=True,
-        label="mcp",
+    """Backwards-compatible name for resolve_mcp_principal."""
+    return resolve_mcp_principal(db, token)
+
+
+def _rpc_error(status_code: int, code: int, message: str, req_id: Any = None) -> Response:
+    return Response(
+        content=json.dumps({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}),
+        media_type="application/json",
+        status_code=status_code,
     )
 
 
@@ -94,6 +180,7 @@ class McpConfigOut(BaseModel):
     api_url: str
     script_url: str = ""
     sse_url: str = ""
+    token_expires_minutes: int = 0
     claude_desktop_config: dict[str, Any]
     remote_python_config: dict[str, Any] = Field(default_factory=dict)
     remote_npx_config: dict[str, Any] = Field(default_factory=dict)
@@ -103,8 +190,10 @@ class McpConfigOut(BaseModel):
 
 class McpTokenIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    role: str = Field(default="solutions_engineer")
-    expires_minutes: int = Field(default=60 * 24 * 30)  # 30 days default for external agent
+    # Deprecated and ignored: the role always comes from your membership.
+    role: str | None = Field(default=None)
+    # Clamped to MCP_TOKEN_MAX_MINUTES. Defaults to MCP_TOKEN_DEFAULT_MINUTES.
+    expires_minutes: int | None = Field(default=None, ge=1)
 
 
 class McpTokenOut(BaseModel):
@@ -112,6 +201,7 @@ class McpTokenOut(BaseModel):
     token_type: str = "bearer"
     expires_minutes: int
     server_name: str
+    scopes: list[str] = Field(default_factory=list)
 
 
 class McpExecuteIn(BaseModel):
@@ -186,10 +276,8 @@ def get_custom_mcp_config(
     script_url = f"{api_url}/api/mcp/custom-server/script"
     sse_url = f"{api_url}/api/mcp/custom-server/sse"
 
-    sample_token = _mint_mcp_jwt(
-        principal=principal,
-        expires_minutes=60 * 24 * 30,
-    )
+    expires = _clamp_minutes(None)
+    sample_token = _mint_mcp_jwt(principal=principal, expires_minutes=expires)
 
     # Option 1 (Zero-Install Remote via Python): Executes in memory via URL, ZERO local files needed
     python_bootstrap = f"import urllib.request; exec(urllib.request.urlopen('{script_url}').read().decode('utf-8'))"
@@ -235,6 +323,7 @@ def get_custom_mcp_config(
             }
         }
     }
+    del local_script_snippet  # kept for parity with the docs; the UI shows the remote options
 
     cursor_snippet = {
         "mcpServers": {
@@ -250,6 +339,10 @@ def get_custom_mcp_config(
     }
 
     instructions = {
+        "token_lifetime": (
+            f"The embedded token expires in {expires} minutes and is re-checked against your "
+            "membership on every call. Mint a fresh one from this page when it expires."
+        ),
         "zero_download_python": (
             "Recommended: Paste the Python zero-download snippet into claude_desktop_config.json. "
             "It runs the bridge in memory directly from your server without requiring any downloaded files."
@@ -277,6 +370,7 @@ def get_custom_mcp_config(
         api_url=api_url,
         script_url=script_url,
         sse_url=sse_url,
+        token_expires_minutes=expires,
         claude_desktop_config=remote_python_snippet,
         remote_python_config=remote_python_snippet,
         remote_npx_config=remote_npx_snippet,
@@ -290,16 +384,15 @@ def generate_mcp_token(
     payload: McpTokenIn,
     principal: Principal = Depends(resolve_principal),
 ) -> McpTokenOut:
-    """Generate a persistent access token for an external MCP client."""
-    token = _mint_mcp_jwt(
-        principal=principal,
-        expires_minutes=payload.expires_minutes,
-    )
+    """Generate a short-lived, scoped access token for an external MCP client."""
+    minutes = _clamp_minutes(payload.expires_minutes)
+    token = _mint_mcp_jwt(principal=principal, expires_minutes=minutes)
     return McpTokenOut(
         token=token,
         token_type="bearer",
-        expires_minutes=payload.expires_minutes,
+        expires_minutes=minutes,
         server_name=SERVER_NAME,
+        scopes=mcp_scopes_for(principal),
     )
 
 
@@ -327,25 +420,13 @@ async def mcp_sse_endpoint(
     db: Session = Depends(get_db),
 ):
     """Server-Sent Events (SSE) stream for MCP clients connecting remotely.
-    
-    Compatible with mcp-remote, Cursor, Claude Desktop, and Streamable HTTP.
+
+    The session is bound to the principal that opened it.
     """
-    raw_token = None
-    if authorization and authorization.lower().startswith("bearer "):
-        raw_token = authorization[7:].strip()
-    elif token:
-        raw_token = token.strip()
-
-    if not raw_token:
-        # In non-production, fallback to default principal if available
-        if settings.auth_mode == "owner_dev" and settings.environment.lower() != "production":
-            pass
-        else:
-            raise HTTPException(status_code=401, detail="Authentication token required (Bearer header or ?token=)")
-
-    session_id = str(uuid.uuid4())
-    queue: asyncio.Queue = asyncio.Queue()
-    _SSE_SESSIONS[session_id] = queue
+    raw_token = _bearer(authorization) or (token.strip() if token else None)
+    principal = await run_in_threadpool(resolve_mcp_principal, db, raw_token)
+    session_id = register_mcp_session(principal, anonymous_dev=raw_token is None)
+    session = _SSE_SESSIONS[session_id]
 
     base_url = str(request.base_url).rstrip("/")
     endpoint_uri = f"{base_url}/api/mcp/custom-server/message?sessionId={session_id}"
@@ -356,8 +437,7 @@ async def mcp_sse_endpoint(
         try:
             while True:
                 try:
-                    # Wait for next outgoing message or send keepalive
-                    msg = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    msg = await asyncio.wait_for(session.queue.get(), timeout=15.0)
                     if msg is None:
                         break
                     yield f"event: message\ndata: {json.dumps(msg)}\n\n"
@@ -388,46 +468,34 @@ async def mcp_message_callback(
     authorization: str | None = Header(None),
 ):
     """POST endpoint for MCP clients streaming JSON-RPC requests over an active SSE session."""
-    raw_token = None
-    if authorization and authorization.lower().startswith("bearer "):
-        raw_token = authorization[7:].strip()
+    raw_token = _bearer(authorization)
+    session = _SSE_SESSIONS.get(sessionId)
+
+    # A token is mandatory, except for a session that was opened anonymously in local
+    # owner_dev mode (and dev mode still applies now).
+    if raw_token is None and not (session is not None and session.anonymous_dev and dev_fallback_allowed()):
+        return _rpc_error(401, -32600, "Authentication token required (Bearer header)")
 
     try:
-        if raw_token:
-            principal = _principal_from_raw_token(raw_token, db)
-        else:
-            default_org = get_or_create_default_org(db)
-            principal = owner_principal(default_org.id)
-    except Exception as exc:
-        return Response(
-            content=json.dumps({"jsonrpc": "2.0", "error": {"code": -32600, "message": f"Auth error: {exc}"}}),
-            media_type="application/json",
-            status_code=401,
-        )
+        principal = await run_in_threadpool(resolve_mcp_principal, db, raw_token)
+    except HTTPException as exc:
+        return _rpc_error(exc.status_code, -32600, f"Auth error: {exc.detail}")
+
+    if session is None:
+        return _rpc_error(404, -32001, "Unknown or expired MCP session; reconnect to /sse")
+    if not session.owned_by(principal):
+        return _rpc_error(403, -32600, "This token does not own the MCP session")
 
     try:
         body = await request.json()
     except Exception:
-        return Response(
-            content=json.dumps({"jsonrpc": "2.0", "error": {"code": -32700, "message": "Parse error: Invalid JSON"}}),
-            media_type="application/json",
-            status_code=400,
-        )
+        return _rpc_error(400, -32700, "Parse error: Invalid JSON")
+    if not isinstance(body, dict):
+        return _rpc_error(400, -32600, "Invalid Request object")
 
-    response = handle_mcp_jsonrpc_request(db, principal, body)
-
-    # Deliver response over the active SSE session if connected
-    queue = _SSE_SESSIONS.get(sessionId)
-    if queue:
-        await queue.put(response)
-        return Response(status_code=202)
-
-    # Fallback to direct HTTP reply if SSE session disconnected
-    return Response(
-        content=json.dumps(response),
-        media_type="application/json",
-        status_code=200,
-    )
+    response = await run_in_threadpool(handle_mcp_jsonrpc_request, db, principal, body)
+    await session.queue.put(response)
+    return Response(status_code=202)
 
 
 @router.post("/rpc")
@@ -435,36 +503,23 @@ async def jsonrpc_gateway(
     request: Request,
     db: Session = Depends(get_db),
     authorization: str | None = Header(None),
-) -> dict[str, Any]:
+):
     """JSON-RPC 2.0 endpoint for MCP clients connecting over HTTP."""
-    if not authorization or not authorization.lower().startswith("bearer "):
-        return {
-            "jsonrpc": "2.0",
-            "error": {"code": -32600, "message": "Missing Bearer Authorization header"},
-        }
+    token = _bearer(authorization)
+    if token is None:
+        return _rpc_error(401, -32600, "Missing Bearer Authorization header")
 
-    token = authorization[7:].strip()
     try:
-        principal = _principal_from_raw_token(token, db)
-    except Exception as exc:
-        return {
-            "jsonrpc": "2.0",
-            "error": {"code": -32600, "message": f"Invalid or expired authorization token: {exc}"},
-        }
+        principal = await run_in_threadpool(resolve_mcp_principal, db, token)
+    except HTTPException as exc:
+        return _rpc_error(exc.status_code, -32600, f"Invalid or expired authorization token: {exc.detail}")
 
     try:
         body = await request.json()
     except Exception:
-        return {
-            "jsonrpc": "2.0",
-            "error": {"code": -32700, "message": "Parse error: Invalid JSON"},
-        }
+        return _rpc_error(400, -32700, "Parse error: Invalid JSON")
 
     if not isinstance(body, dict):
-        return {
-            "jsonrpc": "2.0",
-            "error": {"code": -32600, "message": "Invalid Request object"},
-        }
+        return _rpc_error(400, -32600, "Invalid Request object")
 
-    return handle_mcp_jsonrpc_request(db, principal, body)
-
+    return await run_in_threadpool(handle_mcp_jsonrpc_request, db, principal, body)

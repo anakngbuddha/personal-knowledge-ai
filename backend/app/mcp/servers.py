@@ -1,6 +1,10 @@
 """Launch specs for the three Phase 9 MCP servers.
 
 Command lists only. Credentials and org config are applied at call time.
+
+Package versions are pinned (audit finding 12): `npx -y pkg` or `pkg@latest` would run
+whatever was published most recently, inside our process tree. Bump these on purpose,
+after reading the changelog.
 """
 
 from __future__ import annotations
@@ -18,6 +22,10 @@ STATUS_CONNECTED = "connected"
 STATUS_ERROR = "error"
 STATUS_DISABLED = "disabled"
 
+BRAVE_PACKAGE = "@brave/brave-search-mcp-server@2.1.3"
+PLAYWRIGHT_PACKAGE = "@playwright/mcp@0.0.80"
+MS365_PACKAGE = "@softeria/ms-365-mcp-server@0.156.2"
+
 
 @dataclass(frozen=True)
 class ServerSpec:
@@ -33,17 +41,17 @@ class ServerSpec:
 
 
 def brave_args() -> tuple[str, ...]:
-    return ("-y", "@brave/brave-search-mcp-server")
+    return ("-y", BRAVE_PACKAGE)
 
 
 def playwright_args() -> tuple[str, ...]:
-    return ("-y", "@playwright/mcp@latest", "--headless")
+    return ("-y", PLAYWRIGHT_PACKAGE, "--headless", "--isolated")
 
 
 def ms365_args() -> tuple[str, ...]:
     return (
         "-y",
-        "@softeria/ms-365-mcp-server",
+        MS365_PACKAGE,
         "--org-mode",
         "--read-only",
         "--preset",

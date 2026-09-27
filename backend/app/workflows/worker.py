@@ -1,4 +1,8 @@
-"""Sequential in-process worker for workflow tasks."""
+"""Sequential in-process worker for workflow tasks.
+
+A LeaseKeeper renews the running task's lease every JOB_HEARTBEAT_SECONDS, so a long
+handler is never reclaimed by a second worker while it is still making progress.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +13,10 @@ import time
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.models import TaskStatus, WorkflowRun
-from app.db.session import SessionLocal
+from app.db.models import TaskStatus, WorkflowRun  # noqa: F401 - TaskStatus kept for callers
+from app.db.session import SessionLocal, mark_system_session
+from app.jobs.lease import LeaseKeeper
+from app.llm.limiter import BACKGROUND, set_thread_call_class
 from app.security.labels import Role
 from app.security.principal import Principal, owner_principal
 from app.workflows import queue
@@ -25,6 +31,10 @@ _threads: list[threading.Thread] = []
 
 def worker_id(index: int = 0) -> str:
     return f"{socket.gethostname()}:{os.getpid()}:wf-{index}"
+
+
+def _system_db():
+    return mark_system_session(SessionLocal())
 
 
 def _principal_from_run(run: WorkflowRun) -> Principal:
@@ -46,8 +56,19 @@ def _principal_from_run(run: WorkflowRun) -> Principal:
     )
 
 
+def lease_for(task_id, identity: str) -> LeaseKeeper:
+    def _renew() -> bool:
+        s = _system_db()
+        try:
+            return queue.renew_lease(s, task_id, identity)
+        finally:
+            s.close()
+
+    return LeaseKeeper(_renew, interval=settings.job_heartbeat_seconds, name=f"wf-lease-{task_id}")
+
+
 def run_once(identity: str) -> bool:
-    db = SessionLocal()
+    db = _system_db()
     try:
         task = queue.claim(db, identity)
         if task is None:
@@ -57,20 +78,21 @@ def run_once(identity: str) -> bool:
             queue.fail(db, task, "workflow run missing", retryable=False)
             return True
         try:
-            playbook = load_playbook(run.playbook_slug)
-            spec = playbook.task_by_slug(task.task_slug)
-            handler = get_handler(spec.handler)
-            upstream = queue.collect_upstream(db, task)
-            payload = dict(task.input_payload or {})
-            payload["upstream"] = upstream
-            ctx = HandlerContext(
-                db=db,
-                run=run,
-                task=task,
-                principal=_principal_from_run(run),
-                upstream=upstream,
-            )
-            output = handler(ctx, payload)
+            with lease_for(task.id, identity):
+                playbook = load_playbook(run.playbook_slug)
+                spec = playbook.task_by_slug(task.task_slug)
+                handler = get_handler(spec.handler)
+                upstream = queue.collect_upstream(db, task)
+                payload = dict(task.input_payload or {})
+                payload["upstream"] = upstream
+                ctx = HandlerContext(
+                    db=db,
+                    run=run,
+                    task=task,
+                    principal=_principal_from_run(run),
+                    upstream=upstream,
+                )
+                output = handler(ctx, payload)
             if spec.gate == "human_approval":
                 queue.waiting_approval(db, task, output)
             else:
@@ -85,6 +107,7 @@ def run_once(identity: str) -> bool:
 
 def loop(index: int = 0) -> None:
     identity = worker_id(index)
+    set_thread_call_class(BACKGROUND)
     logger.info("workflow worker %s started", identity)
     while not _stop.is_set():
         try:

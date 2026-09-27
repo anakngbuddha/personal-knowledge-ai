@@ -1,133 +1,36 @@
-# Build Status
+# Build Status: capability inventory
 
-Roadmap source: *Personal Knowledge AI Workspace - Product Plan & Roadmap*.
-Forward plan (Phases 6-10, notes + linking + studio + differentiators): **[docs/ROADMAP.md](docs/ROADMAP.md)**.
-Last updated: 2026-09-19. Scope of the last build commit: **Phase 0 + Phase 1 of V1**.
+Last updated: 2026-09-27. Replaces the old phase checklist, which marked shipped work as "not started".
+**Implemented** = route + service + tests exist. **Partial** = exists with a known gap. **Proposed** = not established in code.
+Forward plan: [ROADMAP.md](ROADMAP.md).
 
----
-
-## Phase 0 - Project setup
-
-| Task | State | Notes |
+| Capability | State | Backed by |
 |---|---|---|
-| Create repository | Done | This repo. |
-| Create React app | Done | Vite + React + TypeScript in `frontend/`. |
-| Create FastAPI app | Done | `backend/app/main.py`, health + documents routers. |
-| Connect PostgreSQL (local or Aiven) | Code done, needs your `DATABASE_URL` | SQLAlchemy 2.0 + psycopg 3. |
-| Enable pgvector | Code done | `scripts/init_db.py` runs `CREATE EXTENSION IF NOT EXISTS vector`. |
-| Configure environment variables | Done | `.env.example` + `app/core/config.py`. |
-| Deploy frontend to Vercel | Config done, deploy is yours | `vercel.json`. |
-| Deploy backend to Render | Config done, deploy is yours | `render.yaml`, all secrets `sync: false`. |
-| Create R2 bucket | Yours | Then fill the four `R2_*` vars. |
-| Verify Gemini API connectivity | Tooling done | `GET /health/dependencies` checks all three services. |
+| JWT auth, orgs, memberships, roles | Implemented | `app/api/routes/auth.py`, `app/security/deps.py` (membership re-checked every request) |
+| PostgreSQL row-level security | Partial | Migration `0022_row_level_security`, `app/db/session.py`, `app/db/rls.py`. Unscoped sessions bypass unless `RLS_DEFAULT_DENY=true`; deploy role must not be superuser/BYPASSRLS (`RLS_REQUIRED=true` enforces) |
+| Audit log | Implemented | `app/security/audit.py` |
+| Document ingestion (upload, URL, OCR, archives, malware heuristics) | Implemented | `app/api/routes/documents.py`, `app/documents/`, `app/ocr/`, `app/net/ssrf.py` |
+| Durable ingestion queue with renewable leases | Implemented | `app/jobs/queue.py`, `app/jobs/lease.py` |
+| Hybrid retrieval (pgvector + FTS + RRF), permission predicates | Implemented | `app/api/routes/search.py`, `app/retrieval/` |
+| Grounded answers, conversations, streaming | Implemented | `app/api/routes/ask.py`, `app/generation/` (strict by default, claim-support scores) |
+| Tool-enabled answers | Partial | `enable_tools=true` works but is not token-streamed |
+| Evaluation | Partial | Plumbing checks with fake providers only. No live Gemini/Postgres baseline recorded yet |
+| Notes, wikilinks, backlinks | Implemented | `app/api/routes/notes.py`, `app/notes/` |
+| Notebooks / source toggling | Implemented | `app/api/routes/notebooks.py` |
+| Studio outputs (briefing, FAQ, compare) | Implemented | `app/api/routes/studio.py` |
+| Product catalog + typed graph, import, map editing, graph review | Implemented | `catalog.py`, `catalog_import.py`, `map_edit.py`, `graph_review.py` |
+| Advisor / customer brief | Implemented | `app/api/routes/advisor.py` |
+| Workflows with human approval, RFP/playbooks | Implemented | `app/api/routes/workflows.py`, `app/workflows/`, `playbooks/` |
+| Solution composer, incident triage, upgrade impact | Implemented | `app/api/routes/phase8.py` |
+| Vendor freshness monitoring + crawl | Implemented | `app/api/routes/freshness.py`, `app/freshness/` |
+| SSO (OIDC/SAML) | Implemented | `app/sso/` (off by default) |
+| MCP client (Brave, Playwright, M365) | Partial | `app/mcp/`; children get a restricted env + private dir; OS sandbox only if `MCP_CHILD_SANDBOX_COMMAND` is set |
+| Custom MCP server (SSE + JSON-RPC) | Implemented | `app/api/routes/mcp_server.py`, `app/mcp/custom_server.py` |
+| Ops: restore drills, runtime metrics | Implemented | `app/api/routes/ops.py`, `app/api/routes/runtime.py` |
+| Transclusion, audio sources/overview, most Phase 9 differentiators | Proposed | Not found in code |
 
-**Exit criteria:** met in code. Flips to verified once your keys are in and
-`/health/dependencies` returns `ok: true`.
+## Deployment notes
 
----
-
-## Phase 1 - Document ingestion
-
-| Task | State | Where |
-|---|---|---|
-| Upload file | Done | `POST /documents`, 25 MB cap, PDF/TXT/DOCX only. |
-| Save source file to R2 | Done | `app/storage/r2.py`, keyed `workspaces/{ws}/documents/{doc}/{name}`. |
-| Create document row | Done | `app/db/models.py::Document`. |
-| Extract text | Done | pypdf / python-docx / decoded text, `app/documents/extraction.py`. |
-| Preserve page + section metadata | Done | Per-page blocks for PDF, heading-styled sections for DOCX, `#` headings for TXT. Document metadata (title/author) stored as `jsonb`. |
-| Deterministic chunking | Done | `app/documents/chunking.py`. Chunks never cross a page or section boundary; splits prefer paragraph, then line, then sentence; fixed overlap; character offsets recorded. |
-| Generate embeddings | Done | `app/embeddings/gemini.py`, batched, 768 dims, cosine-normalized, 429-aware with exponential backoff. |
-| Save chunks and vectors | Done | Batched commits so a long document reports progress and never holds everything in memory. |
-| Populate full-text search data | Done | `search_vector` is a PostgreSQL **generated** column + GIN index, so it can never drift from the text. |
-
-**Exit criteria:** met. Documents reach `ready`, and chunk metadata is inspectable via
-`GET /documents/{id}/chunks` or the UI's chunk panel.
-
-### Also included (small, load-bearing extras)
-
-- `failed` status with a stored `error_message`, plus a `POST /documents/{id}/process` retry.
-- Delete removes the R2 object and cascades chunk rows.
-- Temp files always cleaned up in a `finally`; nothing persistent touches Render's disk.
-- `EMBEDDING_PROVIDER=fake` + `STORAGE_BACKEND=local` run the whole pipeline with no keys.
-- Tests for chunk determinism, page/section isolation, offset monotonicity, extraction.
-- `scripts/ingest_local.py` to exercise the pipeline without the UI.
-- Empty tables already created for later phases: `conversations`, `messages`,
-  `evaluation_questions`.
-
----
-
-## What is left
-
-### Yours (config, not code)
-
-- [ ] Aiven PostgreSQL service, then `DATABASE_URL` (use `postgresql+psycopg://`)
-- [ ] Cloudflare R2 bucket + API token, then `R2_*`
-- [ ] Google AI Studio key, then `GEMINI_API_KEY`
-- [ ] Run `python ../scripts/init_db.py` once
-- [ ] Deploy: Render (backend) + Vercel (frontend), then set `CORS_ORIGINS`
-
-### Phase 2 - Retrieval (not started)
-
-- [ ] Query embedding path
-- [ ] pgvector similarity query
-- [ ] PostgreSQL FTS query
-- [ ] Reciprocal Rank Fusion, fixed `RRF_K`, deterministic
-- [ ] Top-K selection using `TOP_K`
-- [ ] `POST /search` debug endpoint returning retrieved chunks
-- **Exit:** retrieval is measurable without touching the LLM.
-
-### Phase 3 - Grounded generation (not started)
-
-- [ ] Gemini generation provider behind `app/llm/base.py`
-- [ ] Grounded system prompt that refuses to answer beyond the context
-- [ ] Context formatting with citation metadata
-- [ ] Citation extraction into `messages.citations` (column already exists)
-- [ ] `POST /conversations`, `GET /conversations`, `GET /conversations/{id}`, `POST /conversations/{id}/messages`
-- **Exit:** a question returns an answer with a source citation.
-
-### Phase 4 - Evaluation (not started)
-
-- [ ] 20-30 labeled questions seeded via `scripts/seed_eval_set.py`
-- [ ] Automated retrieval evaluation in `scripts/run_eval.py`
-- [ ] Compare vector-only vs keyword-only vs hybrid+RRF
-- [ ] Record retrieval hit rate + citation accuracy as a written baseline
-- **Exit:** V1 meets a target chosen *after* the first measurement.
-
-### Phase 5 - UI refinement (partially standing)
-
-- [x] Document list with upload / processing / ready / failed states
-- [x] Upload progress and error banner
-- [x] Mobile-friendly single-column fallback
-- [ ] Chat history view
-- [ ] Citation display (clickable source)
-- **Exit:** someone else can use it without instructions.
-
-### Phases 6-10 - Notes, linking, studio, differentiators, platform
-
-Planned in **[docs/ROADMAP.md](docs/ROADMAP.md)**: notes core (6), wikilinks/backlinks/graph (7),
-notebook studio (8), niche differentiators (9), platform and ecosystem (10).
-Nothing in these phases starts until V1 (Phases 0-5) meets its exit criteria.
-
----
-
-## Scope change (2026-09-19)
-
-The earlier "deliberately not built" list (notes editor, folders and tags, backlinks, knowledge
-graph, AI relationships, multimodal ingestion, OCR, multi-user accounts, collaboration) is now
-**scheduled** in `docs/ROADMAP.md` rather than excluded. The sequencing rule is unchanged: none
-of it gets pulled ahead of V1 because it looked easy.
-
-Still deliberately not built until measurement justifies it: reranker, Redis, dedicated vector DB.
-
-Phase 2 is next.
-
----
-
-## Known deviations from the plan document
-
-1. `GEMINI_EMBEDDING_MODEL` defaults to `gemini-embedding-001`, not the plan's placeholder
-   `gemini-embedding-2`, which is not a real model ID. Still fully configurable.
-2. Chunks are hard-bounded by page and section rather than by character windows alone. This
-   trades a little chunk-size uniformity for citation precision, which V1 cares about more.
-3. A `fake` embedding provider was added so ingestion is testable with no key and no
-   network. That is the provider abstraction earning its keep on day one.
+- **RLS**: connect as a non-superuser role without BYPASSRLS. The boot log says `row-level security is NOT enforced` otherwise. Set `RLS_REQUIRED=true` once clean.
+- **Background work**: ingestion, workflow and freshness threads run in the web process. Measure first with `GET /ops/runtime` (event-loop lag, thread pool, DB pool, Gemini wait by class). Move them to `python scripts/worker.py` with `WORKER_ENABLED=false` on web only when contention is measured.
+- **Gemini quota**: `GEMINI_RPM` is shared by OCR, embeddings and chat; interactive calls go first and `GEMINI_INTERACTIVE_RESERVE` slots per minute stay free for them. Raise `GEMINI_RPM` only to the account's confirmed limit.
