@@ -30,6 +30,9 @@ class SourceMetadataOut(BaseModel):
     is_stale: bool = False
     source_url: str | None = None
     origin: str | None = None
+    # Claim-level support (lexical overlap between the citing claim and the passage).
+    support_score: float | None = None
+    weakly_supported: bool | None = None
 
 
 class TokenUsageOut(BaseModel):
@@ -74,9 +77,11 @@ class AskIn(BaseModel):
     # Source toggling: exclude specific documents from context
     exclude_document_ids: list[str] = Field(default_factory=list)
     notebook_id: str | None = None
+    # Tool-enabled answers are not streamed token by token (see ask_stream).
     enable_tools: bool = False
-    # Knowledge mode: False = expert (sources + general knowledge), True = strict (sources only)
-    strict_mode: bool = False
+    # Knowledge mode. True (default) = strict, sources only. False = expert: general
+    # guidance allowed, but only under a separately labeled heading.
+    strict_mode: bool = True
     # Web search mode: None = auto (search when documents weak), True = force web search, False = disabled
     web_search: bool | None = None
 
