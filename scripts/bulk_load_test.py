@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from sqlalchemy import func, select  # noqa: E402
 
 from app.db.models import Document, DocumentStatus, IngestionJob, JobStatus  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
+from app.db.session import system_session  # noqa: E402
 from app.documents.metadata import DocumentMetadataIn  # noqa: E402
 from app.documents.service import create_document, enqueue_ingestion  # noqa: E402
 from app.jobs import worker  # noqa: E402
@@ -69,7 +69,7 @@ def main() -> None:
         )
 
     started = time.monotonic()
-    db = SessionLocal()
+    db = system_session()
     created = 0
     try:
         principal = owner_principal(get_or_create_default_org(db).id)
@@ -105,7 +105,7 @@ def main() -> None:
         if drained % 50 == 0:
             print(f"processed {drained}  rss={rss_mb():.0f} MB")
 
-    db = SessionLocal()
+    db = system_session()
     try:
         doc_counts = dict(
             db.execute(select(Document.status, func.count()).group_by(Document.status)).all()

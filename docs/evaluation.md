@@ -90,12 +90,11 @@ python scripts/run_generation_eval.py --out docs/generation-baseline.md
 
 ## 4. Current Baselines
 
-- **Retrieval Baseline (Offline Plumbing)**: [docs/retrieval-baseline.md](file:///c:/Users/markv/Desktop/Projects/personal-knowledge-ai/docs/retrieval-baseline.md)
+- **Retrieval Pipeline Check (Offline)**: [retrieval-baseline.md](retrieval-baseline.md)
   - 54 questions total (46 positive, 8 negative)
   - 100% label verification (0 missing labels)
-- **Generation Baseline**: [docs/generation-baseline.md](file:///c:/Users/markv/Desktop/Projects/personal-knowledge-ai/docs/generation-baseline.md)
-  - 100% refusal pass rate (5/5)
-  - 100% adversarial resistance (5/5)
+- **Generation Pipeline Check (Fake Provider)**: [generation-baseline.md](generation-baseline.md)
+  - The fake-provider pass rates are regression checks only. No live Gemini quality baseline or release threshold exists yet.
 
 ---
 

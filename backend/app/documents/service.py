@@ -39,7 +39,7 @@ from app.core.config import settings
 from app.core.errors import AppError, DuplicateDocument
 from app.core.logging import get_logger
 from app.db.models import Document, DocumentChunk, DocumentStatus, Workspace
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, mark_system_session
 from app.documents import extraction, injection
 from app.documents.chunking import chunk_blocks
 from app.documents.metadata import DocumentMetadataIn
@@ -218,7 +218,7 @@ def enqueue_ingestion(db: Session, document: Document) -> None:
 
 def process_document(document_id: uuid.UUID) -> None:
     """Run extraction through persistence. Owns its own session: the worker calls it."""
-    db = SessionLocal()
+    db = mark_system_session(SessionLocal())
     try:
         document = db.get(Document, document_id)
         if document is None:

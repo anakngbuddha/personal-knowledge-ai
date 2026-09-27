@@ -45,7 +45,7 @@ def test_lease_keeper_stops_when_the_lease_is_lost():
 @pytest.mark.requires_db
 def test_long_job_is_not_reclaimed_while_renewing_and_late_finish_does_not_clobber(db, monkeypatch):
     from app.db.models import IngestionJob, JobStatus, Organization
-    from app.db.session import SessionLocal
+    from app.db.session import system_session
     from app.jobs import queue
 
     org = Organization(id=uuid.uuid4(), slug=f"lease-{uuid.uuid4().hex[:8]}", name="Lease")
@@ -60,14 +60,14 @@ def test_long_job_is_not_reclaimed_while_renewing_and_late_finish_does_not_clobb
     monkeypatch.setattr(settings, "job_stale_seconds", 1.0)
 
     def renew() -> bool:
-        s = SessionLocal()
+        s = system_session()
         try:
             return queue.heartbeat(s, job.id, "worker-a")
         finally:
             s.close()
 
     def state():
-        s = SessionLocal()
+        s = system_session()
         try:
             return s.execute(
                 select(IngestionJob.status, IngestionJob.locked_by).where(IngestionJob.id == job.id)
@@ -76,7 +76,7 @@ def test_long_job_is_not_reclaimed_while_renewing_and_late_finish_does_not_clobb
             s.close()
 
     def reap():
-        s = SessionLocal()
+        s = system_session()
         try:
             queue.reap_stale(s)  # what worker B runs before every claim
         finally:
@@ -94,7 +94,7 @@ def test_long_job_is_not_reclaimed_while_renewing_and_late_finish_does_not_clobb
         assert state()[0] == JobStatus.FAILED
 
         # Worker B takes the job; worker A's late result must not overwrite it.
-        s = SessionLocal()
+        s = system_session()
         try:
             s.execute(
                 update(IngestionJob)
@@ -107,7 +107,7 @@ def test_long_job_is_not_reclaimed_while_renewing_and_late_finish_does_not_clobb
         queue.succeed(db, claimed)
         assert tuple(state()) == (JobStatus.RUNNING, "worker-b")
     finally:
-        s = SessionLocal()
+        s = system_session()
         try:
             s.execute(update(IngestionJob).where(IngestionJob.id == job.id).values(status=JobStatus.DEAD, locked_by=None))
             s.commit()

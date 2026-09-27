@@ -24,7 +24,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.db.models import EvaluationQuestion  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
+from app.db.session import system_session  # noqa: E402
 from app.retrieval.search import search  # noqa: E402
 from app.security.deps import get_or_create_default_org  # noqa: E402
 from app.security.principal import owner_principal  # noqa: E402
@@ -155,7 +155,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
-    db = SessionLocal()
+    db = system_session()
     try:
         principal = owner_principal(get_or_create_default_org(db).id)
         questions = list(db.scalars(select(EvaluationQuestion).order_by(EvaluationQuestion.created_at)))

@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from sqlalchemy import select  # noqa: E402
 
 from app.db.models import Document, EvaluationQuestion  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
+from app.db.session import system_session  # noqa: E402
 
 
 def main() -> None:
@@ -26,7 +26,7 @@ def main() -> None:
     payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     questions = payload["questions"] if isinstance(payload, dict) else payload
 
-    db = SessionLocal()
+    db = system_session()
     try:
         by_filename = {
             document.original_filename: document

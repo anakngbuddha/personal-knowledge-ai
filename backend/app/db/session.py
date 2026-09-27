@@ -10,9 +10,8 @@ A session becomes tenant-scoped with :func:`scope_session_to_org`. ``resolve_pri
 calls it for every authenticated request, and because FastAPI caches ``Depends(get_db)``
 per request, the route's own ``db`` is the same, now scoped, session.
 
-Unscoped sessions fall back to bypass unless ``RLS_DEFAULT_DENY=true``. Flip that once
-staging proves every code path either scopes itself or declares itself a system session
-with :func:`system_session`.
+Unscoped sessions deny tenant rows by default. Trusted boot and worker code must
+declare itself a system session with :func:`system_session`.
 
 The settings are applied with ``set_config(..., true)`` in ``after_begin``, so they are
 re-applied after every ``commit()`` and never leak to the next user of a pooled

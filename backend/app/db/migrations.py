@@ -7,8 +7,10 @@ other dialects without running, because ``create_all`` has already produced the 
 there and ``ADD COLUMN IF NOT EXISTS`` is not portable.
 """
 from __future__ import annotations
+import time
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import DBAPIError
 from app.core.logging import get_logger
 from app.db.models import ContextKind, CurationStatus, RelationType
 logger=get_logger(__name__)
@@ -101,36 +103,74 @@ _VECTOR_HNSW=[
  "CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_hnsw ON document_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)",
 ]
 
-# Audit finding 4: row-level security on every tenant table. The policy reads the
-# transaction-local settings stamped by app.db.session. FORCE makes the table owner
-# (the usual deployment role) subject to the policy too. Rows with a NULL org_id are
-# global material and stay visible. Identity tables are exempt: they are read before
-# a tenant is known. Built with quote_ident and dollar quoting, never %-formatting,
-# because the driver treats % as a parameter marker.
-_RLS=[
- """DO $rls$
-DECLARE r record;
-BEGIN
-  FOR r IN
-    SELECT c.table_name
+# Apply RLS one table per transaction. A single DO block holds AccessExclusiveLock
+# on every table until it commits, which deadlocks with the previous Render instance
+# during an overlapping deploy. Per-table commits also make retries resumable.
+_RLS_TABLES = text("""
+    SELECT c.table_schema, c.table_name
     FROM information_schema.columns c
     JOIN information_schema.tables t
       ON t.table_schema = c.table_schema AND t.table_name = c.table_name
     WHERE c.table_schema = current_schema()
       AND c.column_name = 'org_id'
       AND t.table_type = 'BASE TABLE'
-      AND c.table_name NOT IN ('organizations', 'organization_memberships', 'user_accounts', 'schema_migrations')
-  LOOP
-    EXECUTE 'ALTER TABLE ' || quote_ident(r.table_name) || ' ENABLE ROW LEVEL SECURITY';
-    EXECUTE 'ALTER TABLE ' || quote_ident(r.table_name) || ' FORCE ROW LEVEL SECURITY';
-    EXECUTE 'DROP POLICY IF EXISTS tenant_isolation ON ' || quote_ident(r.table_name);
-    EXECUTE 'CREATE POLICY tenant_isolation ON ' || quote_ident(r.table_name)
-      || $p$ USING (current_setting('app.rls_bypass', true) = 'on' OR org_id IS NULL OR CAST(org_id AS text) = current_setting('app.current_org_id', true))$p$
-      || $p$ WITH CHECK (current_setting('app.rls_bypass', true) = 'on' OR org_id IS NULL OR CAST(org_id AS text) = current_setting('app.current_org_id', true))$p$;
-  END LOOP;
-END
-$rls$""",
-]
+      AND c.table_name NOT IN
+        ('organizations', 'organization_memberships', 'user_accounts', 'schema_migrations')
+    ORDER BY c.table_name
+""")
+_RLS_READY = text("""
+    SELECT c.relrowsecurity AND c.relforcerowsecurity
+           AND EXISTS (
+               SELECT 1 FROM pg_policy p
+               WHERE p.polrelid = c.oid AND p.polname = 'tenant_isolation'
+           )
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = :schema AND c.relname = :table_name
+""")
+_RLS_PREDICATE = (
+    "current_setting('app.rls_bypass', true) = 'on' "
+    "OR org_id IS NULL "
+    "OR CAST(org_id AS text) = current_setting('app.current_org_id', true)"
+)
+_RETRYABLE_DDL_STATES = {"40P01", "55P03"}  # deadlock, lock timeout
+
+
+def _apply_rls_table(engine: Engine, schema: str, table_name: str) -> None:
+    quote = engine.dialect.identifier_preparer.quote_identifier
+    table = f"{quote(schema)}.{quote(table_name)}"
+    for attempt in range(5):
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+                # Serialize concurrent new instances without holding table locks
+                # across tables. The old instance does not use this lock, hence
+                # the bounded retry on 40P01/55P03 below.
+                conn.execute(text("SELECT pg_advisory_xact_lock(17291, 22)"))
+                if conn.scalar(_RLS_READY, {"schema": schema, "table_name": table_name}):
+                    return
+                conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+                conn.execute(text(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY"))
+                conn.execute(text(f"DROP POLICY IF EXISTS tenant_isolation ON {table}"))
+                conn.execute(text(
+                    f"CREATE POLICY tenant_isolation ON {table} "
+                    f"USING ({_RLS_PREDICATE}) WITH CHECK ({_RLS_PREDICATE})"
+                ))
+            return
+        except DBAPIError as exc:
+            state = getattr(exc.orig, "sqlstate", None)
+            if state not in _RETRYABLE_DDL_STATES or attempt == 4:
+                raise
+            delay = min(2 ** attempt, 8)
+            logger.warning("RLS migration waiting for %s (%s); retrying in %ss", table, state, delay)
+            time.sleep(delay)
+
+
+def _apply_rls(engine: Engine) -> None:
+    with engine.connect() as conn:
+        tables = conn.execute(_RLS_TABLES).all()
+    for schema, table_name in tables:
+        _apply_rls_table(engine, schema, table_name)
 
 MIGRATIONS=[
  ("0015_multi_user_rbac",_RBAC),
@@ -140,7 +180,7 @@ MIGRATIONS=[
  ("0019_notebooks",_NOTEBOOKS,True),
  ("0020_vendor_source_pages",_VENDOR_CRAWL,True),
  ("0021_document_chunk_hnsw",_VECTOR_HNSW,True),
- ("0022_row_level_security",_RLS,True),
+ ("0022_row_level_security",[],True),
 ]
 
 def applied_migrations(engine: Engine)->set[str]:
@@ -158,6 +198,11 @@ def run_migrations(engine: Engine)->list[str]:
   if postgres_only and not is_pg:
    with engine.begin() as conn: _record(conn,name)
    logger.info("migration %s skipped on %s; create_all already covers it",name,engine.dialect.name); continue
+  if name == "0022_row_level_security":
+   _apply_rls(engine)
+   with engine.begin() as conn: _record(conn,name)
+   ran.append(name)
+   continue
   with engine.begin() as conn:
    for statement in statements:
     if not is_pg and "gen_random_uuid()" in statement.lower(): statement=statement.replace("gen_random_uuid()","lower(hex(randomblob(16)))")

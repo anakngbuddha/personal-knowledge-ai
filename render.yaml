@@ -27,6 +27,8 @@ services:
         sync: false
       - key: ALLOW_LEGACY_TOKEN_ENDPOINT
         value: "false"
+      - key: RLS_DEFAULT_DENY
+        value: "true"
       - key: DEFAULT_ORG_SLUG
         value: default
       - key: STORAGE_BACKEND

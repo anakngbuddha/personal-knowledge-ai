@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app.core.errors import DuplicateDocument  # noqa: E402
 from app.db.models import Document  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
+from app.db.session import system_session  # noqa: E402
 from app.documents.metadata import DocumentMetadataIn  # noqa: E402
 from app.documents.service import create_document, process_document  # noqa: E402
 from app.security.deps import get_or_create_default_org  # noqa: E402
@@ -25,7 +25,7 @@ def main() -> None:
     if not paths:
         raise SystemExit("usage: python ingest_local.py <file> [file ...]")
 
-    db = SessionLocal()
+    db = system_session()
     try:
         principal = owner_principal(get_or_create_default_org(db).id)
         queued: list[Document] = []
@@ -53,7 +53,7 @@ def main() -> None:
         except Exception as exc:  # noqa: BLE001
             print(f"processing failed for {document.id}: {type(exc).__name__}: {exc}")
 
-    db = SessionLocal()
+    db = system_session()
     try:
         for document in queued:
             row = db.get(Document, document.id)

@@ -414,7 +414,7 @@ def execute_mcp_tool_call(
 
         docs = db.scalars(
             readable_documents(principal)
-            .order_by(Document.created_at.desc())
+            .order_by(Document.uploaded_at.desc())
             .offset(offset)
             .limit(limit)
         ).all()
@@ -429,7 +429,7 @@ def execute_mcp_tool_call(
                     "title": _doc_title(d),
                     "vendor": getattr(d, "vendor", None),
                     "approval_state": d.approval_state,
-                    "created_at": d.created_at.isoformat() if d.created_at else None,
+                    "created_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
                 }
                 for d in docs
             ],

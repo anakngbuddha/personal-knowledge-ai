@@ -7,7 +7,7 @@ Forward plan: [ROADMAP.md](ROADMAP.md).
 | Capability | State | Backed by |
 |---|---|---|
 | JWT auth, orgs, memberships, roles | Implemented | `app/api/routes/auth.py`, `app/security/deps.py` (membership re-checked every request) |
-| PostgreSQL row-level security | Partial | Migration `0022_row_level_security`, `app/db/session.py`, `app/db/rls.py`. Unscoped sessions bypass unless `RLS_DEFAULT_DENY=true`; deploy role must not be superuser/BYPASSRLS (`RLS_REQUIRED=true` enforces) |
+| PostgreSQL row-level security | Partial | Migration `0022_row_level_security` now applies table by table with lock retries; `RLS_DEFAULT_DENY=true` is configured. Deploy role still needs verification as non-superuser/NOBYPASSRLS before `RLS_REQUIRED=true` can be enabled. |
 | Audit log | Implemented | `app/security/audit.py` |
 | Document ingestion (upload, URL, OCR, archives, malware heuristics) | Implemented | `app/api/routes/documents.py`, `app/documents/`, `app/ocr/`, `app/net/ssrf.py` |
 | Durable ingestion queue with renewable leases | Implemented | `app/jobs/queue.py`, `app/jobs/lease.py` |
@@ -31,6 +31,7 @@ Forward plan: [ROADMAP.md](ROADMAP.md).
 
 ## Deployment notes
 
-- **RLS**: connect as a non-superuser role without BYPASSRLS. The boot log says `row-level security is NOT enforced` otherwise. Set `RLS_REQUIRED=true` once clean.
+- **RLS**: connect as a non-superuser role without BYPASSRLS. The boot log says `row-level security is NOT enforced` otherwise. Confirm the role and test staging before setting `RLS_REQUIRED=true`. The RLS migration retries short lock conflicts during overlapping Render deploys.
+- **MCP credentials**: production tokens without a current user membership are rejected. Each affected user must sign in and mint a new token.
 - **Background work**: ingestion, workflow and freshness threads run in the web process. Measure first with `GET /ops/runtime` (event-loop lag, thread pool, DB pool, Gemini wait by class). Move them to `python scripts/worker.py` with `WORKER_ENABLED=false` on web only when contention is measured.
 - **Gemini quota**: `GEMINI_RPM` is shared by OCR, embeddings and chat; interactive calls go first and `GEMINI_INTERACTIVE_RESERVE` slots per minute stay free for them. Raise `GEMINI_RPM` only to the account's confirmed limit.

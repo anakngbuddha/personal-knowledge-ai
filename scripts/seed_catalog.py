@@ -11,13 +11,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app.catalog.seeds import seed_phase4_catalog  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
+from app.db.session import system_session  # noqa: E402
 from app.documents.service import get_or_create_default_workspace  # noqa: E402
 from app.security.deps import get_or_create_default_org  # noqa: E402
 
 
 def main() -> None:
-    db = SessionLocal()
+    db = system_session()
     try:
         org = get_or_create_default_org(db)
         workspace = get_or_create_default_workspace(db, org.id)

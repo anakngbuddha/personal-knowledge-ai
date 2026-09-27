@@ -132,3 +132,40 @@ def test_every_tenant_table_is_enabled_and_forced(probe):
 
     posture = rls_posture(probe)
     assert posture["unprotected_tables"] == []
+
+
+def test_migration_repairs_a_partially_applied_table(probe):
+    from app.db.migrations import _apply_rls_table
+
+    try:
+        with probe.begin() as conn:
+            conn.execute(text("ALTER TABLE workspaces NO FORCE ROW LEVEL SECURITY"))
+
+        _apply_rls_table(probe, "public", "workspaces")
+        _apply_rls_table(probe, "public", "workspaces")  # already complete
+
+        with probe.connect() as conn:
+            assert conn.scalar(
+                text("SELECT relrowsecurity AND relforcerowsecurity "
+                     "FROM pg_class WHERE oid = 'public.workspaces'::regclass")
+            ) is True
+    finally:
+        # Keep the shared database protected even when the assertion fails.
+        _apply_rls_table(probe, "public", "workspaces")
+
+
+def test_unscoped_app_session_is_default_deny(probe, tenants):
+    from app.db.session import get_db
+
+    gen = get_db()
+    session = next(gen)
+    try:
+        session.execute(text(f"SET LOCAL ROLE {PROBE}"))
+        rows = session.execute(
+            text("SELECT org_id FROM workspaces WHERE id IN (:a, :b)"),
+            {"a": tenants["ws_a"], "b": tenants["ws_b"]},
+        ).all()
+        assert rows == []
+    finally:
+        session.rollback()
+        gen.close()

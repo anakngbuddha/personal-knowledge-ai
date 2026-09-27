@@ -95,6 +95,10 @@ def principal_from_claims(
     if is_production() and membership is None:
         raise HTTPException(403, "your account is not a member of this organization")
 
+    # Identity tables are exempt from RLS; grants are not. Scope the session as
+    # soon as membership is verified, before fetching any tenant-owned grants.
+    scope_session_to_org(db, org_id)
+
     # Membership is the source of truth. The role claim is only a dev-mode fallback
     # for tokens minted without an account.
     role = membership.role if membership else _safe_normalize(payload.get("role"), Role, Role.VIEWER)

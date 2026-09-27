@@ -18,10 +18,9 @@ class Settings(BaseSettings):
             if v.startswith("postgresql://") and not v.startswith("postgresql+"): return "postgresql+psycopg://" + v[13:]
         return v
 
-    # Row-level security (audit finding 4). Unscoped sessions bypass RLS unless
-    # rls_default_deny is on; rls_required refuses to boot when the DB role can
-    # bypass policies or a tenant table is not ENABLE+FORCE.
-    rls_default_deny: bool = False
+    # Unscoped sessions must not see tenant rows. Trusted background and bootstrap
+    # code explicitly opts into system_session().
+    rls_default_deny: bool = True
     rls_required: bool = False
 
     storage_backend: str = "r2"

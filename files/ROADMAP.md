@@ -6,11 +6,10 @@ Current state lives in [STATUS.md](STATUS.md). This file tracks only what is **n
 ## Partial (finish first)
 
 1. **Live quality baseline**: versioned live Gemini + PostgreSQL run (claim support, refusal, citation precision, retrieval Hit@K at production `TOP_K=8`) with representative case counts; then gate releases on it.
-2. **RLS default-deny**: audit remaining `SessionLocal()` callers (freshness worker, scripts), then set `RLS_DEFAULT_DENY=true` and `RLS_REQUIRED=true`.
+2. **RLS enforcement gate**: `RLS_DEFAULT_DENY=true` is configured. Verify the staging database role is non-superuser/NOBYPASSRLS and the app works, then set `RLS_REQUIRED=true`.
 3. **Tool-enabled streaming**: stream the final generation after tool execution.
 4. **MCP child sandbox**: configure `MCP_CHILD_SANDBOX_COMMAND` in production.
 5. **Handler idempotency**: confirm `process_document` and workflow handlers are safe to re-run after a crash.
-6. **CI doc-link check**: add `python scripts/check_doc_links.py` to `.github/workflows/test.yml`.
 
 ## Proposed (not established in code)
 

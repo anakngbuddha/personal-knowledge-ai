@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.migrations import run_migrations
 from app.db.models import Base
-from app.db.session import SessionLocal, engine
+from app.db.session import engine, system_session
 
 logger = get_logger(__name__)
 
@@ -39,7 +39,7 @@ def ensure_schema() -> list[str]:
     Base.metadata.create_all(bind=engine)
     ran = run_migrations(engine)
 
-    db = SessionLocal()
+    db = system_session()
     try:
         from app.documents.service import get_or_create_default_workspace
         from app.security.deps import get_or_create_default_org

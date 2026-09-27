@@ -258,7 +258,7 @@ def _is_hit(question: EvaluationQuestion, chunk: dict) -> bool:
 def _evaluate_offline(
     questions: list[EvaluationQuestion],
     all_chunks: list[dict],
-    top_k: int = 10,
+    top_k: int = 8,
 ) -> dict:
     """Run offline evaluation using fake cosine similarity scoring.
 
@@ -380,7 +380,7 @@ def main() -> None:
         type=Path,
         default=ROOT / "docs" / "eval" / "questions.json",
     )
-    parser.add_argument("--top-k", type=int, default=10)
+    parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 

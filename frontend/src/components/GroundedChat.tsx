@@ -61,7 +61,7 @@ export function GroundedChat({
   const [error, setError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [selectedCitation, setSelectedCitation] = useState<SourceMetadata | null>(null);
-  const [strictMode, setStrictMode] = useState(false);
+  const [strictMode, setStrictMode] = useState(true);
   const [lastToolCalls, setLastToolCalls] = useState<string[]>([]);
   const [streamText, setStreamText] = useState("");
   const [statusNote, setStatusNote] = useState<string | null>(null);
@@ -74,7 +74,7 @@ export function GroundedChat({
   const [studio, setStudio] = useState<StudioResult | null>(null);
   const [studioBusy, setStudioBusy] = useState(false);
   const [hybridRag, setHybridRag] = useState(true);
-  const [sourcesExpertKnowledge, setSourcesExpertKnowledge] = useState(true);
+  const [sourcesExpertKnowledge, setSourcesExpertKnowledge] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [activeFilter, setActiveFilter] = useState<"briefing" | "faq" | "compare" | null>(null);
@@ -530,8 +530,8 @@ export function GroundedChat({
                   setStrictMode(!e.target.checked);
                 }}
               />
-              <span>Sources = expert knowledge</span>
-              <span className="info-circle" title="Ground generation directly in verified sources">
+              <span>Allow general knowledge (labelled separately)</span>
+              <span className="info-circle" title="Use general knowledge only when clearly labelled apart from your sources">
                 <InfoIcon size={13} />
               </span>
             </label>

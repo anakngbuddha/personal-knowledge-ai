@@ -64,9 +64,9 @@ def database():
 
 @pytest.fixture
 def db(database):
-    from app.db.session import SessionLocal
+    from app.db.session import system_session
 
-    session = SessionLocal()
+    session = system_session()
     try:
         yield session
     finally:

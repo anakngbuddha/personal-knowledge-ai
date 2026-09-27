@@ -111,10 +111,10 @@ def dependencies() -> dict:
         checks["llm"] = {"ok": False, "error": str(exc)[:300]}
 
     try:
-        from app.db.session import SessionLocal
+        from app.db.session import system_session
         from app.jobs import queue
 
-        db = SessionLocal()
+        db = system_session()
         try:
             counts = queue.stats(db)
         finally:

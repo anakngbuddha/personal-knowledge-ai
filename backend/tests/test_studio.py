@@ -134,8 +134,8 @@ def _source(db, name: str, summary: str) -> Document:
     return document
 
 
-def test_answer_prompt_version_is_unchanged():
-    assert PROMPT_VERSION == "4.2.0"
+def test_answer_prompt_version_matches_current_grounding_policy():
+    assert PROMPT_VERSION == "4.3.0"
     assert STUDIO_PROMPT_VERSION == "1.0.0"
 
 

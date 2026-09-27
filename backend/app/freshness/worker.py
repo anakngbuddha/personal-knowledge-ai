@@ -10,7 +10,7 @@ from datetime import timedelta
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.session import SessionLocal
+from app.db.session import system_session
 from app.freshness.scraper import CheckResult, _now, claim_due_source
 
 logger = get_logger(__name__)
@@ -28,7 +28,7 @@ def run_once(identity: str, fetcher=None) -> CheckResult | None:
     del fetcher  # crawls use the SSRF fetcher inside the queued job
     from app.jobs.queue import enqueue_freshness_crawl
 
-    db = SessionLocal()
+    db = system_session()
     try:
         source = claim_due_source(db, identity)
         if source is None:
