@@ -101,6 +101,37 @@ _VECTOR_HNSW=[
  "CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_hnsw ON document_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)",
 ]
 
+# Audit finding 4: row-level security on every tenant table. The policy reads the
+# transaction-local settings stamped by app.db.session. FORCE makes the table owner
+# (the usual deployment role) subject to the policy too. Rows with a NULL org_id are
+# global material and stay visible. Identity tables are exempt: they are read before
+# a tenant is known. Built with quote_ident and dollar quoting, never %-formatting,
+# because the driver treats % as a parameter marker.
+_RLS=[
+ """DO $rls$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT c.table_name
+    FROM information_schema.columns c
+    JOIN information_schema.tables t
+      ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+    WHERE c.table_schema = current_schema()
+      AND c.column_name = 'org_id'
+      AND t.table_type = 'BASE TABLE'
+      AND c.table_name NOT IN ('organizations', 'organization_memberships', 'user_accounts', 'schema_migrations')
+  LOOP
+    EXECUTE 'ALTER TABLE ' || quote_ident(r.table_name) || ' ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'ALTER TABLE ' || quote_ident(r.table_name) || ' FORCE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS tenant_isolation ON ' || quote_ident(r.table_name);
+    EXECUTE 'CREATE POLICY tenant_isolation ON ' || quote_ident(r.table_name)
+      || $p$ USING (current_setting('app.rls_bypass', true) = 'on' OR org_id IS NULL OR CAST(org_id AS text) = current_setting('app.current_org_id', true))$p$
+      || $p$ WITH CHECK (current_setting('app.rls_bypass', true) = 'on' OR org_id IS NULL OR CAST(org_id AS text) = current_setting('app.current_org_id', true))$p$;
+  END LOOP;
+END
+$rls$""",
+]
+
 MIGRATIONS=[
  ("0015_multi_user_rbac",_RBAC),
  ("0016_document_understanding",_UNDERSTANDING,True),
@@ -109,6 +140,7 @@ MIGRATIONS=[
  ("0019_notebooks",_NOTEBOOKS,True),
  ("0020_vendor_source_pages",_VENDOR_CRAWL,True),
  ("0021_document_chunk_hnsw",_VECTOR_HNSW,True),
+ ("0022_row_level_security",_RLS,True),
 ]
 
 def applied_migrations(engine: Engine)->set[str]:

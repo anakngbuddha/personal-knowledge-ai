@@ -1,16 +1,12 @@
 """Who is asking, and what they are allowed to read.
 
-Phase 0 (real authentication, RLS, audit log) is **not built**. What lives here is
-the seam Phase 1 and Phase 2 need so that permission filtering is a real, tested
-code path now rather than a retrofit later:
-
 * every retrieval call takes a `Principal`
 * the principal, not the caller, decides which sensitivity labels and accounts are
   visible
-* `owner_dev` mode resolves to the single collateral owner from
-  Project_Plan.md section 0, who legitimately sees everything
-
-When Phase 0 lands, only `resolve_principal` changes.
+* `owner_dev` mode resolves to the single collateral owner, who legitimately sees
+  everything
+* `scopes` narrows a token further (MCP tokens carry `mcp:read` / `mcp:write`);
+  `None` means "whatever the role allows" for ordinary session tokens
 """
 
 from __future__ import annotations
@@ -21,6 +17,9 @@ from dataclasses import dataclass, field
 from app.security.labels import Role, Sensitivity, sensitivities_up_to
 
 ALL_ACCOUNTS = "*"
+
+MCP_READ_SCOPE = "mcp:read"
+MCP_WRITE_SCOPE = "mcp:write"
 
 
 @dataclass(frozen=True)
@@ -36,6 +35,7 @@ class Principal:
     include_unapproved: bool = True
     label: str = ""
     grants: tuple[str, ...] = field(default_factory=tuple)
+    scopes: frozenset[str] | None = None
 
     @property
     def is_owner(self) -> bool:
@@ -65,6 +65,9 @@ class Principal:
     def sees_all_accounts(self) -> bool:
         return self.account_refs is None
 
+    def has_scope(self, scope: str) -> bool:
+        return self.scopes is None or scope in self.scopes
+
     def readable_sensitivities(self) -> list[str]:
         labels = sensitivities_up_to(self.max_sensitivity)
         if self.allow_vendor_restricted:
@@ -79,6 +82,7 @@ class Principal:
             "max_sensitivity": self.max_sensitivity,
             "allow_vendor_restricted": self.allow_vendor_restricted,
             "accounts": "all" if self.sees_all_accounts else sorted(self.account_refs or ()),
+            "scopes": None if self.scopes is None else sorted(self.scopes),
         }
 
 
