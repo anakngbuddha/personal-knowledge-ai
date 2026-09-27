@@ -7,9 +7,15 @@ Design notes worth knowing before changing anything here:
 
 * The address check runs on the **resolved** IPs, not on the hostname. Blocking
   "localhost" by name is trivially bypassed by any DNS record pointing at 127.0.0.1.
+* Each hop is resolved **once** and the connection goes to that validated address
+  (audit finding 11). The Host header and TLS SNI / certificate check still use the
+  real hostname, so HTTPS verification is unchanged, but a DNS answer that changes
+  between validation and connect (rebinding) can no longer redirect the request.
 * Every redirect hop is re-resolved and re-validated. A public host redirecting to
   169.254.169.254 is the classic bypass, and it is why redirects are followed
   manually instead of handing the whole chain to httpx.
+* Bodies are streamed and the transfer is aborted as soon as it passes `max_bytes`;
+  a declared Content-Length over the cap is refused before reading.
 * The classifier (`classify_host`) is pure and unit-tested on its own. The fetcher
   is the thin, network-touching part.
 * Denied by default. `URL_FETCH_ALLOW_PRIVATE_IPS` exists for tests and says so.
@@ -20,7 +26,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 from dataclasses import dataclass
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 from app.core.config import settings
 from app.core.errors import SsrfBlocked
@@ -106,6 +112,13 @@ def resolve_host(host: str) -> list[str]:
     return sorted({info[4][0] for info in infos})
 
 
+def _is_internal_name(host: str) -> bool:
+    lowered = (host or "").lower()
+    return lowered in {"localhost", "localhost.localdomain"} or lowered.endswith(
+        (".localhost", ".internal", ".local")
+    )
+
+
 def classify_host(host: str, addresses: list[str] | None = None) -> list[str]:
     """Return the denial reasons for a host. Empty list means allowed.
 
@@ -113,9 +126,7 @@ def classify_host(host: str, addresses: list[str] | None = None) -> list[str]:
     """
     if not host:
         return ["missing host"]
-    if host.lower() in {"localhost", "localhost.localdomain"} or host.lower().endswith(
-        (".localhost", ".internal", ".local")
-    ):
+    if _is_internal_name(host):
         return [f"host {host!r} is an internal name"]
 
     resolved = addresses if addresses is not None else resolve_host(host)
@@ -130,33 +141,72 @@ def classify_host(host: str, addresses: list[str] | None = None) -> list[str]:
     return reasons
 
 
-def validate_url(url: str, *, allow_private: bool | None = None) -> tuple[str, str]:
-    """Validate a single URL. Returns (normalized_url, host)."""
-    allow_private = (
-        settings.url_fetch_allow_private_ips if allow_private is None else allow_private
-    )
+def _check_shape(url: str):
     parsed = urlparse(url.strip())
     if parsed.scheme.lower() not in ALLOWED_SCHEMES:
         raise SsrfBlocked(
             f"scheme {parsed.scheme or '(none)'!r} is not allowed "
             f"(allowed: {', '.join(sorted(ALLOWED_SCHEMES))})"
         )
-    host = parsed.hostname or ""
-    port = parsed.port
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise SsrfBlocked(f"invalid port in {url!r}") from exc
     if port is not None and port not in ALLOWED_PORTS:
         raise SsrfBlocked(f"port {port} is not allowed")
     if parsed.username or parsed.password:
         raise SsrfBlocked("credentials embedded in a URL are not allowed")
-
-    if not allow_private:
-        reasons = classify_host(host)
-        if reasons:
-            raise SsrfBlocked(f"refusing to fetch {host!r}: {'; '.join(reasons)}")
-
     normalized = urlunparse(
         (parsed.scheme.lower(), parsed.netloc, parsed.path or "/", "", parsed.query, "")
     )
+    return parsed, normalized
+
+
+def validate_url(url: str, *, allow_private: bool | None = None) -> tuple[str, str]:
+    """Validate a single URL. Returns (normalized_url, host)."""
+    normalized, host, _ = resolve_and_validate(url, allow_private=allow_private)
     return normalized, host
+
+
+def resolve_and_validate(url: str, *, allow_private: bool | None = None) -> tuple[str, str, str | None]:
+    """Validate a URL and resolve it exactly once.
+
+    Returns (normalized_url, host, pinned_ip). `pinned_ip` is the validated address
+    the connection must use; it is None only when private addresses are allowed.
+    """
+    allow_private = (
+        settings.url_fetch_allow_private_ips if allow_private is None else allow_private
+    )
+    parsed, normalized = _check_shape(url)
+    host = parsed.hostname or ""
+    if allow_private:
+        return normalized, host, None
+
+    if _is_internal_name(host) or not host:
+        reasons = classify_host(host, [])
+        raise SsrfBlocked(f"refusing to fetch {host!r}: {'; '.join(reasons)}")
+    try:
+        addresses = [str(ipaddress.ip_address(host))]
+    except ValueError:
+        addresses = resolve_host(host)
+    reasons = classify_host(host, addresses)
+    if reasons:
+        raise SsrfBlocked(f"refusing to fetch {host!r}: {'; '.join(reasons)}")
+    return normalized, host, addresses[0]
+
+
+def _pinned_target(normalized: str, host: str, pinned_ip: str | None) -> tuple[str, dict, dict]:
+    """(request URL, headers, extensions) that connect to `pinned_ip` as `host`."""
+    if pinned_ip is None:
+        return normalized, {}, {}
+    parsed = urlparse(normalized)
+    ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
+    netloc = ip_host + (f":{parsed.port}" if parsed.port else "")
+    target = urlunparse((parsed.scheme, netloc, parsed.path or "/", "", parsed.query, ""))
+    headers = {"Host": parsed.netloc}
+    # httpcore uses sni_hostname for both SNI and certificate hostname verification.
+    extensions = {"sni_hostname": host} if parsed.scheme == "https" else {}
+    return target, headers, extensions
 
 
 @dataclass(frozen=True)
@@ -278,54 +328,67 @@ def _robots_pattern_matches(path: str, pattern: str) -> bool:
     return re.match(regex, path) is not None
 
 
-def fetch(url: str, *, max_bytes: int = MAX_FETCH_BYTES) -> FetchedResource:
-    """Fetch a URL, validating every redirect hop."""
+def fetch(url: str, *, max_bytes: int = MAX_FETCH_BYTES, transport=None) -> FetchedResource:
+    """Fetch a URL, pinning each hop to its validated address and capping the body.
+
+    `transport` is injectable for tests (httpx.MockTransport).
+    """
     import httpx
 
     if not settings.url_fetch_enabled:
         raise SsrfBlocked("URL ingestion is disabled (URL_FETCH_ENABLED=false)")
 
-    current, _ = validate_url(url)
+    current, host, pinned = resolve_and_validate(url)
     original = current
     redirects: list[str] = []
 
-    with httpx.Client(
-        follow_redirects=False,
-        timeout=settings.url_fetch_timeout_seconds,
-        headers={"User-Agent": USER_AGENT},
-    ) as client:
+    client_kwargs: dict = {
+        "follow_redirects": False,
+        "timeout": settings.url_fetch_timeout_seconds,
+        "headers": {"User-Agent": USER_AGENT},
+    }
+    if transport is not None:
+        client_kwargs["transport"] = transport
+
+    with httpx.Client(**client_kwargs) as client:
         for _ in range(settings.url_fetch_max_redirects + 1):
+            target, headers, extensions = _pinned_target(current, host, pinned)
             try:
-                response = client.get(current)
+                with client.stream("GET", target, headers=headers, extensions=extensions) as response:
+                    if response.is_redirect:
+                        location = response.headers.get("location")
+                        if not location:
+                            raise SsrfBlocked(f"{current} returned a redirect with no Location header")
+                        # Resolve against the logical URL (not the IP we connected to),
+                        # then re-validate: this hop is the classic SSRF bypass.
+                        current, host, pinned = resolve_and_validate(urljoin(current, location))
+                        redirects.append(current)
+                        continue
+
+                    if response.status_code >= 400:
+                        raise SsrfBlocked(f"{current} returned HTTP {response.status_code}")
+
+                    content_type = (response.headers.get("content-type") or "").split(";")[0].strip()
+                    if content_type and not content_type.startswith(ALLOWED_CONTENT_TYPES):
+                        raise SsrfBlocked(f"content type {content_type!r} is not accepted")
+
+                    declared = (response.headers.get("content-length") or "").strip()
+                    if declared.isdigit() and int(declared) > max_bytes:
+                        raise SsrfBlocked(f"response exceeds {max_bytes} bytes (declared {declared})")
+
+                    buffer = bytearray()
+                    for piece in response.iter_bytes():
+                        buffer.extend(piece)
+                        if len(buffer) > max_bytes:
+                            raise SsrfBlocked(f"response exceeds {max_bytes} bytes")
+                    return FetchedResource(
+                        url=original,
+                        final_url=current,
+                        data=bytes(buffer),
+                        content_type=content_type or None,
+                        redirects=tuple(redirects),
+                    )
             except httpx.HTTPError as exc:
                 raise SsrfBlocked(f"fetch failed for {current}: {exc}") from exc
-
-            if response.is_redirect:
-                location = response.headers.get("location")
-                if not location:
-                    raise SsrfBlocked(f"{current} returned a redirect with no Location header")
-                # Re-validate the destination. This is the hop that bypasses a
-                # hostname-only allowlist, so it gets the full check again.
-                current, _ = validate_url(str(response.next_request.url))
-                redirects.append(current)
-                continue
-
-            if response.status_code >= 400:
-                raise SsrfBlocked(f"{current} returned HTTP {response.status_code}")
-
-            content_type = (response.headers.get("content-type") or "").split(";")[0].strip()
-            if content_type and not content_type.startswith(ALLOWED_CONTENT_TYPES):
-                raise SsrfBlocked(f"content type {content_type!r} is not accepted")
-
-            data = response.content
-            if len(data) > max_bytes:
-                raise SsrfBlocked(f"response exceeds {max_bytes} bytes")
-            return FetchedResource(
-                url=original,
-                final_url=current,
-                data=data,
-                content_type=content_type or None,
-                redirects=tuple(redirects),
-            )
 
     raise SsrfBlocked(f"too many redirects (limit {settings.url_fetch_max_redirects})")

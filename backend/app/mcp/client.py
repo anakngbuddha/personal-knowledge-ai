@@ -1,4 +1,8 @@
-"""MCP client protocol, test fake, and optional official-SDK transport."""
+"""MCP client protocol, test fake, and optional official-SDK transport.
+
+Stdio children are launched through app.mcp.isolation: allowlisted environment,
+private working directory, optional OS sandbox wrapper.
+"""
 
 from __future__ import annotations
 
@@ -164,8 +168,10 @@ def _stdio_transport(spec: ServerSpec):
             code="mcp_sdk_missing",
         ) from exc
 
-    env = dict(spec.env) if spec.env else None
-    params = StdioServerParameters(command=spec.command, args=list(spec.args), env=env)
+    from app.mcp.isolation import child_launch
+
+    command, args, env, cwd = child_launch(spec)
+    params = StdioServerParameters(command=command, args=args, env=env, cwd=cwd)
     return Client(stdio_client(params))
 
 
