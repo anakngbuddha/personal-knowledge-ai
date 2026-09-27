@@ -143,7 +143,7 @@ export function SourcesWorkspace({
   // Perspective & View Mode State
   const [perspective, setPerspective] = useState<PerspectiveMode>("library");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [uploaderExpanded, setUploaderExpanded] = useState(false);
+  const [uploaderExpanded, setUploaderExpanded] = useState(true);
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -638,7 +638,7 @@ export function SourcesWorkspace({
 
         {/* Source Filters Card */}
         <div className="sources-setup-card sources-filters-card">
-          <div className="sources-setup-header">LIBRARY FILTERS</div>
+          <div className="sources-setup-header">FILTER SOURCES</div>
 
           {/* Search Filter Input */}
           <div className="filter-group">
@@ -647,7 +647,8 @@ export function SourcesWorkspace({
               <input
                 type="text"
                 className="sources-filter-input"
-                placeholder="Filter by name, vendor, tag…"
+                placeholder="Search sources…"
+                aria-label="Search sources"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -656,6 +657,7 @@ export function SourcesWorkspace({
                   type="button"
                   className="filter-clear-btn"
                   onClick={() => setSearchQuery("")}
+                  aria-label="Clear source search"
                 >
                   ×
                 </button>
@@ -791,20 +793,14 @@ export function SourcesWorkspace({
           <div className="sources-title-block">
             <div className="sources-title-row">
               <h1 className="sources-title">Knowledge Sources</h1>
-              <span className="sources-count-pill">{documents.length}</span>
+              <span className="sources-count-pill">{documents.length} {documents.length === 1 ? "source" : "sources"}</span>
             </div>
             <p className="sources-subtitle">
-              Unified Knowledge Library &bull; Cupertino Core &bull; HNSW Vector &amp; Hybrid Storage
+              Centralized repository and semantic index for your AI workflows.
             </p>
           </div>
 
           <div className="sources-header-actions">
-            {/* Live Status Badge */}
-            <div className="status-badge-live">
-              <span className="pulse-dot" />
-              <span>Vector Grounded &bull; HNSW: 14ms</span>
-            </div>
-
             {/* View Mode Toggle (Grid vs List) */}
             {perspective === "library" && (
               <div className="sources-view-switcher">
@@ -813,6 +809,8 @@ export function SourcesWorkspace({
                   className={`view-btn ${viewMode === "grid" ? "active" : ""}`}
                   onClick={() => setViewMode("grid")}
                   title="Grid cards view"
+                  aria-label="Grid cards view"
+                  aria-pressed={viewMode === "grid"}
                 >
                   <GridIcon size={15} />
                 </button>
@@ -821,6 +819,8 @@ export function SourcesWorkspace({
                   className={`view-btn ${viewMode === "list" ? "active" : ""}`}
                   onClick={() => setViewMode("list")}
                   title="Compact list view"
+                  aria-label="Compact list view"
+                  aria-pressed={viewMode === "list"}
                 >
                   <ListIcon size={15} />
                 </button>
@@ -833,7 +833,7 @@ export function SourcesWorkspace({
               className={`btn-add-sources ${uploaderExpanded ? "active" : ""}`}
               onClick={() => setUploaderExpanded((prev) => !prev)}
             >
-              <UploadCloudIcon size={16} />
+              <span aria-hidden="true">+</span>
               <span>{uploaderExpanded ? "Hide Uploader" : "Add Sources"}</span>
             </button>
           </div>
@@ -858,9 +858,9 @@ export function SourcesWorkspace({
               <div className="drop-icon-wrap">
                 <UploadCloudIcon size={32} />
               </div>
-              <h3 className="drop-title">Drop your documents, datasheets, or contracts here</h3>
+              <h3 className="drop-title">Upload or sync documents</h3>
               <p className="drop-subtitle">
-                Automatic optical character recognition (OCR), semantic passage chunking, and HNSW embeddings.
+                Drag and drop files here, or choose a file or folder to add to your sources.
               </p>
 
               <div className="format-pills-row">
@@ -879,7 +879,7 @@ export function SourcesWorkspace({
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <UploadCloudIcon size={14} />
-                  <span>{uploadBusy ? "Processing…" : "Choose Files"}</span>
+                  <span>{uploadBusy ? "Processing…" : "Browse files"}</span>
                 </button>
                 <button
                   type="button"
@@ -1447,7 +1447,7 @@ export function SourcesWorkspace({
       {/* ── Right Column: Live Source & Passage Inspector ────────────── */}
       <aside className="sources-side">
         <div className="side-section-header">
-          <span className="side-title">SOURCE INSPECTOR</span>
+          <span className="side-title">SOURCE DETAILS</span>
           <span className="side-meta-mono">Live Inspector</span>
         </div>
 

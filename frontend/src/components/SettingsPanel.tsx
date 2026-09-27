@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { OpsPanel } from "./OpsPanel";
 import { api } from "../services/api";
 import type { PrincipalProfile } from "../types";
+import { ActivityIcon, CheckIcon, DatabaseIcon, LogOutIcon, SettingsIcon, SunIcon, MoonIcon } from "./Icons";
 
 interface Props {
   principal: PrincipalProfile | null;
@@ -95,70 +96,47 @@ export function SettingsPanel({ principal, onSignOut, theme, onThemeChange }: Pr
     <div className="settings-desk">
       <header className="settings-heading">
         <h1>Settings</h1>
-        <p>Manage your workspace and display preferences.</p>
+        <p>Manage workspace identity, appearance, session access, and system health.</p>
       </header>
-      <section className="settings-section" aria-labelledby="workspace-settings-title">
-        <h2 id="workspace-settings-title">Workspace</h2>
-        <div className="settings-row"><span>Name</span><strong>{principal?.organization_name || "Personal workspace"}</strong></div>
-        <div className="settings-row"><span>Your role</span><strong>{principal?.role || "Member"}</strong></div>
-      </section>
-      <section className="settings-section" aria-labelledby="appearance-settings-title">
-        <h2 id="appearance-settings-title">Appearance</h2>
-        <div className="settings-row">
-          <div><strong>Color theme</strong><p>Choose how Deep Atlas looks on this browser.</p></div>
-          <div className="settings-segmented" role="group" aria-label="Color theme">
-            <button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => onThemeChange("light")}>Light</button>
-            <button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => onThemeChange("dark")}>Dark</button>
-          </div>
+      <div className="settings-layout">
+        <div className="settings-primary">
+          <section className="settings-section settings-card" aria-labelledby="workspace-settings-title">
+            <div className="settings-card-heading"><span className="settings-icon"><SettingsIcon size={18} /></span><div><h2 id="workspace-settings-title">Workspace profile</h2><p>Identity and permissions for your current workspace.</p></div></div>
+            <div className="settings-profile-grid">
+              <div className="settings-data-field"><span>Workspace name</span><strong>{principal?.organization_name || "Personal workspace"}</strong></div>
+              <div className="settings-data-field"><span>Your role</span><strong>{principal?.role || "Member"}</strong></div>
+            </div>
+            <div className="settings-role-note"><CheckIcon size={15} /><span>{admin ? "You have workspace administration access." : "Your access is managed by a workspace administrator."}</span></div>
+          </section>
+          <section className="settings-section settings-card" aria-labelledby="appearance-settings-title">
+            <div className="settings-card-heading"><span className="settings-icon"><SunIcon size={18} /></span><div><h2 id="appearance-settings-title">Appearance</h2><p>Choose the canvas that works best for you.</p></div></div>
+            <div className="settings-theme-options" role="group" aria-label="Color theme">
+              <button type="button" className={`settings-theme-choice light ${theme === "light" ? "active" : ""}`} aria-pressed={theme === "light"} onClick={() => onThemeChange("light")}>
+                <span className="settings-theme-preview"><i /><i /><i /></span><span className="settings-theme-caption"><SunIcon size={15} /> Light {theme === "light" && <CheckIcon size={15} />}</span>
+              </button>
+              <button type="button" className={`settings-theme-choice dark ${theme === "dark" ? "active" : ""}`} aria-pressed={theme === "dark"} onClick={() => onThemeChange("dark")}>
+                <span className="settings-theme-preview"><i /><i /><i /></span><span className="settings-theme-caption"><MoonIcon size={15} /> Dark {theme === "dark" && <CheckIcon size={15} />}</span>
+              </button>
+            </div>
+            <p className="settings-help">This preference is saved on this browser.</p>
+          </section>
+          <section className="settings-section settings-card" aria-labelledby="session-settings-title">
+            <div className="settings-card-heading"><span className="settings-icon"><LogOutIcon size={18} /></span><div><h2 id="session-settings-title">Session</h2><p>Manage access on this device.</p></div></div>
+            <div className="settings-session-row"><div><strong>Current browser</strong><p>You are signed in to Deep Atlas on this browser.</p></div><button type="button" className="settings-signout" onClick={onSignOut}>Sign out</button></div>
+          </section>
         </div>
-      </section>
-      <section className="settings-section" aria-labelledby="session-settings-title">
-        <h2 id="session-settings-title">Session</h2>
-        <div className="settings-row">
-          <div><strong>Signed in on this browser</strong><p>Sign out when you finish using a shared device.</p></div>
-          <button type="button" className="settings-signout" onClick={onSignOut}>Sign out</button>
-        </div>
-      </section>
-      {admin && (
-        <section className="settings-section">
-          <h2>Administration</h2>
-          <details className="settings-details">
-            <summary>System status</summary>
-          <div className="system-status">
-            {statusError && <p className="muted">{statusError}</p>}
-            {rows.length > 0 && (
-              <table className="status-table">
-                <thead>
-                  <tr>
-                    <th>Check</th>
-                    <th>Status</th>
-                    <th>Detail</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.label}>
-                      <td>{row.label}</td>
-                      <td>
-                        <span className={row.ok ? "status-ok" : "status-bad"}>
-                          {labelStatus(row.ok)}
-                        </span>
-                      </td>
-                      <td>{row.detail}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {queueDetail && <p className="muted queue-note">{queueDetail}</p>}
-          </div>
-          </details>
-          <details className="settings-details" onToggle={(event) => setShowAdvanced(event.currentTarget.open)}>
-            <summary>Advanced administration</summary>
-            {showAdvanced && <OpsPanel mode="admin" />}
-          </details>
-        </section>
-      )}
+        <aside className="settings-secondary">
+          {admin && <section className="settings-card settings-health-card" aria-labelledby="health-settings-title">
+            <div className="settings-card-heading"><span className="settings-icon"><ActivityIcon size={18} /></span><div><h2 id="health-settings-title">System health</h2><p>Live service checks</p></div></div>
+            {statusError && <p className="settings-health-error" role="alert">{statusError}</p>}
+            {rows.length === 0 && !statusError && <p className="settings-help">Checking services…</p>}
+            <div className="settings-health-list">{rows.map((row) => <div className="settings-health-row" key={row.label}><span><i className={row.ok ? "healthy" : "unhealthy"} />{row.label}</span><strong className={row.ok ? "healthy" : "unhealthy"}>{labelStatus(row.ok)}</strong><small>{row.detail}</small></div>)}</div>
+            {queueDetail && <p className="settings-health-queue">{queueDetail}</p>}
+          </section>}
+          {admin && <section className="settings-card settings-admin-card"><div className="settings-card-heading"><span className="settings-icon"><DatabaseIcon size={18} /></span><div><h2>Administration</h2><p>Advanced workspace operations</p></div></div><details className="settings-details" onToggle={(event) => setShowAdvanced(event.currentTarget.open)}><summary>Open administration tools</summary>{showAdvanced && <OpsPanel mode="admin" />}</details></section>}
+          {!admin && <section className="settings-card settings-admin-card"><h2>Need help?</h2><p>Contact a workspace administrator to change access or configuration.</p></section>}
+        </aside>
+      </div>
     </div>
   );
 }

@@ -79,6 +79,8 @@ export function IntegrationsPanel() {
   const [expandedSlug, setExpandedSlug] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { status: string; toolCount: number } | null>>({});
   const [subTab, setSubTab] = useState<"connectors" | "custom_server">("connectors");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [category, setCategory] = useState("All");
 
   async function refresh() {
     try {
@@ -141,6 +143,12 @@ export function IntegrationsPanel() {
 
   const enabledCount = data?.integrations.filter((r) => r.enabled).length ?? 0;
   const totalCount = data?.integrations.length ?? 0;
+  const filteredIntegrations = (data?.integrations || []).filter((row) => {
+    const meta = getConnectorMeta(row.server_slug);
+    const matchesCategory = category === "All" || meta.category === category;
+    const query = searchQuery.trim().toLowerCase();
+    return matchesCategory && (!query || `${meta.label} ${meta.blurb} ${meta.category}`.toLowerCase().includes(query));
+  });
 
   return (
     <div className="connectors-workspace">
@@ -152,7 +160,7 @@ export function IntegrationsPanel() {
           className={subTab === "connectors" ? "active" : ""}
           aria-pressed={subTab === "connectors"}
         >
-          External Connectors
+          External Connectors <span className="connectors-tab-count">{totalCount}</span>
         </button>
         <button
           type="button"
@@ -160,7 +168,7 @@ export function IntegrationsPanel() {
           className={subTab === "custom_server" ? "active" : ""}
           aria-pressed={subTab === "custom_server"}
         >
-          <span>Custom MCP Server</span>
+          <span>Custom MCP Server</span><span className="connectors-tab-beta">BETA</span>
         </button>
       </nav>
 
@@ -174,7 +182,7 @@ export function IntegrationsPanel() {
           <div className="connectors-hero-text">
             <h1 className="connectors-title">Connectors</h1>
             <p className="connectors-subtitle">
-              Manage services available to your workspace. {enabledCount} of {totalCount} active.
+              Manage services and live tools available to your workspace. {enabledCount} of {totalCount} active.
             </p>
           </div>
         </div>
@@ -184,8 +192,24 @@ export function IntegrationsPanel() {
             <span className={`connector-pulse-dot ${data?.mcp_enabled ? "live" : ""}`} />
             <span>{data?.mcp_enabled ? "Live Tools Active" : "Live Tools Inactive"}</span>
           </div>
+          <button type="button" className="connector-add-button" onClick={() => setSubTab("custom_server")}>+ <span>Add Connector</span></button>
         </div>
       </header>
+
+      <div className="connectors-toolbar">
+        <label className="connectors-search">
+          <SearchIcon size={16} />
+          <span className="sr-only">Search available connectors</span>
+          <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search available connectors…" />
+        </label>
+        <div className="connectors-category-list" role="group" aria-label="Connector category">
+          {["All", "Search", "Productivity", "Browser"].map((item) => (
+            <button key={item} type="button" className={category === item ? "active" : ""} aria-pressed={category === item} onClick={() => setCategory(item)}>
+              {item === "All" ? `All (${totalCount})` : item}
+            </button>
+          ))}
+        </div>
+      </div>
 
 
       {/* ── Alerts ── */}
@@ -219,7 +243,7 @@ export function IntegrationsPanel() {
 
       {/* ── Connector Cards Grid ── */}
       <div className="connectors-grid">
-        {(data?.integrations || []).map((row, idx) => {
+        {filteredIntegrations.map((row, idx) => {
           const meta = getConnectorMeta(row.server_slug);
           const isExpanded = expandedSlug === row.server_slug;
           const isSaving = saving === row.server_slug;
@@ -388,6 +412,15 @@ export function IntegrationsPanel() {
             </article>
           );
         })}
+        {data && filteredIntegrations.length === 0 && data.integrations.length > 0 && (
+          <div className="connectors-no-results">No connectors match your search. <button type="button" onClick={() => { setSearchQuery(""); setCategory("All"); }}>Clear filters</button></div>
+        )}
+        <button type="button" className="connector-create-card" onClick={() => setSubTab("custom_server")}>
+          <span className="connector-create-plus">+</span>
+          <strong>Add or build a custom connector</strong>
+          <span>Connect an internal MCP endpoint to your workspace.</span>
+          <span className="connector-create-link">Open MCP studio →</span>
+        </button>
       </div>
 
       {/* ── Bottom Security Note ── */}
