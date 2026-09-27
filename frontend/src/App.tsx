@@ -21,7 +21,8 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { SourcesWorkspace } from "./components/SourcesWorkspace";
 import { useDocuments } from "./hooks/useDocuments";
 import { usePrincipal } from "./hooks/useWorkflows";
-import { apiPointsAtLocalhostFromRemote, getAccessToken, onServerWake, setAccessToken } from "./services/http";
+import { api } from "./services/api";
+import { apiPointsAtLocalhostFromRemote, getAccessToken, onServerWake, onSessionExpired, setAccessToken } from "./services/http";
 import { SERVER_WAKING } from "./services/errors";
 
 type Tab = "sources" | "ask" | "notes" | "map" | "connections" | "settings";
@@ -34,7 +35,10 @@ interface TabItem {
 }
 
 export default function App() {
-  const [authenticated, setAuthenticated] = useState(Boolean(getAccessToken()));
+  const [sessionStatus, setSessionStatus] = useState<"checking" | "authenticated" | "signed_out">(
+    () => getAccessToken() ? "checking" : "signed_out"
+  );
+  const authenticated = sessionStatus === "authenticated";
   const [showAuth, setShowAuth] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ask");
   const { documents, loading, error, refresh, setError } = useDocuments(authenticated);
@@ -69,8 +73,22 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!getAccessToken()) setAuthenticated(false);
+    return onSessionExpired(() => {
+      setSessionStatus("signed_out");
+      setShowAuth(true);
+    });
   }, []);
+
+  useEffect(() => {
+    if (sessionStatus !== "checking") return;
+    let active = true;
+    api.me().catch(() => {
+      // A 401 clears the token in the HTTP client; network errors leave it available for retry.
+    }).finally(() => {
+      if (active) setSessionStatus((current) => current === "checking" && getAccessToken() ? "authenticated" : current);
+    });
+    return () => { active = false; };
+  }, [sessionStatus]);
 
   useEffect(() => {
     const stop = onServerWake((phase) => setWaking(phase === "waking"));
@@ -81,7 +99,12 @@ export default function App() {
 
   function signOut() {
     setAccessToken(null);
-    setAuthenticated(false);
+    setSessionStatus("signed_out");
+    setShowAuth(false);
+  }
+
+  if (sessionStatus === "checking") {
+    return <div className="auth-screen"><p className="muted">Restoring your session…</p></div>;
   }
 
   if (!authenticated) {
@@ -89,7 +112,7 @@ export default function App() {
       return (
         <AuthScreen
           onAuthenticated={() => {
-            setAuthenticated(true);
+            setSessionStatus("authenticated");
             setShowAuth(false);
           }}
           onBack={() => setShowAuth(false)}

@@ -1,15 +1,17 @@
 import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, LinkTargetOut, McpExecuteResult, McpIntegration, McpIntegrationList, McpPingResult, McpServerConfig, McpServerStatus, NoteGraphOut, NoteList, NoteRecord, NotebookList, NotebookRecord, NotebookSource, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, StudioResult, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
 import { fetchResponse, request, requestBlob } from "./http";
 
+type AuthTokenResponse = { access_token: string; role: string; expires_in_seconds: number };
+
 export const api = {
   login: (email: string, password: string) => 
-    request<{access_token:string; role:string}>("/auth/login", {
+    request<AuthTokenResponse>("/auth/login", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({email,password})
     }),
   signup: (body: {email:string; password:string; display_name:string; organization_name:string}) => 
-    request<{access_token:string; role:string}>("/auth/signup", {
+    request<AuthTokenResponse>("/auth/signup", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(body)

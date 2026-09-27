@@ -39,11 +39,13 @@ function resolveApiBaseUrl() {
 
 const BASE_URL = resolveApiBaseUrl();
 const TOKEN_KEY = "pka_access_token";
+const REMEMBERED_SESSION_KEY = "pka_remembered_session";
 const FETCH_TIMEOUT_MS = 15000;
 const WAKE_DELAYS_MS = [2000, 4000, 8000, 15000];
 
 type WakePhase = "waking" | "awake" | "asleep";
 const wakeListeners = new Set<(phase: WakePhase) => void>();
+const expiredListeners = new Set<() => void>();
 let wakeInFlight: Promise<boolean> | null = null;
 
 export function apiBaseUrl() {
@@ -56,19 +58,59 @@ export function apiPointsAtLocalhostFromRemote() {
 
 export function getAccessToken() {
   try {
-    return sessionStorage.getItem(TOKEN_KEY);
+    const sessionToken = sessionStorage.getItem(TOKEN_KEY);
+    if (sessionToken) return sessionToken;
   } catch {
-    return null;
+    /* persistent storage may still be available */
   }
+  try {
+    const raw = localStorage.getItem(REMEMBERED_SESSION_KEY);
+    if (!raw) return null;
+    const saved: unknown = JSON.parse(raw);
+    if (
+      typeof saved === "object" && saved !== null &&
+      "token" in saved && typeof saved.token === "string" &&
+      "expiresAt" in saved && typeof saved.expiresAt === "number" &&
+      Number.isFinite(saved.expiresAt) && saved.expiresAt > Date.now()
+    ) return saved.token;
+    localStorage.removeItem(REMEMBERED_SESSION_KEY);
+    queueMicrotask(() => expiredListeners.forEach((listener) => listener()));
+  } catch {
+    try { localStorage.removeItem(REMEMBERED_SESSION_KEY); } catch { /* storage unavailable */ }
+    queueMicrotask(() => expiredListeners.forEach((listener) => listener()));
+  }
+  return null;
 }
 
-export function setAccessToken(token: string | null) {
-  try {
-    if (token) sessionStorage.setItem(TOKEN_KEY, token);
-    else sessionStorage.removeItem(TOKEN_KEY);
-  } catch {
-    /* ignore */
+export function setAccessToken(
+  token: string | null,
+  options?: { remember?: boolean; expiresInSeconds?: number },
+) {
+  try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage unavailable */ }
+  try { localStorage.removeItem(REMEMBERED_SESSION_KEY); } catch { /* storage unavailable */ }
+  if (!token) return;
+  if (options?.remember && options.expiresInSeconds && Number.isFinite(options.expiresInSeconds) && options.expiresInSeconds > 0) {
+    try {
+      localStorage.setItem(REMEMBERED_SESSION_KEY, JSON.stringify({
+        token,
+        expiresAt: Date.now() + options.expiresInSeconds * 1000,
+      }));
+      return;
+    } catch {
+      /* fall back to a browser-tab session when persistent storage is disabled */
+    }
   }
+  try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* storage unavailable */ }
+}
+
+export function onSessionExpired(listener: () => void) {
+  expiredListeners.add(listener);
+  return () => { expiredListeners.delete(listener); };
+}
+
+function expireAccessToken() {
+  setAccessToken(null);
+  expiredListeners.forEach((listener) => listener());
 }
 
 export function onServerWake(listener: (phase: WakePhase) => void) {
@@ -80,9 +122,9 @@ function notifyWake(phase: WakePhase) {
   for (const listener of wakeListeners) listener(phase);
 }
 
-function withAuthHeaders(init?: RequestInit) {
+function withAuthHeaders(path: string, init?: RequestInit) {
   const h = new Headers(init?.headers);
-  const t = getAccessToken();
+  const t = path === "/auth/login" || path === "/auth/signup" ? null : getAccessToken();
   if (t && !h.has("Authorization")) h.set("Authorization", `Bearer ${t}`);
   return h;
 }
@@ -148,7 +190,7 @@ async function fetchOnce(path: string, init?: RequestInit, timeoutMs = FETCH_TIM
   try {
     return await fetch(`${BASE_URL}${path}`, {
       ...init,
-      headers: withAuthHeaders(init),
+      headers: init?.headers,
       signal: timer.signal,
     });
   } catch (err) {
@@ -185,8 +227,10 @@ export async function fetchResponse(
     throw new Error("API URL is not set. Add VITE_API_BASE_URL and redeploy.");
   }
   let response: Response;
+  const requestInit = { ...init, headers: withAuthHeaders(path, init) };
+  const sentAuthorization = requestInit.headers.get("Authorization");
   try {
-    response = await fetchOnce(path, init, effectiveTimeout);
+    response = await fetchOnce(path, requestInit, effectiveTimeout);
   } catch (error) {
     if (error instanceof Error && error.message.includes("timed out")) {
       throw error;
@@ -196,16 +240,20 @@ export async function fetchResponse(
     }
     const woke = await waitForServer();
     if (!woke) throw new Error(SERVER_ASLEEP);
-    response = await fetchOnce(path, init, effectiveTimeout);
+    response = await fetchOnce(path, requestInit, effectiveTimeout);
   }
   if (response.status === 502 || response.status === 503) {
     const woke = await waitForServer();
     if (!woke) throw new Error(SERVER_ASLEEP);
-    response = await fetchOnce(path, init, effectiveTimeout);
+    response = await fetchOnce(path, requestInit, effectiveTimeout);
   }
   if (response.status === 401) {
-    if (withAuthHeaders(init).has("Authorization")) setAccessToken(null);
-    throw new Error(friendlyError(401, ""));
+    if (path === "/auth/login") throw new Error("Email or password is incorrect.");
+    if (sentAuthorization) {
+      if (sentAuthorization === `Bearer ${getAccessToken()}`) expireAccessToken();
+      throw new Error(friendlyError(401, ""));
+    }
+    throw new Error("Please sign in to continue.");
   }
   if (!response.ok) {
     const detail = await readDetail(response);

@@ -6161,6 +6161,24 @@ textarea::placeholder {
   margin: 0;
 }
 
+.auth-remember {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.auth-remember input {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: var(--primary);
+  flex: none;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
