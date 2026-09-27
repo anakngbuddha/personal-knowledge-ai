@@ -6,10 +6,14 @@ import type { Playbook, PrincipalProfile, WorkflowRun, WorkflowRunSummary } from
 const POLL_INTERVAL_MS = 2000;
 const RUNS_PAGE_SIZE = 20;
 
-export function usePrincipal() {
+export function usePrincipal(active = true) {
   const [principal, setPrincipal] = useState<PrincipalProfile | null>(null);
 
   useEffect(() => {
+    if (!active) {
+      setPrincipal(null);
+      return;
+    }
     let cancelled = false;
     void api
       .me()
@@ -22,7 +26,7 @@ export function usePrincipal() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [active]);
 
   return principal;
 }

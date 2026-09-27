@@ -6,6 +6,8 @@ import type { PrincipalProfile } from "../types";
 interface Props {
   principal: PrincipalProfile | null;
   onSignOut: () => void;
+  theme: "light" | "dark";
+  onThemeChange: (theme: "light" | "dark") => void;
 }
 
 interface SystemRow {
@@ -18,11 +20,12 @@ function labelStatus(ok: boolean): string {
   return ok ? "OK" : "Needs attention";
 }
 
-export function SettingsPanel({ principal, onSignOut }: Props) {
+export function SettingsPanel({ principal, onSignOut, theme, onThemeChange }: Props) {
   const admin = Boolean(principal?.is_admin || principal?.is_owner);
   const [rows, setRows] = useState<SystemRow[]>([]);
   const [queueDetail, setQueueDetail] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     if (!admin) return;
@@ -90,33 +93,38 @@ export function SettingsPanel({ principal, onSignOut }: Props) {
 
   return (
     <div className="settings-desk">
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Settings</h2>
+      <header className="settings-heading">
+        <h1>Settings</h1>
+        <p>Manage your workspace and display preferences.</p>
+      </header>
+      <section className="settings-section" aria-labelledby="workspace-settings-title">
+        <h2 id="workspace-settings-title">Workspace</h2>
+        <div className="settings-row"><span>Name</span><strong>{principal?.organization_name || "Personal workspace"}</strong></div>
+        <div className="settings-row"><span>Your role</span><strong>{principal?.role || "Member"}</strong></div>
+      </section>
+      <section className="settings-section" aria-labelledby="appearance-settings-title">
+        <h2 id="appearance-settings-title">Appearance</h2>
+        <div className="settings-row">
+          <div><strong>Color theme</strong><p>Choose how Deep Atlas looks on this browser.</p></div>
+          <div className="settings-segmented" role="group" aria-label="Color theme">
+            <button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => onThemeChange("light")}>Light</button>
+            <button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => onThemeChange("dark")}>Dark</button>
           </div>
-          <button type="button" className="link-button" onClick={onSignOut}>
-            Sign out
-          </button>
         </div>
-        <p className="muted">Your session stays on this browser until you sign out.</p>
+      </section>
+      <section className="settings-section" aria-labelledby="session-settings-title">
+        <h2 id="session-settings-title">Session</h2>
+        <div className="settings-row">
+          <div><strong>Signed in on this browser</strong><p>Sign out when you finish using a shared device.</p></div>
+          <button type="button" className="settings-signout" onClick={onSignOut}>Sign out</button>
+        </div>
       </section>
       {admin && (
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <h2>Admin</h2>
-            </div>
-          </div>
-          <dl className="ops-dl">
-            <dt>Workspace</dt>
-            <dd>{principal?.organization_name || "This workspace"}</dd>
-            <dt>Role</dt>
-            <dd>{principal?.role || "member"}</dd>
-          </dl>
-
+        <section className="settings-section">
+          <h2>Administration</h2>
+          <details className="settings-details">
+            <summary>System status</summary>
           <div className="system-status">
-            <h3>System status</h3>
             {statusError && <p className="muted">{statusError}</p>}
             {rows.length > 0 && (
               <table className="status-table">
@@ -144,8 +152,11 @@ export function SettingsPanel({ principal, onSignOut }: Props) {
             )}
             {queueDetail && <p className="muted queue-note">{queueDetail}</p>}
           </div>
-
-          <OpsPanel mode="admin" />
+          </details>
+          <details className="settings-details" onToggle={(event) => setShowAdvanced(event.currentTarget.open)}>
+            <summary>Advanced administration</summary>
+            {showAdvanced && <OpsPanel mode="admin" />}
+          </details>
         </section>
       )}
     </div>

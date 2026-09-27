@@ -3,12 +3,8 @@ import { AuthScreen } from "./components/AuthScreen";
 import { GraphExplorer } from "./components/GraphExplorer";
 import { GroundedChat } from "./components/GroundedChat";
 import { LandingPage } from "./components/LandingPage";
-import { SeaBubbles } from "./components/SeaBubbles";
 import {
-  BellIcon,
   BookOpenIcon,
-  ChevronDownIcon,
-  DatabaseIcon,
   FileTextIcon,
   LogoMark,
   LogOutIcon,
@@ -27,8 +23,6 @@ import { useDocuments } from "./hooks/useDocuments";
 import { usePrincipal } from "./hooks/useWorkflows";
 import { apiPointsAtLocalhostFromRemote, getAccessToken, onServerWake, setAccessToken } from "./services/http";
 import { SERVER_WAKING } from "./services/errors";
-import { api } from "./services/api";
-import type { NotebookRecord } from "./types";
 
 type Tab = "sources" | "ask" | "notes" | "map" | "connections" | "settings";
 
@@ -48,7 +42,7 @@ export default function App() {
   const [seedQuestion, setSeedQuestion] = useState<string | null>(null);
   const [mapVersion, setMapVersion] = useState(0);
   const [waking, setWaking] = useState(false);
-  const principal = usePrincipal();
+  const principal = usePrincipal(authenticated);
 
   // Dark/Light theme manager - default to light matching reference design
   const [theme, setTheme] = useState<"dark" | "light">(() => {
@@ -85,21 +79,6 @@ export default function App() {
     };
   }, []);
 
-  const [sidebarNotebooks, setSidebarNotebooks] = useState<NotebookRecord[]>([]);
-
-  useEffect(() => {
-    if (authenticated) {
-      api
-        .listNotebooks()
-        .then((res) => {
-          if (res?.notebooks) {
-            setSidebarNotebooks(res.notebooks);
-          }
-        })
-        .catch(() => {});
-    }
-  }, [authenticated, activeTab]);
-
   function signOut() {
     setAccessToken(null);
     setAuthenticated(false);
@@ -121,7 +100,7 @@ export default function App() {
   }
 
   const tabs: TabItem[] = [
-    { id: "ask", name: "Ask Intelligence", icon: StarIcon, badge: "AI" },
+    { id: "ask", name: "Ask Intelligence", icon: StarIcon },
     { id: "notes", name: "Notes", icon: BookOpenIcon },
     { id: "sources", name: "Sources", icon: FileTextIcon, badge: documents.length > 0 ? String(documents.length) : undefined },
     { id: "connections", name: "Connectors", icon: ZapIcon },
@@ -138,7 +117,6 @@ export default function App() {
 
   return (
     <div className="app">
-      <SeaBubbles count={14} variant="dashboard" className="app-ambient-bubbles" />
       {/* ── Top Glass Masthead ────────────────────────────────────────── */}
       <header className="masthead">
         <div className="brand">
@@ -148,43 +126,13 @@ export default function App() {
           <div className="brand-info">
             <div className="brand-title-wrap">
               <span className="brand-name">Deep Atlas</span>
-              <span className="version-pill">v2.4</span>
             </div>
-            <span className="brand-kicker">AUTONOMOUS KNOWLEDGE ENGINE &bull; ENTERPRISE CORE</span>
           </div>
         </div>
 
-        <div className="mast-center">
-          <div className="status-badge-live">
-            <span className="pulse-dot" />
-            <span>Catalogs Grounded &bull; HNSW &bull; 14ms</span>
-          </div>
-
-          <div className="mast-search-box">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-muted)", flexShrink: 0 }}>
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              type="text"
-              className="mast-search-input"
-              placeholder="Jump to note or search catalog | product..."
-            />
-            <kbd className="mast-search-shortcut">⌘ K</kbd>
-          </div>
-        </div>
+        <div className="mast-current-page" aria-label="Current page">{tabs.find((tab) => tab.id === activeTab)?.name}</div>
 
         <div className="mast-meta">
-          <button
-            type="button"
-            className="mast-bell-btn"
-            title="Notifications"
-            aria-label="Notifications"
-          >
-            <BellIcon size={16} />
-            <span className="bell-badge-dot" />
-          </button>
-
           <button
             type="button"
             className="theme-toggle-btn"
@@ -197,11 +145,7 @@ export default function App() {
 
           <div className="user-profile-chip">
             <div className="user-avatar">{userInitials || "S"}</div>
-            <div className="user-info">
-              <span className="user-name">{principal?.organization_name || "Enterprise Workspace"}</span>
-              <span className="user-org">{principal?.role ? `${principal.role.charAt(0).toUpperCase() + principal.role.slice(1)} • Org ID ${principal.org_id.slice(0, 8)}` : "Personal Knowledge AI"}</span>
-            </div>
-            <ChevronDownIcon size={12} className="user-chevron" />
+            <div className="user-info"><span className="user-name">{principal?.organization_name || "Workspace"}</span></div>
           </div>
 
           <button type="button" className="signout-btn" onClick={signOut} title="Sign out of workspace">
@@ -212,9 +156,7 @@ export default function App() {
       </header>
 
       {/* ── Main Workspace Body ─────────────────────────────────────── */}
-      <div className={`desk ${activeTab === "ask" || activeTab === "map" || activeTab === "sources" ? "desk-ask-mode" : ""}`}>
-        {/* Navigation Sidebar (rendered when not on ask, map, or sources tab, since all three have integrated workspace sidebars) */}
-        {activeTab !== "ask" && activeTab !== "map" && activeTab !== "sources" && (
+      <div className="desk desk-unified">
           <nav className="field-index" aria-label="Main Navigation">
             <div className="nav-section">
               <div className="index-label">Workspace</div>
@@ -239,59 +181,7 @@ export default function App() {
               })}
             </div>
 
-            <div className="nav-section notebooks-nav-section">
-              <div className="index-label-row">
-                <span className="index-label" style={{ padding: 0 }}>NOTEBOOKS</span>
-                <button
-                  type="button"
-                  className="btn-add-notebook"
-                  onClick={() => setActiveTab("notes")}
-                  title="Create new notebook"
-                >
-                  +
-                </button>
-              </div>
-              {sidebarNotebooks.length === 0 ? (
-                <div style={{ padding: "6px 14px", fontSize: "12px", color: "var(--text-muted)" }}>
-                  No notebooks yet
-                </div>
-              ) : (
-                sidebarNotebooks.map((nb, i) => (
-                  <button
-                    key={nb.id}
-                    type="button"
-                    className={`index-item notebook-item ${activeTab === "notes" && i === 0 ? "active" : ""}`}
-                    onClick={() => setActiveTab("notes")}
-                  >
-                    {i === 0 && <span className="notebook-dot active" />}
-                    <span className="index-name" style={{ paddingLeft: i === 0 ? "0" : "14px" }}>
-                      {nb.name}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-
-            <div className="sidebar-footer">
-              <div className="telemetry-card">
-                <div className="telemetry-header">
-                  <span className="telemetry-title">VECTOR MEMORY</span>
-                  <span className="telemetry-status">
-                    <DatabaseIcon size={12} /> HNSW
-                  </span>
-                </div>
-                <div className="telemetry-sub" style={{ lineHeight: 1.45 }}>
-                  {documents.length} sources indexed<br />
-                  Tenant isolation: <span style={{ color: "#10b981", fontWeight: 600 }}>Enforced</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px", fontSize: "10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                  <span>Dimensions: 1536</span>
-                  <span style={{ color: "#10b981", fontWeight: 600 }}>Sync: OK</span>
-                </div>
-              </div>
-            </div>
           </nav>
-        )}
 
         {/* Content Region */}
         <div className="desk-body">
@@ -316,7 +206,6 @@ export default function App() {
                   setActiveTab(t);
                   setSeedQuestion(null);
                 }}
-                tabs={tabs}
                 initialQuestion={seedQuestion}
               />
             )}
@@ -334,12 +223,11 @@ export default function App() {
                   setActiveTab(t);
                   setSeedQuestion(null);
                 }}
-                tabs={tabs}
                 onMapChanged={() => setMapVersion((v) => v + 1)}
               />
             )}
             {activeTab === "notes" && <NotesPanel />}
-            {activeTab === "settings" && <SettingsPanel principal={principal} onSignOut={signOut} />}
+            {activeTab === "settings" && <SettingsPanel principal={principal} onSignOut={signOut} theme={theme} onThemeChange={setTheme} />}
             {activeTab === "sources" && (
               <SourcesWorkspace
                 documents={documents}
@@ -358,7 +246,6 @@ export default function App() {
                   setActiveTab(t);
                   setSeedQuestion(null);
                 }}
-                tabs={tabs}
               />
             )}
           </main>

@@ -145,57 +145,24 @@ export function IntegrationsPanel() {
   return (
     <div className="connectors-workspace">
       {/* ── Top Level Navigation Switcher ── */}
-      <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+      <nav className="connectors-tabs" aria-label="Connector views">
         <button
           type="button"
           onClick={() => setSubTab("connectors")}
-          style={{
-            padding: "10px 20px",
-            borderRadius: "10px",
-            border: subTab === "connectors" ? "1.5px solid var(--accent-color, #4f46e5)" : "1px solid var(--border-color, #e2e8f0)",
-            background: subTab === "connectors" ? "rgba(99, 102, 241, 0.1)" : "var(--card-bg, #fff)",
-            color: subTab === "connectors" ? "var(--accent-color, #4f46e5)" : "var(--text-muted, #64748b)",
-            fontWeight: 700,
-            fontSize: "13px",
-            cursor: "pointer",
-            transition: "all 0.15s ease",
-          }}
+          className={subTab === "connectors" ? "active" : ""}
+          aria-pressed={subTab === "connectors"}
         >
           External Connectors
         </button>
         <button
           type="button"
           onClick={() => setSubTab("custom_server")}
-          style={{
-            padding: "10px 20px",
-            borderRadius: "10px",
-            border: subTab === "custom_server" ? "1.5px solid var(--accent-color, #4f46e5)" : "1px solid var(--border-color, #e2e8f0)",
-            background: subTab === "custom_server" ? "rgba(99, 102, 241, 0.1)" : "var(--card-bg, #fff)",
-            color: subTab === "custom_server" ? "var(--accent-color, #4f46e5)" : "var(--text-muted, #64748b)",
-            fontWeight: 700,
-            fontSize: "13px",
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-            transition: "all 0.15s ease",
-          }}
+          className={subTab === "custom_server" ? "active" : ""}
+          aria-pressed={subTab === "custom_server"}
         >
           <span>Custom MCP Server</span>
-          <span
-            style={{
-              fontSize: "10px",
-              padding: "2px 6px",
-              borderRadius: "4px",
-              background: "#10b981",
-              color: "#fff",
-              fontWeight: 700,
-            }}
-          >
-            Claude Desktop &bull; Read/Write
-          </span>
         </button>
-      </div>
+      </nav>
 
       {subTab === "custom_server" ? (
         <CustomMcpStudio />
@@ -204,13 +171,10 @@ export function IntegrationsPanel() {
           {/* ── Hero Header ── */}
           <header className="connectors-hero">
         <div className="connectors-hero-left">
-          <div className="connectors-hero-icon-wrap">
-            <ZapIcon size={28} />
-          </div>
           <div className="connectors-hero-text">
             <h1 className="connectors-title">Connectors</h1>
             <p className="connectors-subtitle">
-              External services that extend grounded intelligence with live web search, browser access, and enterprise productivity data.
+              Manage services available to your workspace. {enabledCount} of {totalCount} active.
             </p>
           </div>
         </div>
@@ -223,23 +187,6 @@ export function IntegrationsPanel() {
         </div>
       </header>
 
-      {/* ── Summary Stats Strip ── */}
-      <div className="connectors-stats-strip">
-        <div className="connectors-stat-cell">
-          <span className="connectors-stat-num">{totalCount}</span>
-          <span className="connectors-stat-label">Total Connectors</span>
-        </div>
-        <div className="connectors-stat-divider" />
-        <div className="connectors-stat-cell">
-          <span className="connectors-stat-num accent">{enabledCount}</span>
-          <span className="connectors-stat-label">Active</span>
-        </div>
-        <div className="connectors-stat-divider" />
-        <div className="connectors-stat-cell">
-          <span className="connectors-stat-num muted">{totalCount - enabledCount}</span>
-          <span className="connectors-stat-label">Disabled</span>
-        </div>
-      </div>
 
       {/* ── Alerts ── */}
       {error && (
@@ -286,14 +233,13 @@ export function IntegrationsPanel() {
               style={{ "--card-accent": meta.accent, "--card-accent-soft": meta.accentSoft, "--stagger-index": idx } as React.CSSProperties}
             >
               {/* Card Header */}
-              <div className="connector-card-header" onClick={() => setExpandedSlug(isExpanded ? null : row.server_slug)}>
+              <button type="button" className="connector-card-header" aria-expanded={isExpanded} aria-label={`${meta.label} settings`} onClick={() => setExpandedSlug(isExpanded ? null : row.server_slug)}>
                 <div className="connector-card-icon-squircle" style={{ background: meta.accentSoft, color: meta.accent }}>
                   <IconComponent size={20} />
                 </div>
                 <div className="connector-card-titles">
                   <div className="connector-card-name-row">
                     <h3 className="connector-card-name">{meta.label}</h3>
-                    <span className="connector-card-station">{meta.station}</span>
                   </div>
                   <span className="connector-card-category">{meta.category}</span>
                 </div>
@@ -308,7 +254,7 @@ export function IntegrationsPanel() {
                     </svg>
                   </span>
                 </div>
-              </div>
+              </button>
 
               {/* Card Description */}
               <p className="connector-card-blurb">{meta.blurb}</p>
@@ -322,7 +268,7 @@ export function IntegrationsPanel() {
               )}
 
               {/* Allowed Tools Summary */}
-              {row.allowed_tools && row.allowed_tools.length > 0 && (
+              {isExpanded && row.allowed_tools && row.allowed_tools.length > 0 && (
                 <div className="connector-tools-row">
                   <span className="connector-tools-label">Tools:</span>
                   <div className="connector-tools-chips">

@@ -1,0 +1,278 @@
+/* Calm, consistent operating surfaces for the signed-in workspace. */
+.app { background: var(--bg-canvas); }
+.masthead {
+  flex: 0 0 64px;
+  padding: 0 24px;
+  background: var(--bg-surface);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+.brand-emblem { box-shadow: none; }
+.mast-current-page {
+  flex: 1;
+  min-width: 0;
+  padding-left: 24px;
+  border-left: 1px solid var(--rule);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.mast-meta { gap: 10px; }
+.user-profile-chip { border: 0; background: transparent; box-shadow: none; }
+.desk.desk-unified {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+.desk-unified .field-index {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 24px 12px;
+  background: var(--bg-surface);
+  backdrop-filter: none;
+  box-shadow: none;
+  overflow-y: auto;
+}
+.desk-unified .nav-section { gap: 3px; }
+.desk-unified .index-label { padding: 0 12px 12px; }
+.desk-unified .index-item {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.desk-unified .index-item:hover { background: var(--bg-card-hover); box-shadow: none; }
+.desk-unified .index-item.active { background: var(--primary-soft); box-shadow: none; }
+.desk-unified .tab-badge { margin-left: auto; }
+.desk-unified .desk-body,
+.desk-unified .content-container { min-width: 0; min-height: 0; }
+.desk-unified .desk-body { overflow: hidden; }
+.desk-unified .content-container { overflow-y: auto; overflow-x: hidden; }
+
+.desk-unified .ask-desk {
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  gap: 0;
+  grid-template-columns: 232px minmax(0, 1fr);
+  background: var(--bg-canvas);
+}
+.desk-unified .ask-desk.inspector-open { grid-template-columns: 232px minmax(0, 1fr) 284px; }
+.desk-unified .ask-sources,
+.desk-unified .ask-side,
+.desk-unified .ask-chat {
+  border: 0;
+  border-right: 1px solid var(--rule);
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg-surface);
+}
+.desk-unified .ask-sources { padding: 24px 16px; }
+.ask-add-sources {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 18px 0 24px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  color: var(--text-primary);
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ask-add-sources:hover { background: var(--bg-card-hover); }
+.desk-unified .ask-chat { border-right: 0; }
+.desk-unified .ask-side { border-left: 1px solid var(--rule); border-right: 0; }
+.desk-unified .messages-stream { padding: 40px clamp(24px, 5vw, 72px); }
+.desk-unified .chat-welcome { max-width: 640px; padding: 16px; }
+.desk-unified .welcome-title { color: var(--text-primary); }
+.desk-unified .prompt-cards-container { width: 100%; margin-top: 24px; }
+.desk-unified .chat-input-form {
+  width: min(100%, 820px);
+  margin: auto auto 0;
+  padding: 12px 24px 24px;
+  gap: 10px;
+}
+.answer-options { order: 2; color: var(--text-secondary); font-size: 12px; }
+.answer-options summary { width: fit-content; cursor: pointer; padding: 5px 0; }
+.answer-options .form-options {
+  display: flex;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding-top: 10px;
+}
+.answer-options .checkbox-option,
+.answer-options .hybrid-rag-control { color: var(--text-secondary); }
+.desk-unified .composer-bar-container {
+  min-height: 54px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 12px;
+  box-shadow: none;
+}
+.desk-unified .chat-pill-input {
+  min-width: 0;
+  padding: 9px 2px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.desk-unified .chat-pill-input::placeholder { color: var(--text-muted); }
+.desk-unified .saved-outputs-section { display: none; }
+
+.desk-unified .connectors-workspace,
+.desk-unified .settings-desk {
+  max-width: 1060px;
+  min-height: min-content;
+  padding: 40px clamp(24px, 4vw, 56px) 64px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.desk-unified .connectors-workspace { gap: 24px; animation: none; }
+.connectors-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--rule);
+}
+.connectors-tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0 2px 12px;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.connectors-tabs button.active { color: var(--text-primary); border-bottom-color: var(--primary); }
+.desk-unified .connectors-hero { align-items: center; }
+.desk-unified .connectors-hero-left { gap: 0; }
+.desk-unified .connectors-title { font-size: clamp(26px, 3vw, 34px); }
+.desk-unified .connectors-subtitle { max-width: 58ch; margin-top: 6px; }
+.desk-unified .connectors-global-badge { box-shadow: none; }
+.desk-unified .connectors-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+.desk-unified .connector-card {
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  box-shadow: none;
+  backdrop-filter: none;
+  animation: none;
+  transition: border-color 150ms ease;
+}
+.desk-unified .connector-card.enabled { border-left: 1px solid var(--rule); }
+.desk-unified .connector-card:hover { transform: none; border-color: var(--rule-strong); box-shadow: none; }
+.desk-unified .connector-card-header {
+  width: 100%;
+  padding: 18px 20px 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+}
+.desk-unified .connector-card-blurb { padding: 12px 20px 18px; }
+.desk-unified .connector-card-name { white-space: normal; }
+.desk-unified .connector-tools-row { padding: 0 20px 16px; }
+.desk-unified .connector-config-inner { padding: 0 20px 20px; }
+.desk-unified .connectors-security-footer { margin-top: 4px; }
+
+.desk-unified .settings-desk { gap: 0; }
+.settings-heading { margin-bottom: 30px; }
+.settings-heading h1 { margin: 0 0 6px; font-size: clamp(26px, 3vw, 34px); line-height: 1.2; }
+.settings-heading p { margin: 0; color: var(--text-secondary); }
+.settings-section { padding: 22px 0; border-top: 1px solid var(--rule); }
+.settings-section h2 { margin: 0 0 16px; font-size: 16px; }
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 48px;
+  padding: 8px 0;
+}
+.settings-row + .settings-row { border-top: 1px solid var(--rule); }
+.settings-row > span { color: var(--text-secondary); }
+.settings-row strong { font-weight: 600; }
+.settings-row p { margin: 3px 0 0; color: var(--text-secondary); font-size: 13px; }
+.settings-segmented { display: flex; padding: 3px; border: 1px solid var(--rule); border-radius: 9px; }
+.settings-segmented button,
+.settings-signout {
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 14px;
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.settings-segmented button.active { color: var(--text-primary); background: var(--bg-card-hover); }
+.settings-signout { border: 1px solid var(--rule-strong); color: var(--text-primary); }
+.settings-details { border-top: 1px solid var(--rule); padding: 12px 0; }
+.settings-details summary { cursor: pointer; font-weight: 600; }
+.settings-details .system-status { margin-top: 20px; overflow-x: auto; }
+
+@media (max-width: 1200px) {
+  .desk-unified .connectors-grid { grid-template-columns: 1fr; }
+  .desk-unified .ask-desk.inspector-open { grid-template-columns: 210px minmax(0, 1fr) 250px; }
+}
+@media (max-width: 960px) {
+  .desk.desk-unified { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .desk-unified .field-index {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    scrollbar-width: none;
+  }
+  .desk-unified .field-index::-webkit-scrollbar { display: none; }
+  .desk-unified .nav-section { flex-direction: row; width: max-content; }
+  .desk-unified .index-label { display: none; }
+  .desk-unified .index-item { width: auto; white-space: nowrap; }
+  .desk-unified .ask-desk,
+  .desk-unified .ask-desk.inspector-open {
+    grid-template-columns: 1fr;
+    grid-auto-rows: max-content;
+    min-height: 100%;
+    height: auto;
+    overflow: visible;
+  }
+  .desk-unified .ask-sources {
+    min-height: 132px;
+    max-height: 180px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--rule);
+  }
+  .desk-unified .ask-chat { min-height: 640px; height: 70vh; }
+  .desk-unified .ask-side { border-top: 1px solid var(--rule); border-left: 0; }
+}
+@media (max-width: 600px) {
+  .masthead { padding: 0 14px; }
+  .mast-current-page, .user-profile-chip { display: none; }
+  .desk-unified .index-item { padding: 8px 10px; }
+  .desk-unified .connectors-workspace,
+  .desk-unified .settings-desk { padding: 24px 18px 44px; }
+  .desk-unified .connectors-hero { align-items: flex-start; }
+  .desk-unified .connectors-hero-right { display: none; }
+  .desk-unified .connector-card-header { gap: 10px; padding: 16px 14px 0; }
+  .desk-unified .connector-card-blurb { padding: 10px 14px 16px; }
+  .desk-unified .chat-input-form { padding: 12px 14px 18px; }
+  .desk-unified .messages-stream { padding: 24px 18px; }
+  .settings-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+}
