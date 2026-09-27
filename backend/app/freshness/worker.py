@@ -37,7 +37,7 @@ def run_once(identity: str, fetcher=None) -> CheckResult | None:
         source.next_check_at = _now() + timedelta(seconds=source.check_interval_seconds)
         source.locked_by = None
         source.locked_at = None
-        enqueue_freshness_crawl(db, vendor_source_id=source.id, org_id=source.org_id)
+        enqueue_freshness_crawl(db, vendor_source_id=source.id, org_id=source.org_id, user_initiated=False)
         return CheckResult(
             source_id=source.id,
             status="queued",

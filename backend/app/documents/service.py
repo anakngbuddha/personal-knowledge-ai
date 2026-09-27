@@ -212,8 +212,8 @@ def create_document(
     return document
 
 
-def enqueue_ingestion(db: Session, document: Document) -> None:
-    queue.enqueue(db, document_id=document.id, org_id=document.org_id)
+def enqueue_ingestion(db: Session, document: Document, *, user_initiated: bool = True) -> None:
+    queue.enqueue(db, document_id=document.id, org_id=document.org_id, user_initiated=user_initiated)
 
 
 def process_document(document_id: uuid.UUID) -> None:

@@ -85,7 +85,8 @@ class Settings(BaseSettings):
     mcp_child_sandbox_command: str = ""
 
     notes_max_body_chars: int = 200000
-    freshness_worker_enabled: bool = True
+    # Scheduled crawls can ingest many pages and spend model tokens while idle.
+    freshness_worker_enabled: bool = False
     freshness_poll_seconds: float = 30.0
     freshness_default_interval_seconds: int = 86400
     freshness_max_bytes: int = 2000000

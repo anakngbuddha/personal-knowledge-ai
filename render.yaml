@@ -55,6 +55,8 @@ services:
         value: gemini-2.5-flash
       - key: WORKER_ENABLED
         value: "true"
+      - key: FRESHNESS_WORKER_ENABLED
+        value: "false"
       - key: WORKFLOW_WORKER_ENABLED
         value: "true"
       - key: WORKER_CONCURRENCY

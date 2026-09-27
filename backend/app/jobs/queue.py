@@ -17,12 +17,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.models import IngestionJob, JobStatus
+from app.db.models import Document, IngestionJob, JobStatus
+from app.security.labels import SourceType
 from app.jobs.backoff import backoff_seconds
 
 logger = get_logger(__name__)
@@ -39,6 +40,7 @@ def enqueue(
     org_id: uuid.UUID | None,
     kind: str = "ingest",
     replace_existing: bool = True,
+    user_initiated: bool = True,
 ) -> IngestionJob:
     """Queue ingestion for a document.
 
@@ -63,6 +65,7 @@ def enqueue(
         status=JobStatus.QUEUED,
         max_attempts=settings.job_max_attempts,
         run_after=_now(),
+        payload={"user_initiated": True} if user_initiated else None,
     )
     db.add(job)
     db.commit()
@@ -75,6 +78,7 @@ def enqueue_freshness_crawl(
     *,
     vendor_source_id: uuid.UUID,
     org_id: uuid.UUID | None,
+    user_initiated: bool = True,
 ) -> IngestionJob:
     """Queue a site crawl. A source already running or waiting is not duplicated."""
     pending = list(
@@ -106,7 +110,7 @@ def enqueue_freshness_crawl(
         status=JobStatus.QUEUED,
         max_attempts=settings.job_max_attempts,
         run_after=_now(),
-        payload={"vendor_source_id": str(vendor_source_id)},
+        payload={"vendor_source_id": str(vendor_source_id), "user_initiated": user_initiated},
     )
     db.add(job)
     db.commit()
@@ -117,13 +121,22 @@ def enqueue_freshness_crawl(
 def claim(db: Session, worker_id: str) -> IngestionJob | None:
     """Atomically claim the next runnable job. Safe to run from several workers."""
     reap_stale(db)
+    stmt = select(IngestionJob).where(
+        IngestionJob.status.in_([JobStatus.QUEUED, JobStatus.FAILED]),
+        IngestionJob.run_after <= _now(),
+    )
+    if not settings.freshness_worker_enabled:
+        # Legacy crawl and vendor-page ingestion jobs have no consent flag. Keep
+        # them queued without letting them starve uploads or spend tokens after
+        # scheduled crawling is switched off. Explicit checks can still run.
+        requested = IngestionJob.payload["user_initiated"].as_boolean().is_(True)
+        vendor_page = select(Document.id).where(
+            Document.id == IngestionJob.document_id,
+            Document.source_type == str(SourceType.VENDOR_PAGE),
+        ).exists()
+        stmt = stmt.where(or_(requested, and_(IngestionJob.kind != "freshness_crawl", ~vendor_page)))
     job = db.scalars(
-        select(IngestionJob)
-        .where(
-            IngestionJob.status.in_([JobStatus.QUEUED, JobStatus.FAILED]),
-            IngestionJob.run_after <= _now(),
-        )
-        .order_by(IngestionJob.run_after, IngestionJob.created_at)
+        stmt.order_by(IngestionJob.run_after, IngestionJob.created_at)
         .limit(1)
         .with_for_update(skip_locked=True)
     ).first()

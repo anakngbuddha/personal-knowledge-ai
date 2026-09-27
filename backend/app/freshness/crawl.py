@@ -188,7 +188,7 @@ def _reactivate(db: Session, document: Document) -> None:
         db.flush()
 
 
-def _ingest(db: Session, source: VendorSource, url: str, data: bytes, file_type: str) -> Document | None:
+def _ingest(db: Session, source: VendorSource, url: str, data: bytes, file_type: str, *, user_initiated: bool) -> Document | None:
     approved = settings.freshness_auto_approve
     meta = DocumentMetadataIn(
         title=url[:512],
@@ -222,7 +222,7 @@ def _ingest(db: Session, source: VendorSource, url: str, data: bytes, file_type:
         return None
     if document.status in {DocumentStatus.UPLOADED, DocumentStatus.FAILED}:
         try:
-            enqueue_ingestion(db, document)
+            enqueue_ingestion(db, document, user_initiated=user_initiated)
         except Exception:  # noqa: BLE001
             logger.exception("crawl: enqueue failed %s", url)
     return document
@@ -236,6 +236,7 @@ def _record_page(
     *,
     previously_checked: bool,
     changes: list[dict],
+    user_initiated: bool,
 ) -> None:
     kind = sniff(data).file_type
     digest = content_digest(data)
@@ -252,7 +253,7 @@ def _record_page(
 
     document: Document | None = None
     if kind:
-        document = _ingest(db, source, url, data, kind)
+        document = _ingest(db, source, url, data, kind, user_initiated=user_initiated)
         if document is None:
             if previously_checked and previous not in (None, digest):
                 changes.append(
@@ -321,6 +322,7 @@ def crawl_source(
     source: VendorSource,
     *,
     fetcher: Fetcher | None = None,
+    user_initiated: bool = True,
 ) -> CheckResult:
     """Crawl the seed origin, ingest changed pages, and alert on what moved."""
     fetch_fn = fetcher or default_fetcher
@@ -420,6 +422,7 @@ def crawl_source(
             data,
             previously_checked=previously_checked,
             changes=changes,
+            user_initiated=user_initiated,
         )
     _retire_missing(
         db,

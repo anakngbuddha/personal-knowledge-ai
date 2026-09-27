@@ -77,7 +77,7 @@ def _run_freshness_crawl(db, job) -> None:
     source = db.get(VendorSource, uuid.UUID(str(raw)))
     if source is None:
         raise LookupError(f"vendor source {raw} not found")
-    crawl_source(db, source)
+    crawl_source(db, source, user_initiated=(job.payload or {}).get("user_initiated") is True)
 
 
 def lease_for(job_id, identity: str) -> LeaseKeeper:

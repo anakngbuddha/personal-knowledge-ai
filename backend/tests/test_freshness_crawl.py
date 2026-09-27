@@ -28,6 +28,7 @@ from app.db.models import (
 from app.db.session import get_db
 from app.freshness.crawl import crawl_source
 from app.freshness.scraper import FetchSnapshot, create_source
+from app.jobs import queue
 from app.jobs.worker import execute_claimed
 from app.main import app
 from app.net.ssrf import validate_url
@@ -331,7 +332,7 @@ def test_worker_dispatches_crawl_jobs(crawl_db, monkeypatch):
     source = _source(db)
     seen: list[uuid.UUID] = []
 
-    def fake_crawl(session, row, fetcher=None):  # noqa: ARG001
+    def fake_crawl(session, row, fetcher=None, user_initiated=False):  # noqa: ARG001
         seen.append(row.id)
         from app.freshness.scraper import CheckResult
 
@@ -348,3 +349,29 @@ def test_worker_dispatches_crawl_jobs(crawl_db, monkeypatch):
     db.commit()
     execute_claimed(db, job)
     assert seen == [source.id]
+
+
+def test_idle_worker_skips_old_automatic_crawls_but_runs_manual_checks(crawl_db):
+    db = crawl_db
+    source = _source(db)
+    automatic = queue.enqueue_freshness_crawl(
+        db, vendor_source_id=source.id, org_id=db.org_id, user_initiated=False
+    )
+    assert queue.claim(db, "idle") is None
+    manual = queue.enqueue_freshness_crawl(db, vendor_source_id=source.id, org_id=db.org_id)
+    claimed = queue.claim(db, "manual")
+    assert claimed is not None and claimed.id == manual.id
+    assert automatic.status == "dead"  # the explicit check superseded the old one
+
+
+def test_idle_worker_skips_legacy_vendor_ingestion(crawl_db):
+    db = crawl_db
+    source = _source(db)
+    crawl_source(db, source, fetcher=_fetcher(_site(), []), user_initiated=False)
+    assert db.query(IngestionJob).filter(IngestionJob.kind == "ingest").count() > 0
+    assert queue.claim(db, "idle") is None
+    page = db.query(Document).filter(Document.source_type == "vendor_page").first()
+    assert page is not None
+    manual = queue.enqueue(db, document_id=page.id, org_id=db.org_id)
+    claimed = queue.claim(db, "manual")
+    assert claimed is not None and claimed.id == manual.id
