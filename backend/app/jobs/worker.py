@@ -3,6 +3,10 @@
 Runs either inside the API process (a daemon thread, good enough for one owner and
 50 documents) or standalone via `python scripts/worker.py`. Same loop either way, so
 moving it out of the web process later is a deployment change, not a code change.
+
+While a job runs, a LeaseKeeper renews its lease every JOB_HEARTBEAT_SECONDS so a
+second worker never reclaims a long parse or crawl that is still making progress.
+Worker threads are background Gemini callers and use system (RLS-bypass) sessions.
 """
 
 from __future__ import annotations
@@ -21,8 +25,10 @@ from app.core.errors import (
     UnsupportedFileType,
 )
 from app.core.logging import get_logger
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, mark_system_session
 from app.jobs import queue
+from app.jobs.lease import LeaseKeeper
+from app.llm.limiter import BACKGROUND, set_thread_call_class
 
 logger = get_logger(__name__)
 
@@ -41,6 +47,10 @@ _threads: list[threading.Thread] = []
 
 def worker_id(index: int = 0) -> str:
     return f"{socket.gethostname()}:{os.getpid()}:{index}"
+
+
+def _system_db():
+    return mark_system_session(SessionLocal())
 
 
 def execute_claimed(db, job) -> None:
@@ -70,9 +80,20 @@ def _run_freshness_crawl(db, job) -> None:
     crawl_source(db, source)
 
 
+def lease_for(job_id, identity: str) -> LeaseKeeper:
+    def _renew() -> bool:
+        s = _system_db()
+        try:
+            return queue.heartbeat(s, job_id, identity)
+        finally:
+            s.close()
+
+    return LeaseKeeper(_renew, interval=settings.job_heartbeat_seconds, name=f"lease-{job_id}")
+
+
 def run_once(identity: str) -> bool:
     """Claim and run at most one job. Returns True if work was done."""
-    db = SessionLocal()
+    db = _system_db()
     try:
         job = queue.claim(db, identity)
         if job is None:
@@ -85,7 +106,8 @@ def run_once(identity: str) -> bool:
             job.attempts,
         )
         try:
-            execute_claimed(db, job)
+            with lease_for(job.id, identity):
+                execute_claimed(db, job)
         except PERMANENT_FAILURES as exc:
             queue.fail(db, job, f"{type(exc).__name__}: {exc}", retryable=False)
             return True
@@ -103,6 +125,7 @@ def run_once(identity: str) -> bool:
 
 def loop(index: int = 0) -> None:
     identity = worker_id(index)
+    set_thread_call_class(BACKGROUND)
     logger.info("ingestion worker %s started", identity)
     while not _stop.is_set():
         try:
