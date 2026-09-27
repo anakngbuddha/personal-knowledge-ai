@@ -3,6 +3,11 @@
 Implements the Model Context Protocol (v2024-11-05 JSON-RPC specification)
 allowing external AI tools (such as Claude Desktop, Cursor, Antigravity) to
 execute read and write commands against the knowledge base and catalog graph.
+
+Authorization (audit finding 2): every tool that loads documents goes through
+`app.retrieval.access`, the same predicate set search uses (tenant, sensitivity,
+account grants, approval state, corpus rules). Write tools additionally require an
+SE-or-higher role and, for scoped MCP tokens, the `mcp:write` scope.
 """
 
 from __future__ import annotations
@@ -21,17 +26,18 @@ from app.documents.metadata import DocumentMetadataIn
 from app.documents.service import create_document, enqueue_ingestion
 from app.generation.service import ask as generation_ask
 from app.notes import service as notes_service
+from app.retrieval.access import get_readable_document, readable_documents
 from app.retrieval.search import search as run_search
 from app.retrieval.spec import RetrievalFilters
 from app.retrieval.web import gather_web_fallback
 from app.security.labels import SourceType
-from app.security.principal import Principal
+from app.security.principal import MCP_WRITE_SCOPE, Principal
 
 logger = get_logger(__name__)
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "personal-knowledge-ai"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 
 # ── Tool Definitions ──────────────────────────────────────────────────────────
 
@@ -68,7 +74,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "read_document",
-        "description": "Retrieve full document metadata, summary, and text chunks by document ID.",
+        "description": "Retrieve document metadata and text chunks by document ID (only documents you are allowed to read).",
         "category": "read",
         "inputSchema": {
             "type": "object",
@@ -83,7 +89,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "list_documents",
-        "description": "List indexed collateral and documents in the knowledge base with titles, freshness, and tags.",
+        "description": "List indexed collateral and documents you are allowed to read, with titles and approval state.",
         "category": "read",
         "inputSchema": {
             "type": "object",
@@ -103,7 +109,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "ask_intelligence",
-        "description": "Ask the Grounded Knowledge AI engine a question with strict or expert citation and live web search fallback.",
+        "description": "Ask the Grounded Knowledge AI engine a question. Strict (cited sources only) by default; set strict_mode=false for expert mode, which labels unsourced guidance separately.",
         "category": "read",
         "inputSchema": {
             "type": "object",
@@ -119,8 +125,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
                 },
                 "strict_mode": {
                     "type": "boolean",
-                    "description": "False = expert mode (internal sources + web + AI training data), True = strict mode (only cited docs)",
-                    "default": False,
+                    "description": "True (default) = only cited sources. False = expert mode; general guidance is returned in a separately labeled section.",
+                    "default": True,
                 },
             },
             "required": ["question"],
@@ -315,6 +321,13 @@ MCP_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+WRITE_TOOLS: frozenset[str] = frozenset(t["name"] for t in MCP_TOOLS if t.get("category") == "write")
+
+
+def may_run_write_tools(principal: Principal) -> bool:
+    """SE-or-higher role, and the token (if scoped) must carry mcp:write."""
+    return bool(principal.can_write_catalog and principal.has_scope(MCP_WRITE_SCOPE))
+
 
 def _get_workspace_id(db: Session, principal: Principal) -> uuid.UUID:
     """Resolve default workspace ID for principal's org."""
@@ -333,6 +346,10 @@ def _get_workspace_id(db: Session, principal: Principal) -> uuid.UUID:
     return workspace.id
 
 
+def _doc_title(doc) -> str:
+    return getattr(doc, "title", None) or doc.original_filename
+
+
 # ── Tool Execution Handlers ───────────────────────────────────────────────────
 
 def execute_mcp_tool_call(
@@ -342,6 +359,82 @@ def execute_mcp_tool_call(
     args: dict[str, Any],
 ) -> dict[str, Any]:
     """Execute a read or write MCP tool call with principal authorization."""
+    if name in WRITE_TOOLS and not may_run_write_tools(principal):
+        return {"error": "forbidden: your role or token scope does not allow write tools"}
+
+    # 2. read_document (Read) - handled before workspace resolution: a read must not
+    # create rows, and the authorization check is the whole point of this branch.
+    if name == "read_document":
+        doc_id_str = str(args.get("document_id", "")).strip()
+        try:
+            doc_uuid = uuid.UUID(doc_id_str)
+        except ValueError:
+            return {"error": f"Invalid document UUID: {doc_id_str}"}
+
+        doc = get_readable_document(db, principal, doc_uuid)
+        if not doc:
+            # Same answer for "missing" and "not allowed", so ids cannot be probed.
+            return {"error": f"Document {doc_id_str} not found"}
+
+        from app.db.models import DocumentChunk
+        from sqlalchemy import select
+
+        chunks = db.scalars(
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == doc.id)
+            .order_by(DocumentChunk.chunk_index)
+            .limit(50)
+        ).all()
+
+        return {
+            "document_id": str(doc.id),
+            "filename": doc.original_filename,
+            "title": _doc_title(doc),
+            "vendor": getattr(doc, "vendor", None),
+            "approval_state": doc.approval_state,
+            "sensitivity": getattr(doc, "sensitivity", None),
+            "chunks_count": len(chunks),
+            "passages": [
+                {
+                    "chunk_index": c.chunk_index,
+                    "text": c.text,
+                    "page_number": c.page_number,
+                    "slide_number": c.slide_number,
+                }
+                for c in chunks
+            ],
+        }
+
+    # 3. list_documents (Read)
+    if name == "list_documents":
+        limit = max(1, min(int(args.get("limit", 20) or 20), 100))
+        offset = max(0, int(args.get("offset", 0) or 0))
+
+        from app.db.models import Document
+
+        docs = db.scalars(
+            readable_documents(principal)
+            .order_by(Document.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+
+        return {
+            "count": len(docs),
+            "offset": offset,
+            "documents": [
+                {
+                    "id": str(d.id),
+                    "filename": d.original_filename,
+                    "title": _doc_title(d),
+                    "vendor": getattr(d, "vendor", None),
+                    "approval_state": d.approval_state,
+                    "created_at": d.created_at.isoformat() if d.created_at else None,
+                }
+                for d in docs
+            ],
+        }
+
     workspace_id = _get_workspace_id(db, principal)
 
     # 1. search_knowledge (Read)
@@ -363,7 +456,7 @@ def execute_mcp_tool_call(
             query=query,
             filters=retrieval_filters,
             mode="hybrid",
-            top_k=min(top_k, 20),
+            top_k=max(1, min(top_k, 20)),
         )
         hits = [
             {
@@ -384,90 +477,13 @@ def execute_mcp_tool_call(
             "results": hits,
         }
 
-    # 2. read_document (Read)
-    if name == "read_document":
-        doc_id_str = str(args.get("document_id", "")).strip()
-        try:
-            doc_uuid = uuid.UUID(doc_id_str)
-        except ValueError:
-            return {"error": f"Invalid document UUID: {doc_id_str}"}
-
-        from app.db.models import Document, DocumentChunk
-        from sqlalchemy import select
-
-        doc = db.scalars(
-            select(Document).where(
-                Document.id == doc_uuid,
-                Document.org_id == principal.org_id,
-            )
-        ).first()
-        if not doc:
-            return {"error": f"Document {doc_id_str} not found"}
-
-        chunks = db.scalars(
-            select(DocumentChunk)
-            .where(DocumentChunk.document_id == doc_uuid)
-            .order_by(DocumentChunk.chunk_index)
-            .limit(50)
-        ).all()
-
-        return {
-            "document_id": str(doc.id),
-            "filename": doc.original_filename,
-            "title": (doc.meta or {}).get("title") or doc.original_filename,
-            "vendor": (doc.meta or {}).get("vendor"),
-            "approval_state": doc.approval_state,
-            "chunks_count": len(chunks),
-            "passages": [
-                {
-                    "chunk_index": c.chunk_index,
-                    "text": c.text,
-                    "page_number": c.page_number,
-                    "slide_number": c.slide_number,
-                }
-                for c in chunks
-            ],
-        }
-
-    # 3. list_documents (Read)
-    if name == "list_documents":
-        limit = min(int(args.get("limit", 20) or 20), 100)
-        offset = int(args.get("offset", 0) or 0)
-
-        from app.db.models import Document
-        from sqlalchemy import select
-
-        docs = db.scalars(
-            select(Document)
-            .where(Document.org_id == principal.org_id)
-            .order_by(Document.created_at.desc())
-            .offset(offset)
-            .limit(limit)
-        ).all()
-
-        return {
-            "count": len(docs),
-            "offset": offset,
-            "documents": [
-                {
-                    "id": str(d.id),
-                    "filename": d.original_filename,
-                    "title": (d.meta or {}).get("title") or d.original_filename,
-                    "vendor": (d.meta or {}).get("vendor"),
-                    "approval_state": d.approval_state,
-                    "created_at": d.created_at.isoformat() if d.created_at else None,
-                }
-                for d in docs
-            ],
-        }
-
     # 4. ask_intelligence (Read)
     if name == "ask_intelligence":
         question = str(args.get("question", "")).strip()
         if not question:
             return {"error": "question is required"}
         enable_web = bool(args.get("enable_web_search", True))
-        strict_mode = bool(args.get("strict_mode", False))
+        strict_mode = bool(args.get("strict_mode", True))
 
         ans = generation_ask(
             db,
@@ -481,12 +497,14 @@ def execute_mcp_tool_call(
         return {
             "answer": ans.text,
             "model": ans.model_id,
+            "strict_mode": strict_mode,
             "citations": [
                 {
                     "citation": c.citation,
                     "document_title": c.document_title,
                     "page_number": c.page_number,
                     "url": getattr(c, "source_url", None),
+                    "support_score": getattr(c, "support_score", None),
                 }
                 for c in ans.citations
             ],
@@ -516,8 +534,8 @@ def execute_mcp_tool_call(
 
     # 6. list_notes (Read)
     if name == "list_notes":
-        limit = min(int(args.get("limit", 20) or 20), 100)
-        offset = int(args.get("offset", 0) or 0)
+        limit = max(1, min(int(args.get("limit", 20) or 20), 100))
+        offset = max(0, int(args.get("offset", 0) or 0))
 
         listed = notes_service.list_notes(db, org_id=principal.org_id, limit=limit, offset=offset)
         return {
@@ -556,7 +574,7 @@ def execute_mcp_tool_call(
         query = str(args.get("query", "")).strip()
         if not query:
             return {"error": "query is required"}
-        max_res = min(int(args.get("max_results", 5) or 5), 10)
+        max_res = max(1, min(int(args.get("max_results", 5) or 5), 10))
         fb = gather_web_fallback(query)
         return {
             "query": query,
@@ -600,7 +618,7 @@ def execute_mcp_tool_call(
 
         meta = DocumentMetadataIn(
             title=title,
-            source_type=str(SourceType.TEXT),
+            source_type=str(SourceType.TEXT) if hasattr(SourceType, "TEXT") else str(SourceType.PASTE),
             vendor=vendor,
         )
         data = content.encode("utf-8")
@@ -789,6 +807,8 @@ def handle_mcp_jsonrpc_request(
     if method == "tools/call":
         name = str(params.get("name", "")).strip()
         arguments = params.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            arguments = {}
 
         try:
             tool_result = execute_mcp_tool_call(db, principal, name, arguments)
@@ -824,19 +844,12 @@ def handle_mcp_jsonrpc_request(
 
     # 5. resources/list
     if method == "resources/list":
-        from app.db.models import Document
-        from sqlalchemy import select
-
-        docs = db.scalars(
-            select(Document)
-            .where(Document.org_id == principal.org_id)
-            .limit(20)
-        ).all()
+        docs = db.scalars(readable_documents(principal).limit(20)).all()
 
         resources = [
             {
                 "uri": f"knowledge://document/{doc.id}",
-                "name": (doc.meta or {}).get("title") or doc.original_filename,
+                "name": _doc_title(doc),
                 "mimeType": "text/markdown",
                 "description": f"Indexed collateral: {doc.original_filename}",
             }
