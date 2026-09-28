@@ -1,0 +1,407 @@
+/* Connectors page: warm copper beside the site indigo. Scoped to this workspace. */
+
+.connectors-workspace {
+  --cx-accent: #e8b15a;
+  --cx-accent-hover: #f0c27a;
+  --cx-on-accent: #1a1208;
+  --cx-soft: rgba(232, 177, 90, 0.16);
+  --cx-line: rgba(232, 177, 90, 0.28);
+  --cx-card: #221c16;
+  --cx-card-edge: rgba(255, 248, 236, 0.08);
+  --cx-frost: rgba(34, 28, 22, 0.72);
+}
+
+[data-theme="light"] .connectors-workspace,
+.theme-light .connectors-workspace {
+  --cx-accent: #9a5410;
+  --cx-accent-hover: #7c430c;
+  --cx-on-accent: #fffaf4;
+  --cx-soft: #fbf3e6;
+  --cx-line: #eadcc4;
+  --cx-card: #fffaf4;
+  --cx-card-edge: rgba(255, 255, 255, 0.7);
+  --cx-frost: rgba(255, 250, 244, 0.78);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .connectors-workspace {
+    --cx-accent: #9a5410;
+    --cx-accent-hover: #7c430c;
+    --cx-on-accent: #fffaf4;
+    --cx-soft: #fbf3e6;
+    --cx-line: #eadcc4;
+    --cx-card: #fffaf4;
+    --cx-card-edge: rgba(255, 255, 255, 0.7);
+    --cx-frost: rgba(255, 250, 244, 0.78);
+  }
+}
+
+.desk-unified .connectors-workspace {
+  gap: 22px;
+}
+
+.connectors-workspace .connectors-title {
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+
+.connectors-workspace .connectors-subtitle {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Tabs: text row, copper underline. */
+.connectors-workspace .connectors-tabs {
+  gap: 8px;
+  border-bottom: 1px solid var(--cx-line);
+}
+
+.connectors-workspace .connectors-tabs button {
+  min-height: 42px;
+  padding: 0 14px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  appearance: none;
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 100ms ease-out, border-color 100ms ease-out, opacity 100ms ease-out;
+}
+
+.connectors-workspace .connectors-tabs button:active {
+  opacity: 0.72;
+}
+
+.connectors-workspace .connectors-tabs button.active {
+  color: var(--cx-accent);
+  border-bottom-color: var(--cx-accent);
+}
+
+.connectors-workspace .connectors-tab-count {
+  background: var(--cx-soft);
+  color: var(--cx-accent);
+}
+
+.connectors-workspace .connectors-tabs button:focus-visible,
+.connectors-workspace .connector-add-button:focus-visible,
+.connectors-workspace .connector-action-btn:focus-visible,
+.connectors-workspace .connectors-category-list button:focus-visible,
+.connectors-workspace .connector-card-header:focus-visible,
+.connectors-workspace .connector-create-card:focus-visible,
+.connectors-workspace .connectors-no-results button:focus-visible {
+  outline: 2px solid var(--cx-accent);
+  outline-offset: 2px;
+}
+
+/* Capsule buttons. Press scales on pointer-down; hover does not lift. */
+.connectors-workspace .connector-add-button,
+.connectors-workspace .connector-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  box-shadow: none;
+  font: 600 13px var(--font-ui);
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: transform 100ms ease-out, background 120ms ease-out, border-color 120ms ease-out, opacity 120ms ease-out;
+}
+
+.connectors-workspace .connector-add-button,
+.connectors-workspace .connector-action-btn.primary {
+  background: var(--cx-accent);
+  color: var(--cx-on-accent);
+  border-color: var(--cx-accent);
+}
+
+.connectors-workspace .connector-action-btn.secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border-color: var(--cx-line);
+}
+
+.connectors-workspace .connector-action-btn.test {
+  background: var(--cx-soft);
+  color: var(--cx-accent);
+  border-color: var(--cx-line);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .connectors-workspace .connector-add-button:hover,
+  .connectors-workspace .connector-action-btn.primary:hover:not(:disabled) {
+    background: var(--cx-accent-hover);
+    border-color: var(--cx-accent-hover);
+    box-shadow: none;
+    transform: none;
+  }
+
+  .connectors-workspace .connector-action-btn.secondary:hover:not(:disabled) {
+    background: var(--cx-soft);
+    border-color: var(--cx-line);
+  }
+
+  .connectors-workspace .connector-action-btn.test:hover:not(:disabled) {
+    background: var(--cx-soft);
+    border-color: var(--cx-accent);
+  }
+}
+
+.connectors-workspace .connector-add-button:active,
+.connectors-workspace .connector-action-btn:active:not(:disabled),
+.connectors-workspace .connectors-category-list button:active,
+.connectors-workspace .connector-create-card:active {
+  transform: scale(0.97);
+}
+
+.connectors-workspace .connector-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Toolbar: one warm surface, search and a segmented category track. */
+.connectors-workspace .connectors-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--cx-line);
+  border-radius: 16px;
+  background: var(--cx-frost);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: inset 0 1px 0 var(--cx-card-edge);
+}
+
+.connectors-workspace .connectors-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1 1 auto;
+  min-width: min(260px, 100%);
+  max-width: 420px;
+  width: auto;
+  border-radius: 999px;
+  border: 1px solid var(--cx-line);
+  background: var(--cx-card);
+  color: var(--text-muted);
+}
+
+.connectors-workspace .connectors-search .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.connectors-workspace .connectors-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.connectors-workspace .connectors-search:focus-within {
+  outline: 2px solid var(--cx-accent);
+  outline-offset: 1px;
+}
+
+.connectors-workspace .connectors-category-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: auto;
+  padding: 3px;
+  border: 1px solid var(--cx-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cx-accent) 12%, var(--cx-card));
+}
+
+.connectors-workspace .connectors-category-list button {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 600 12px var(--font-ui);
+  cursor: pointer;
+  transition: transform 100ms ease-out, background 120ms ease-out, color 120ms ease-out;
+}
+
+.connectors-workspace .connectors-category-list button.active {
+  background: var(--cx-accent);
+  color: var(--cx-on-accent);
+}
+
+/* Cards: solid warm surface. Status lives in the pill, not a side stripe. */
+.desk-unified .connectors-workspace .connector-card,
+.connectors-workspace .connector-card,
+.desk-unified .connectors-workspace .connector-card.enabled,
+.connectors-workspace .connector-card.enabled {
+  min-height: 220px;
+  border: 1px solid var(--cx-line);
+  border-left-width: 1px;
+  border-radius: 16px;
+  background: var(--cx-card);
+  box-shadow: 0 1px 2px rgba(24, 18, 8, 0.06), inset 0 1px 0 var(--cx-card-edge);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transform: none;
+  transition: border-color 150ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .desk-unified .connectors-workspace .connector-card:hover,
+  .connectors-workspace .connector-card:hover {
+    transform: none;
+    border-color: var(--cx-accent);
+    box-shadow: 0 1px 2px rgba(24, 18, 8, 0.06), inset 0 1px 0 var(--cx-card-edge);
+  }
+}
+
+.connectors-workspace .connector-card-header {
+  transition: transform 100ms ease-out;
+}
+
+.connectors-workspace .connector-card-header:active {
+  transform: scale(0.985);
+}
+
+.connectors-workspace .connector-field-input {
+  border-color: var(--cx-line);
+  background: color-mix(in srgb, var(--cx-card) 86%, var(--bg-canvas));
+}
+
+.connectors-workspace .connector-field-input:focus {
+  border-color: var(--cx-accent);
+  box-shadow: 0 0 0 3px var(--cx-soft);
+}
+
+.connectors-workspace .connector-create-card {
+  border: 1px dashed var(--cx-line);
+  border-radius: 16px;
+  background: transparent;
+  transition: transform 100ms ease-out, border-color 120ms ease-out, background 120ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .connectors-workspace .connector-create-card:hover {
+    border-color: var(--cx-accent);
+    background: var(--cx-soft);
+  }
+}
+
+.connectors-workspace .connector-create-plus {
+  background: var(--cx-soft);
+  color: var(--cx-accent);
+}
+
+.connectors-workspace .connector-create-link,
+.connectors-workspace .connectors-no-results button {
+  color: var(--cx-accent);
+}
+
+.connectors-workspace .connectors-empty {
+  background: var(--cx-card);
+  border: 1px solid var(--cx-line);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.connectors-workspace .connectors-security-footer {
+  border: 1px solid var(--cx-line);
+  border-radius: 14px;
+  background: var(--cx-soft);
+  box-shadow: none;
+}
+
+.connectors-workspace .connectors-security-footer svg {
+  color: var(--cx-accent);
+}
+
+@media (max-width: 680px) {
+  .desk-unified .connectors-workspace .connectors-hero-right {
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .connectors-workspace .connectors-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .connectors-workspace .connectors-search {
+    width: 100%;
+    max-width: none;
+    flex: none;
+    height: auto;
+  }
+
+  .connectors-workspace .connectors-category-list {
+    margin-left: 0;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .connectors-workspace .connectors-category-list button {
+    flex: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connectors-workspace .connector-add-button:active,
+  .connectors-workspace .connector-action-btn:active,
+  .connectors-workspace .connectors-category-list button:active,
+  .connectors-workspace .connector-card-header:active,
+  .connectors-workspace .connector-create-card:active,
+  .connectors-workspace .connectors-tabs button:active {
+    transform: none;
+    opacity: 1;
+  }
+
+  .connectors-workspace .connector-add-button,
+  .connectors-workspace .connector-action-btn,
+  .connectors-workspace .connector-card,
+  .connectors-workspace .connector-card-header,
+  .connectors-workspace .connector-create-card,
+  .connectors-workspace .connectors-tabs button {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .connectors-workspace .connectors-toolbar,
+  .connectors-workspace .connectors-category-list,
+  .connectors-workspace .connector-card,
+  .connectors-workspace .connectors-empty,
+  .connectors-workspace .connectors-security-footer {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--cx-card);
+  }
+
+  .connectors-workspace .connectors-security-footer,
+  .connectors-workspace .connector-action-btn.test,
+  .connectors-workspace .connectors-category-list {
+    background: var(--cx-card);
+    border-color: var(--cx-accent);
+  }
+}
