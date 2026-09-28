@@ -10,6 +10,7 @@ import {
   LogOutIcon,
   MoonIcon,
   NetworkIcon,
+  PanelLeftIcon,
   SettingsIcon,
   StarIcon,
   SunIcon,
@@ -46,6 +47,13 @@ export default function App() {
   const [seedQuestion, setSeedQuestion] = useState<string | null>(null);
   const [mapVersion, setMapVersion] = useState(0);
   const [waking, setWaking] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("fd_sidebar_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
   const principal = usePrincipal(authenticated);
 
   // Dark/Light theme manager - default to light matching reference design
@@ -70,6 +78,18 @@ export default function App() {
 
   function toggleTheme() {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  }
+
+  function toggleSidebar() {
+    setSidebarCollapsed((collapsed) => {
+      const next = !collapsed;
+      try {
+        localStorage.setItem("fd_sidebar_collapsed", String(next));
+      } catch {
+        /* ignore storage errors */
+      }
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -179,8 +199,20 @@ export default function App() {
       </header>
 
       {/* ── Main Workspace Body ─────────────────────────────────────── */}
-      <div className="desk desk-unified">
+      <div className={`desk desk-unified ${sidebarCollapsed ? "nav-collapsed" : ""}`}>
           <nav className="field-index" aria-label="Main Navigation">
+            <div className="nav-rail-controls">
+              <button
+                type="button"
+                className="nav-collapse-toggle"
+                onClick={toggleSidebar}
+                aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+                aria-expanded={!sidebarCollapsed}
+                title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+              >
+                <PanelLeftIcon size={18} />
+              </button>
+            </div>
             <div className="nav-section">
               <div className="index-label">Workspace</div>
               {tabs.map((tab) => {
@@ -193,6 +225,7 @@ export default function App() {
                     className={`index-item ${isActive ? "active" : ""}`}
                     onClick={() => setActiveTab(tab.id)}
                     aria-current={isActive ? "page" : undefined}
+                    title={sidebarCollapsed ? tab.name : undefined}
                   >
                     <span className="tab-icon">
                       <Icon size={18} />
@@ -219,7 +252,8 @@ export default function App() {
           <main className="content-container">
             {activeTab === "ask" && (
               <GroundedChat
-                sourceCount={documents.length}
+                sourceCount={documents.filter((document) => document.status === "ready" && document.is_current).length}
+                documentIds={documents.filter((document) => document.status === "ready" && document.is_current).map((document) => document.id)}
                 onNavigate={(tab) => {
                   setActiveTab(tab === "map" ? "map" : "sources");
                   setSeedQuestion(null);

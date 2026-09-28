@@ -4,14 +4,15 @@ import {
   ArrowRightIcon,
   BookOpenIcon,
   FileTextIcon,
+  HistoryIcon,
   InfoIcon,
   PaperclipIcon,
+  PlusIcon,
   SendIcon,
 } from "./Icons";
-import { NotebookPicker } from "./NotebookPicker";
 import { api } from "../services/api";
 import { askWithConversationRecovery } from "../services/askRecovery";
-import type { Conversation, NotebookSource, SourceMetadata, StudioResult } from "../types";
+import type { Conversation, SourceMetadata, StudioResult } from "../types";
 
 type Tab = "sources" | "ask" | "notes" | "map" | "connections" | "settings";
 
@@ -24,6 +25,7 @@ export interface TabItem {
 
 interface Props {
   sourceCount: number;
+  documentIds: string[];
   onNavigate: (tab: "sources" | "map") => void;
   activeTab?: Tab;
   onTabChange?: (tab: Tab) => void;
@@ -33,6 +35,7 @@ interface Props {
 
 export function GroundedChat({
   sourceCount,
+  documentIds,
   onNavigate,
   initialQuestion,
 }: Props) {
@@ -57,28 +60,32 @@ export function GroundedChat({
   const [webSources, setWebSources] = useState<SourceMetadata[]>([]);
   const [webNote, setWebNote] = useState<string | null>(null);
   const [savingUrl, setSavingUrl] = useState<string | null>(null);
-  const [notebookId, setNotebookId] = useState<string | null>(null);
-  const [sources, setSources] = useState<NotebookSource[]>([]);
   const [studio, setStudio] = useState<StudioResult | null>(null);
   const [studioBusy, setStudioBusy] = useState(false);
   const [sourcesExpertKnowledge, setSourcesExpertKnowledge] = useState(true);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
-  const notebookRef = useRef<string | null>(null);
   const selectedConversationRef = useRef<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [attachedDocuments, setAttachedDocuments] = useState<{id:string; name:string}[]>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [resolvedActions, setResolvedActions] = useState<Record<string, string>>({});
   const [activeFilter, setActiveFilter] = useState<"briefing" | "faq" | "compare" | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
-    void loadConversations(notebookId);
-    if (!notebookId) {
-      setSources([]);
-      return;
-    }
-    void api.listNotebookSources(notebookId).then(setSources).catch(() => setSources([]));
-  }, [notebookId]);
+    void loadConversations();
+    // History is loaded once when Ask opens. The server returns all workspace conversations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setHistoryOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [historyOpen]);
 
   useEffect(() => {
     if (selectedConvId) {
@@ -88,10 +95,10 @@ export function GroundedChat({
     }
   }, [selectedConvId]);
 
-  async function loadConversations(id: string | null) {
+  async function loadConversations() {
     try {
-      const res = await api.listConversations(30, 0, id ?? undefined);
-      if (notebookRef.current === id) setConversations(res.conversations);
+      const res = await api.listConversations(30, 0);
+      setConversations(res.conversations);
     } catch {
       /* keep the previous list */
     }
@@ -106,28 +113,6 @@ export function GroundedChat({
     }
   }
 
-  function enabledIds() {
-    return sources.filter((row) => row.enabled).map((row) => row.document_id);
-  }
-
-  async function toggleSource(documentId: string) {
-    if (!notebookId) return;
-    const next = sources.map((row) =>
-      row.document_id === documentId ? { ...row, enabled: !row.enabled } : row
-    );
-    setSources(next);
-    try {
-      const saved = await api.setNotebookSources(
-        notebookId,
-        next.filter((row) => row.enabled).map((row) => row.document_id)
-      );
-      setSources(saved);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update sources");
-      setSources(sources);
-    }
-  }
-
   async function saveWeb(source: SourceMetadata) {
     if (!source.source_url) return;
     setSavingUrl(source.source_url);
@@ -136,11 +121,7 @@ export function GroundedChat({
       await api.saveWebSource({
         url: source.source_url,
         title: source.document_title,
-        notebook_id: notebookId,
       });
-      if (notebookId) {
-        setSources(await api.listNotebookSources(notebookId));
-      }
       setWebSources((prev) => prev.filter((item) => item.source_url !== source.source_url));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add that page");
@@ -151,7 +132,6 @@ export function GroundedChat({
 
   async function attachFiles(files: FileList | null) {
     if (!files?.length) return;
-    const targetNotebookId = notebookRef.current;
     setUploadingAttachment(true);
     setError(null);
     try {
@@ -159,12 +139,7 @@ export function GroundedChat({
       const additions = uploaded.results.filter((item) => item.document_id && item.status !== "rejected")
         .map((item) => ({id: item.document_id!, name: item.original_filename}));
       if (!additions.length) throw new Error(uploaded.results.map((item) => item.detail).filter(Boolean).join("; ") || "No files were attached");
-      if (targetNotebookId && notebookRef.current === targetNotebookId) {
-        const ids = [...new Set([...enabledIds(), ...additions.map((item) => item.id)])];
-        const saved = await api.setNotebookSources(targetNotebookId, ids);
-        if (notebookRef.current === targetNotebookId) setSources(saved);
-      }
-      if (notebookRef.current === targetNotebookId) setAttachedDocuments((current) => [...current, ...additions]);
+      setAttachedDocuments((current) => [...current, ...additions]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not attach files");
     } finally {
@@ -177,7 +152,6 @@ export function GroundedChat({
     e.preventDefault();
     if (!question.trim() || loading) return;
     const q = question.trim();
-    const sentNotebookId = notebookId;
     const sentConversationId = selectedConvId;
     setQuestion("");
     setLoading(true);
@@ -193,9 +167,8 @@ export function GroundedChat({
         {
           question: q,
           conversation_id: conversationId,
-          notebook_id: sentNotebookId,
           attachment_document_ids: attachedDocuments.map((item) => item.id),
-          filters: { document_ids: enabledIds() },
+          filters: { document_ids: [] },
           enable_tools: true,
           strict_mode: strictMode,
           web_search: webSearchEnabled ? undefined : false,
@@ -204,19 +177,18 @@ export function GroundedChat({
         setStatusNote
       );
       const answer = await askWithConversationRecovery(sentConversationId, request,
-        () => !streamedAny && notebookRef.current === sentNotebookId, () => {
+        () => !streamedAny, () => {
         selectedConversationRef.current = null;
         setSelectedConvId(null);
         setCurrentConv(null);
       });
-      if (notebookRef.current !== sentNotebookId) return;
       setWebSources(answer.web_sources || []);
       setWebNote(answer.web_note || null);
       setLastToolCalls((answer.tool_calls || []).map((c) => c.name));
       if ((!sentConversationId || selectedConversationRef.current === null) && answer.conversation_id) {
         selectedConversationRef.current = answer.conversation_id;
         setSelectedConvId(answer.conversation_id);
-        await loadConversations(sentNotebookId);
+        await loadConversations();
       } else if (sentConversationId) {
         await loadConversationDetails(sentConversationId);
       }
@@ -235,7 +207,7 @@ export function GroundedChat({
     try {
       await api.deleteConversation(id);
       if (selectedConvId === id) { selectedConversationRef.current = null; setSelectedConvId(null); }
-      await loadConversations(notebookId);
+      await loadConversations();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete that conversation");
     }
@@ -253,7 +225,7 @@ export function GroundedChat({
   }
 
   async function runStudio(kind: "briefing" | "faq" | "compare") {
-    const ids = enabledIds();
+    const ids = documentIds;
     if (kind === "compare" && ids.length < 2) {
       setError("Pick at least two sources to compare.");
       return;
@@ -268,7 +240,6 @@ export function GroundedChat({
       const result = await api.studioRun({
         kind,
         document_ids: ids.slice(0, 12),
-        notebook_id: notebookId,
         save_as_note: false,
       });
       setStudio(result);
@@ -286,7 +257,6 @@ export function GroundedChat({
       await api.createNote({
         title: studio.source_titles[0] ? `Note: ${studio.source_titles[0]}` : "Saved answer",
         body: studio.markdown,
-        notebook_id: notebookId ?? undefined,
       });
       setStudio(null);
     } catch (err) {
@@ -296,113 +266,60 @@ export function GroundedChat({
     }
   }
 
+  function startNewSession() {
+    selectedConversationRef.current = null;
+    setSelectedConvId(null);
+    setCurrentConv(null);
+    setQuestion("");
+    setError(null);
+    setSelectedCitation(null);
+    setStudio(null);
+    setWebSources([]);
+    setWebNote(null);
+    setAttachedDocuments([]);
+    setHistoryOpen(false);
+  }
+
   const noThread = !currentConv || currentConv.messages.length === 0;
 
   return (
     <div className={`ask-desk ${selectedCitation || studio ? "inspector-open" : ""}`}>
-      {/* ── Left Column: Workspace Sidebar ─────────────────────────────── */}
-      <aside className="ask-sources">
-
-        {/* Notebook Picker */}
-        <NotebookPicker
-          notebookId={notebookId}
-          onChange={(id) => {
-            notebookRef.current = id;
-            selectedConversationRef.current = null;
-            setNotebookId(id);
-            setSelectedConvId(null);
-            setCurrentConv(null);
-            setAttachedDocuments([]);
-          }}
-        />
-
-        <button type="button" className="ask-add-sources" onClick={() => onNavigate("sources")}>
-          <FileTextIcon size={15} /> Manage sources
-        </button>
-
-        {/* Threads Section */}
-        <div className="threads-section">
-          <div className="threads-header-row">
-            <span className="threads-title">THREADS</span>
+      <main className="ask-chat">
+        <div className="ask-toolbar">
+          <div className="ask-breadcrumbs">
+            <span>Workspace</span>
+            <ArrowRightIcon size={13} />
+            <strong>Ask Intelligence</strong>
+            <span className="ask-grounding-badge"><span /> Workspace knowledge</span>
           </div>
-
-          {/* Quick Studio Filter Chips */}
-          <div className="threads-filter-row">
-            <button
-              type="button"
-              className={`thread-filter-btn ${activeFilter === "briefing" ? "active" : ""}`}
-              disabled={studioBusy}
-              onClick={() => {
-                setActiveFilter(activeFilter === "briefing" ? null : "briefing");
-                void runStudio("briefing");
-              }}
-            >
-              Briefing
+          <div className="ask-toolbar-actions">
+            <button type="button" className="ask-tool-button" onClick={() => onNavigate("sources")}>
+              <FileTextIcon size={16} /> <span>Manage sources</span>
             </button>
             <button
               type="button"
-              className={`thread-filter-btn ${activeFilter === "faq" ? "active" : ""}`}
-              disabled={studioBusy}
-              onClick={() => {
-                setActiveFilter(activeFilter === "faq" ? null : "faq");
-                void runStudio("faq");
-              }}
+              className="ask-tool-button"
+              onClick={() => setHistoryOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={historyOpen}
             >
-              FAQ
+              <HistoryIcon size={16} /> <span>History</span>
             </button>
-            <button
-              type="button"
-              className={`thread-filter-btn ${activeFilter === "compare" ? "active" : ""}`}
-              disabled={studioBusy}
-              onClick={() => {
-                setActiveFilter(activeFilter === "compare" ? null : "compare");
-                void runStudio("compare");
-              }}
-            >
-              Compare
+            <button type="button" className="ask-new-session" onClick={startNewSession}>
+              <PlusIcon size={15} /> <span>New session</span>
             </button>
-          </div>
-
-          <div className="threads-list">
-            {conversations.map((c) => (
-              <div key={c.id} className={`conv-item ${selectedConvId === c.id ? "active" : ""}`}>
-                <button type="button" className="conv-open" onClick={() => { selectedConversationRef.current = c.id; setSelectedConvId(c.id); }}>
-                  {c.title || "Untitled thread"}
-                </button>
-                <button
-                  type="button"
-                  className="conv-delete"
-                  aria-label={pendingDeleteId === c.id ? "Confirm delete" : "Delete"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (pendingDeleteId !== c.id) {
-                      setPendingDeleteId(c.id);
-                      return;
-                    }
-                    setPendingDeleteId(null);
-                    void handleDelete(c.id);
-                  }}
-                  onBlur={() => setPendingDeleteId((current) => (current === c.id ? null : current))}
-                >
-                  {pendingDeleteId === c.id ? "Confirm" : "×"}
-                </button>
-              </div>
-            ))}
           </div>
         </div>
-      </aside>
-
-      {/* ── Center Column: Main Chat & Prompt Explorer ─────────────────── */}
-      <main className="ask-chat">
         {error && <div className="banner error">{error}</div>}
         <div className="messages-stream">
           {noThread && !loading ? (
             <div className="chat-welcome">
+              <div className="welcome-grounding"><span /> Knowledge grounding active · {sourceCount} sources available</div>
               <h2 className="welcome-title">
                 Ask your knowledge
               </h2>
               <p className="welcome-subtitle">
-                Get answers grounded in your sources and notes.
+                Get answers grounded in your uploaded files and workspace knowledge.
               </p>
 
               <div className="prompt-cards-container">
@@ -410,7 +327,7 @@ export function GroundedChat({
                   "Summarize key capabilities across all sources",
                   "Compare specifications from my uploaded documents",
                   "Extract requirements mentioned in my sources",
-                ].map((promptText) => (
+                ].map((promptText, index) => (
                   <button
                     key={promptText}
                     type="button"
@@ -420,10 +337,26 @@ export function GroundedChat({
                     }}
                   >
                     <div className="prompt-card-left">
-                      <span className="prompt-badge">PROMPT</span>
+                      <span className="prompt-badge">{["PROMPT · OVERVIEW", "PROMPT · COMPARISON", "PROMPT · EXTRACTION"][index]}</span>
                       <span className="prompt-text">{promptText}</span>
                     </div>
                     <ArrowRightIcon size={16} className="prompt-card-arrow" />
+                  </button>
+                ))}
+              </div>
+              <div className="studio-suggestions" aria-label="Quick source actions">
+                {(["briefing", "faq", "compare"] as const).map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    className={`thread-filter-btn ${activeFilter === kind ? "active" : ""}`}
+                    disabled={studioBusy}
+                    onClick={() => {
+                      setActiveFilter(kind);
+                      void runStudio(kind);
+                    }}
+                  >
+                    {kind === "faq" ? "FAQ" : kind[0].toUpperCase() + kind.slice(1)}
                   </button>
                 ))}
               </div>
@@ -569,6 +502,64 @@ export function GroundedChat({
 
         </form>
       </main>
+
+      {historyOpen && (
+        <div className="history-drawer-layer">
+          <button
+            type="button"
+            className="history-drawer-scrim"
+            aria-label="Close chat history"
+            onClick={() => setHistoryOpen(false)}
+          />
+          <aside className="history-drawer" role="dialog" aria-modal="true" aria-label="Chat history">
+            <div className="history-drawer-header">
+              <div>
+                <span className="history-drawer-kicker">WORKSPACE</span>
+                <h2>Chat history</h2>
+              </div>
+              <button type="button" className="history-close-button" onClick={() => setHistoryOpen(false)} aria-label="Close chat history">×</button>
+            </div>
+            <button type="button" className="history-new-session" onClick={startNewSession}>
+              <PlusIcon size={15} /> New session
+            </button>
+            <div className="history-list">
+              {conversations.length === 0 ? (
+                <p className="history-empty">Your conversations will appear here.</p>
+              ) : conversations.map((conversation) => (
+                <div key={conversation.id} className={`history-item ${selectedConvId === conversation.id ? "active" : ""}`}>
+                  <button
+                    type="button"
+                    className="history-item-open"
+                    onClick={() => {
+                      selectedConversationRef.current = conversation.id;
+                      setSelectedConvId(conversation.id);
+                      setHistoryOpen(false);
+                    }}
+                  >
+                    <span>{conversation.title || "Untitled conversation"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="history-item-delete"
+                    aria-label={pendingDeleteId === conversation.id ? "Confirm delete conversation" : `Delete ${conversation.title || "conversation"}`}
+                    onClick={() => {
+                      if (pendingDeleteId !== conversation.id) {
+                        setPendingDeleteId(conversation.id);
+                        return;
+                      }
+                      setPendingDeleteId(null);
+                      void handleDelete(conversation.id);
+                    }}
+                    onBlur={() => setPendingDeleteId((current) => current === conversation.id ? null : current)}
+                  >
+                    {pendingDeleteId === conversation.id ? "Confirm" : "×"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </aside>
+        </div>
+      )}
 
       {/* ── Right Column: Citation Live Inspector & Saved Outputs ──────── */}
       {(selectedCitation || studio) && <aside className="ask-side">

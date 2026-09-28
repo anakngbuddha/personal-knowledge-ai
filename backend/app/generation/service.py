@@ -459,7 +459,7 @@ def ask(
             conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
             if conv is None:
                 raise ValueError(f"Conversation {conversation_id} not found")
-            if conv.notebook_id != notebook_id:
+            if notebook_id is not None and conv.notebook_id != notebook_id:
                 raise ValueError(f"Conversation {conversation_id} not found")
         history = get_history(db, conversation_id=conv_uuid)
     elif workspace_id:
@@ -671,7 +671,7 @@ def ask_stream(
             conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
             if conv is None:
                 raise ValueError(f"Conversation {conversation_id} not found")
-            if conv.notebook_id != notebook_id:
+            if notebook_id is not None and conv.notebook_id != notebook_id:
                 raise ValueError(f"Conversation {conversation_id} not found")
         history = get_history(db, conversation_id=conv_uuid)
     elif workspace_id:

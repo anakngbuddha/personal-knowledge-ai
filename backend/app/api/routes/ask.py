@@ -70,7 +70,10 @@ def _scoped_ask(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Invalid conversation ID") from exc
         conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
-        if conv is None or conv.notebook_id != notebook_id:
+        # Notebook-less Ask is the workspace-wide mode. Existing conversations
+        # may carry legacy notebook metadata, but omitted notebook scope must not
+        # silently narrow their follow-up questions back to that old notebook.
+        if conv is None or (notebook_id is not None and conv.notebook_id != notebook_id):
             raise HTTPException(status_code=404, detail="Conversation not found")
     if notebook_id is None:
         return filters, None
