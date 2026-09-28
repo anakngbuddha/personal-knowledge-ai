@@ -4,56 +4,54 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from app.generation.service import PreparedContext, _attach_web
 from app.retrieval.web import (
     WebFallback,
     WebPassage,
-    duckduckgo_search,
     gather_web_fallback,
     search_web,
+    tavily_search,
 )
 from app.tools.registry import _TOOLS, ToolContext, execute_tool
 from app.tools.schema import ToolCall
 
 
-def test_duckduckgo_search_returns_parsed_results(monkeypatch):
-    sample_html = """
-    <html><body>
-      <div class="result">
-        <a class="result__title" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdocs">Example Docs</a>
-        <a class="result__snippet">Documentation on software architecture.</a>
-      </div>
-    </body></html>
-    """
-    mock_resp = MagicMock()
-    mock_resp.text = sample_html
-    mock_resp.raise_for_status = MagicMock()
-
-    mock_client = MagicMock()
-    mock_client.post.return_value = mock_resp
-
-    results = duckduckgo_search("architecture", client=mock_client, max_results=5)
-    assert len(results) == 1
-    assert results[0]["title"] == "Example Docs"
-    assert results[0]["url"] == "https://example.com/docs"
-    assert "Documentation" in results[0]["description"]
-
-
-def test_search_web_falls_back_to_duckduckgo(monkeypatch):
+def test_search_web_uses_tavily(monkeypatch):
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "brave_api_key", None)
-
-    def _mock_ddg(query, client=None, max_results=None):
-        return [{"title": "DDG Hit", "url": "https://ddg.example.com", "description": "Snippet"}]
-
-    monkeypatch.setattr("app.retrieval.web.duckduckgo_search", _mock_ddg)
+    monkeypatch.setattr(settings, "tavily_api_key", "test-key")
+    monkeypatch.setattr("app.retrieval.web.tavily_search", lambda *_a, **_kw: [{"title": "Hit", "url": "https://example.com", "description": "Snippet"}])
 
     hits = search_web("test query")
     assert len(hits) == 1
-    assert hits[0]["title"] == "DDG Hit"
+    assert hits[0]["title"] == "Hit"
+
+
+def test_tavily_search_returns_attributed_results(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "tavily_api_key", "test-key")
+    client = MagicMock()
+    client.post.return_value.json.return_value = {"results": [
+        {"title": "Example Docs", "url": "https://example.com/docs", "content": "Architecture notes"}
+    ]}
+    results = tavily_search("architecture", client=client, max_results=3)
+    assert results == [{"title": "Example Docs", "url": "https://example.com/docs", "description": "Architecture notes"}]
+    assert client.post.call_args.kwargs["json"]["search_depth"] == "basic"
+
+
+@pytest.mark.parametrize("error, expected", [
+    (httpx.ConnectTimeout("timeout"), "timed out"),
+    (httpx.HTTPStatusError("quota", request=httpx.Request("POST", "https://api.tavily.com/search"), response=httpx.Response(429)), "quota"),
+])
+def test_search_failure_is_not_reported_as_no_results(error, expected):
+    def fail(_query):
+        raise error
+    result = gather_web_fallback("test", search_fn=fail)
+    assert result.searched is False
+    assert expected in result.note
 
 
 def test_gather_web_fallback_extracts_passages(monkeypatch):

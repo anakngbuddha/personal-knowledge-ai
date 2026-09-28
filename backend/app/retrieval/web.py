@@ -1,6 +1,6 @@
 """Web fallback when the knowledge base has nothing useful.
 
-Brave Search finds pages. The SSRF-safe fetcher reads them. Playwright stays
+Tavily or Brave Search finds pages. The SSRF-safe fetcher reads them. Playwright stays
 off this path so a miss does not open a browser.
 """
 
@@ -19,6 +19,7 @@ from app.net.ssrf import ROBOTS_PRODUCT_TOKEN, fetch, fetch_robots
 logger = get_logger(__name__)
 
 BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
+TAVILY_ENDPOINT = "https://api.tavily.com/search"
 _SKIP_TAGS = frozenset({"script", "style", "noscript", "svg"})
 
 
@@ -34,6 +35,35 @@ class WebFallback:
     passages: list[WebPassage] = field(default_factory=list)
     note: str | None = None
     searched: bool = False
+
+
+class WebSearchUnavailable(Exception):
+    """A configured search provider could not return results."""
+
+
+def tavily_search(query: str, *, client: httpx.Client | None = None, max_results: int | None = None) -> list[dict]:
+    """Use Tavily's basic search without its generated answer or paid extraction."""
+    limit = max_results or settings.web_fallback_max_results
+    owns_client = client is None
+    http = client or httpx.Client(timeout=8.0)
+    try:
+        response = http.post(
+            TAVILY_ENDPOINT,
+            headers={"Authorization": f"Bearer {settings.tavily_api_key}"},
+            json={"query": query[:400], "search_depth": "basic", "max_results": limit,
+                  "include_answer": False, "include_raw_content": False},
+        )
+        response.raise_for_status()
+        payload = response.json()
+    finally:
+        if owns_client:
+            http.close()
+    return [
+        {"url": str(item["url"]), "title": str(item.get("title") or item["url"]),
+         "description": str(item.get("content") or "")}
+        for item in (payload.get("results") or [])[:limit]
+        if isinstance(item, dict) and item.get("url")
+    ]
 
 
 class _TextExtractor(HTMLParser):
@@ -100,81 +130,19 @@ def brave_search(query: str, *, client: httpx.Client | None = None) -> list[dict
     return found[: settings.web_fallback_max_results]
 
 
-def duckduckgo_search(
-    query: str,
-    *,
-    client: httpx.Client | None = None,
-    max_results: int | None = None,
-) -> list[dict]:
-    """Search DuckDuckGo HTML without requiring any API keys."""
-    limit = max_results or settings.web_fallback_max_results
-    import urllib.parse
-    owns_client = client is None
-    http = client or httpx.Client(timeout=10.0)
-    try:
-        response = http.post(
-            "https://html.duckduckgo.com/html/",
-            data={"q": query[:400]},
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
-        )
-        response.raise_for_status()
-        html_content = response.text
-    except Exception:
-        logger.warning("duckduckgo search request failed", exc_info=True)
-        return []
-    finally:
-        if owns_client:
-            http.close()
-
-    found: list[dict] = []
-    try:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(html_content, "html.parser")
-        for el in soup.select(".result"):
-            a = (
-                el.select_one("a.result__title")
-                or el.select_one(".result__title a")
-                or el.select_one("a.result__url")
-                or el.select_one("a.result__snippet")
-                or el.select_one("a")
-            )
-            if not a:
-                continue
-            title = a.get_text(strip=True)
-            href = str(a.get("href") or "").strip()
-            if "uddg=" in href:
-                parsed_qs = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
-                href = parsed_qs.get("uddg", [href])[0]
-            snip_el = el.select_one(".result__snippet")
-            snippet = snip_el.get_text(strip=True) if snip_el else ""
-            if href and (href.startswith("http://") or href.startswith("https://")):
-                found.append({"url": href, "title": title or href, "description": snippet})
-            if len(found) >= limit:
-                break
-    except Exception:
-        logger.warning("duckduckgo parsing failed", exc_info=True)
-
-    return found[:limit]
-
-
 def search_web(
     query: str,
     *,
     client: httpx.Client | None = None,
     max_results: int | None = None,
 ) -> list[dict]:
-    """Search the web using Brave if configured, otherwise fallback to DuckDuckGo."""
+    """Search with a configured API; HTML scraping is too unreliable for answers."""
     limit = max_results or settings.web_fallback_max_results
+    if settings.tavily_api_key:
+        return tavily_search(query, client=client, max_results=limit)
     if settings.brave_api_key:
-        try:
-            brave_hits = brave_search(query, client=client)
-            if brave_hits:
-                return brave_hits[:limit]
-        except Exception:
-            logger.info("brave search failed, falling back to duckduckgo", exc_info=True)
-
-    return duckduckgo_search(query, client=client, max_results=limit)
+        return brave_search(query, client=client)[:limit]
+    raise WebSearchUnavailable("Web search is not configured. Add a free Tavily API key.")
 
 
 def gather_web_fallback(
@@ -189,9 +157,18 @@ def gather_web_fallback(
     lookup = search_fn or search_web
     try:
         hits = list(lookup(query) or [])
+    except WebSearchUnavailable as exc:
+        return WebFallback(note=str(exc), searched=False)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("web search provider returned HTTP %s", exc.response.status_code)
+        note = "Web search quota or rate limit reached." if exc.response.status_code in {429, 432, 433} else "Web search provider is unavailable."
+        return WebFallback(note=note, searched=False)
+    except httpx.TimeoutException:
+        logger.warning("web search provider timed out")
+        return WebFallback(note="Web search timed out. Please try again.", searched=False)
     except Exception:
         logger.warning("web search failed", exc_info=True)
-        return WebFallback(note="Web search failed.", searched=True)
+        return WebFallback(note="Web search is unavailable. Please try again.", searched=False)
 
     if not hits:
         return WebFallback(note="No matching web results found.", searched=True)

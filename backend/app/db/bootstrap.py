@@ -18,9 +18,7 @@ logger = get_logger(__name__)
 
 
 def should_bootstrap() -> bool:
-    if settings.auto_migrate:
-        return True
-    return settings.environment.lower() in {"production", "prod"}
+    return settings.auto_migrate
 
 
 def ensure_schema() -> list[str]:

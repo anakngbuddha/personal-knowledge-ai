@@ -13,7 +13,9 @@ from app.ocr import gemini as ocr_mod
 
 def test_gemini_entry_points_call_acquire():
     assert "acquire_gemini" in inspect.getsource(emb_mod.GeminiEmbeddingProvider._batch_embed)
-    assert "acquire_gemini" in inspect.getsource(llm_mod.GeminiLLMProvider.generate_grounded_answer)
+    # Synchronous generation calls _post, where the shared limiter is acquired.
+    assert "self._post" in inspect.getsource(llm_mod.GeminiLLMProvider.generate_grounded_answer)
+    assert "acquire_gemini" in inspect.getsource(llm_mod.GeminiLLMProvider._post)
     assert "acquire_gemini" in inspect.getsource(llm_mod.GeminiLLMProvider.stream_grounded_answer)
     assert "acquire_gemini" in inspect.getsource(ocr_mod.GeminiOcrProvider._image_to_text_once)
 

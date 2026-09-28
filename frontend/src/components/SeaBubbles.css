@@ -15,7 +15,6 @@
 .sea-bubble-wrapper {
   position: absolute;
   bottom: -40px;
-  will-change: transform;
   pointer-events: none;
 }
 
@@ -36,7 +35,6 @@
     inset -1px -1px 4px rgba(255, 255, 255, 0.45),
     inset 1px 1px 3px rgba(6, 182, 212, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.28);
-  will-change: transform, opacity;
   transform: translateZ(0);
 }
 
@@ -93,20 +91,7 @@
   }
 }
 
-/* 2. Horizontal Oceanic Current Sway */
-@keyframes seaBubbleSway {
-  0% {
-    transform: translate3d(calc(-1 * var(--sway-distance, 18px)), 0, 0);
-  }
-  50% {
-    transform: translate3d(var(--sway-distance, 18px), 0, 0);
-  }
-  100% {
-    transform: translate3d(calc(-1 * var(--sway-distance, 18px)), 0, 0);
-  }
-}
-
-/* 3. Hydrodynamic Pressure Wobble */
+/* 2. Hydrodynamic Pressure Wobble */
 @keyframes seaBubbleWobble {
   0%, 100% {
     transform: scale3d(1, 1, 1);
@@ -141,12 +126,12 @@
     top: var(--reduced-top, 50%);
   }
   .sea-bubble {
-    animation: seaBubbleGentlePulse 4s ease-in-out infinite alternate !important;
+    animation: none !important;
   }
-  @keyframes seaBubbleGentlePulse {
-    0% { opacity: 0.15; transform: scale(0.98); }
-    100% { opacity: 0.35; transform: scale(1.02); }
-  }
+}
+
+.sea-bubbles-container[data-paused="true"] * {
+  animation-play-state: paused !important;
 }
 
 /* Contextual intensity presets */

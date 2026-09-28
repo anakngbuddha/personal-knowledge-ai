@@ -182,8 +182,9 @@ export function LandingPage({ onLogin }: LandingPageProps) {
     const heroEl = heroContainerRef.current;
     const cardEl = heroCardRef.current;
     if (!heroEl || !cardEl) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce), (hover: none)").matches) return;
 
-    let rafId: number;
+    let rafId: number | null = null;
     let targetX = 0;
     let targetY = 0;
     let currentX = 0;
@@ -205,6 +206,7 @@ export function LandingPage({ onLogin }: LandingPageProps) {
       const spotY = ((e.clientY - rect.top) / rect.height) * 100;
       cardEl!.style.setProperty("--spotlight-x", `${spotX}%`);
       cardEl!.style.setProperty("--spotlight-y", `${spotY}%`);
+      if (rafId === null) rafId = requestAnimationFrame(renderTilt);
     }
 
     function handleMouseLeave() {
@@ -212,6 +214,7 @@ export function LandingPage({ onLogin }: LandingPageProps) {
       targetY = 0;
       cardEl!.style.setProperty("--spotlight-x", "50%");
       cardEl!.style.setProperty("--spotlight-y", "50%");
+      if (rafId === null) rafId = requestAnimationFrame(renderTilt);
     }
 
     function renderTilt() {
@@ -219,20 +222,21 @@ export function LandingPage({ onLogin }: LandingPageProps) {
       currentX += (targetX - currentX) * 0.1;
       currentY += (targetY - currentY) * 0.1;
 
-      if (cardEl) {
-        cardEl.style.transform = `perspective(1000px) rotateX(${currentX.toFixed(2)}deg) rotateY(${currentY.toFixed(2)}deg)`;
+      cardEl!.style.transform = `perspective(1000px) rotateX(${currentX.toFixed(2)}deg) rotateY(${currentY.toFixed(2)}deg)`;
+      if (Math.abs(targetX - currentX) > 0.05 || Math.abs(targetY - currentY) > 0.05) {
+        rafId = requestAnimationFrame(renderTilt);
+      } else {
+        rafId = null;
       }
-      rafId = requestAnimationFrame(renderTilt);
     }
 
     heroEl.addEventListener("mousemove", handleMouseMove);
     heroEl.addEventListener("mouseleave", handleMouseLeave);
-    rafId = requestAnimationFrame(renderTilt);
 
     return () => {
       heroEl.removeEventListener("mousemove", handleMouseMove);
       heroEl.removeEventListener("mouseleave", handleMouseLeave);
-      cancelAnimationFrame(rafId);
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, []);
 
@@ -260,7 +264,7 @@ export function LandingPage({ onLogin }: LandingPageProps) {
         <div className="landing-orb landing-orb-2" />
         <div className="landing-orb landing-orb-3" />
         <div className="landing-shimmer-sweep" />
-        <SeaBubbles count={26} variant="landing" interactive={true} />
+        <SeaBubbles count={8} variant="landing" interactive={true} />
       </div>
 
       {/* ── Glass Navigation ─────────────────────────────────────────── */}
@@ -498,6 +502,7 @@ export function LandingPage({ onLogin }: LandingPageProps) {
                 src="/deep-atlas-hero.png"
                 alt="Deep Atlas Manta Ray Knowledge Engine"
                 className="landing-atlas-ray-art"
+                loading="lazy"
               />
               <div className="landing-atlas-ray-aura" />
             </div>

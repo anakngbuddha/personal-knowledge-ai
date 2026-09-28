@@ -52,7 +52,9 @@ async def lifespan(_: FastAPI):
         check_rls_posture(engine, required=settings.rls_required)
     except RuntimeError:
         raise
-    except Exception:  # noqa: BLE001 - an unreachable DB is reported by /health
+    except Exception:  # noqa: BLE001 - optional posture check may be logged in development
+        if settings.rls_required:
+            raise
         logger.warning("could not check RLS posture", exc_info=True)
     # Render restarts leave RUNNING jobs locked; reclaim them before workers start.
     try:

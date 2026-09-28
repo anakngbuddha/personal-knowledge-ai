@@ -6368,8 +6368,7 @@ textarea::placeholder {
   border-radius: 50%;
   filter: blur(130px);
   opacity: 0.45;
-  will-change: transform;
-  animation: luxuryOrbFloat 22s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  animation: none;
 }
 
 .landing-orb-1 {
@@ -6408,7 +6407,7 @@ textarea::placeholder {
   width: 200%;
   height: 200%;
   background: radial-gradient(circle 800px at 50% 30%, rgba(147, 197, 253, 0.06), transparent 70%);
-  animation: luxuryCanvasSweep 30s ease-in-out infinite alternate;
+  animation: none;
   pointer-events: none;
 }
 
@@ -6860,7 +6859,7 @@ textarea::placeholder {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: luxuryShimmerSweep 8s linear infinite;
+  animation: none;
 }
 
 @keyframes luxuryShimmerSweep {
@@ -6939,12 +6938,10 @@ textarea::placeholder {
   from {
     opacity: 0;
     transform: translateY(40px) scale(0.95);
-    filter: blur(8px);
   }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
-    filter: blur(0);
   }
 }
 
@@ -6955,8 +6952,8 @@ textarea::placeholder {
   width: 100%;
   max-width: 530px;
   background: var(--bg-surface);
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   border: 1px solid var(--rule-strong);
   border-radius: 20px;
   box-shadow: 
@@ -7383,8 +7380,7 @@ textarea::placeholder {
   display: flex;
   gap: 16px;
   width: max-content;
-  animation: luxuryMarqueeScroll 38s linear infinite;
-  will-change: transform;
+  animation: none;
 }
 
 .landing-marquee-track:hover {
@@ -7879,7 +7875,7 @@ textarea::placeholder {
   transform: translate(-50%, -50%);
   pointer-events: none;
   filter: blur(90px);
-  animation: luxuryGlowPulse 6s ease-in-out infinite;
+  animation: none;
 }
 
 .landing-cta-glow-mesh {
@@ -8182,7 +8178,7 @@ textarea::placeholder {
   box-shadow: 0 0 16px rgba(56, 189, 248, 0.4), inset 0 0 6px rgba(99, 102, 241, 0.3);
   background: radial-gradient(circle at center, rgba(30, 58, 138, 0.4), #060b16);
   flex-shrink: 0;
-  animation: atlasRayGentleFloat 5s ease-in-out infinite alternate;
+  animation: none;
 }
 
 .landing-atlas-hero-badge-pill {
@@ -8292,7 +8288,7 @@ textarea::placeholder {
   max-width: 380px;
   border-radius: 24px;
   box-shadow: 0 0 40px rgba(56, 189, 248, 0.35);
-  animation: atlasRayGentleFloat 6s ease-in-out infinite alternate;
+  animation: none;
   border: 1px solid rgba(56, 189, 248, 0.35);
   background: #040812;
 }
@@ -8302,7 +8298,7 @@ textarea::placeholder {
   inset: -20px;
   background: radial-gradient(circle, rgba(56, 189, 248, 0.2) 0%, transparent 70%);
   pointer-events: none;
-  animation: atlasAuraPulse 4s ease-in-out infinite alternate;
+  animation: none;
 }
 
 @keyframes atlasAuraPulse {

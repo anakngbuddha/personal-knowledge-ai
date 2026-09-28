@@ -14,7 +14,7 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: AUTO_MIGRATE
-        value: "true"
+        value: "false"
       - key: LOG_LEVEL
         value: INFO
       - key: DATABASE_URL
@@ -29,6 +29,12 @@ services:
         value: "false"
       - key: RLS_DEFAULT_DENY
         value: "true"
+      # Set RLS_REQUIRED=true only after DATABASE_URL uses a NOBYPASSRLS role.
+      # Migrations run separately with the administrator connection.
+      - key: RLS_REQUIRED
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
       - key: DEFAULT_ORG_SLUG
         value: default
       - key: STORAGE_BACKEND

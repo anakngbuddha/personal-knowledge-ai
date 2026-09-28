@@ -60,6 +60,8 @@ def test_strict_is_the_default_prompt_and_expert_confines_general_knowledge():
     assert system_prompt_for(enable_tools=False).startswith("You write for a salesperson. Answer using ONLY")
     assert GENERAL_GUIDANCE_HEADING in SYSTEM_PROMPT_EXPERT
     assert "Never refuse to answer simply because internal retrieval is empty" not in SYSTEM_PROMPT_EXPERT
+    assert "Public product knowledge may be used as general guidance" in SYSTEM_PROMPT_EXPERT
+    assert "Never present a model-recalled price" in SYSTEM_PROMPT_EXPERT
 
 
 def test_api_and_service_default_to_strict():

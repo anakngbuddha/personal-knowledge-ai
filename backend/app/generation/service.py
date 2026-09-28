@@ -510,13 +510,18 @@ def ask(
         def _execute(call):
             return execute_tool(call, ctx)
 
+        definitions = default_definitions(ctx)
+        # Automatic web fallback already searched this question. Do not spend
+        # another free-tier credit on duplicate model tool calls.
+        if web_search is not None or prepared.needs_web:
+            definitions = [tool for tool in definitions if tool.name != "tool_web_search"]
         answer = run_tool_loop(
             provider,
             user_message,
             context_chunks,
             system_prompt=prompt,
             history=history,
-            tools=default_definitions(ctx),
+            tools=definitions,
             execute=_execute,
         )
     else:

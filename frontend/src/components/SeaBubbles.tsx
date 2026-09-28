@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import "./SeaBubbles.css";
 
 export interface SeaBubblesProps {
@@ -14,8 +14,6 @@ interface BubbleConfig {
   size: number;
   duration: number;
   delay: number;
-  swayDuration: number;
-  swayDistance: number;
   depth: "deep" | "mid" | "crisp";
   targetOpacity: number;
   reducedTop: number;
@@ -29,6 +27,12 @@ export function SeaBubbles({
 }: SeaBubblesProps) {
   // Track popped bubbles for interactive delight
   const [poppedIds, setPoppedIds] = useState<Set<number>>(new Set());
+  const [paused, setPaused] = useState(() => typeof document !== "undefined" && document.hidden);
+  useEffect(() => {
+    const onVisibilityChange = () => setPaused(document.hidden);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
 
   // Generate deterministic-looking bubbles distributed across the viewport
   const bubbles = useMemo<BubbleConfig[]>(() => {
@@ -43,7 +47,6 @@ export function SeaBubbles({
       const r2 = seedPrng(i * 29 + 17);
       const r3 = seedPrng(i * 43 + 31);
       const r4 = seedPrng(i * 71 + 5);
-      const r5 = seedPrng(i * 97 + 11);
 
       // Distribute evenly across horizontal width with slight jitter
       const baseCol = (i / count) * 94 + 3; // 3% to 97%
@@ -70,8 +73,6 @@ export function SeaBubbles({
       // Physics durations: larger bubbles rise slightly slower or float with more poise
       const duration = depth === "deep" ? 18 + r3 * 10 : 9 + r3 * 8; // 9s to 28s
       const delay = r4 * 14; // staggered start
-      const swayDuration = 3 + r5 * 3.5; // 3s to 6.5s
-      const swayDistance = 8 + r1 * 20; // 8px to 28px
       const reducedTop = 15 + r2 * 70; // 15% to 85% for reduced motion static position
 
       list.push({
@@ -80,8 +81,6 @@ export function SeaBubbles({
         size,
         duration,
         delay,
-        swayDuration,
-        swayDistance,
         depth,
         targetOpacity,
         reducedTop,
@@ -112,6 +111,7 @@ export function SeaBubbles({
     <div
       className={`sea-bubbles-container sea-bubbles--${variant} ${className}`}
       aria-hidden="true"
+      data-paused={paused}
     >
       {bubbles.map((b) => {
         if (poppedIds.has(b.id)) return null;
@@ -123,10 +123,9 @@ export function SeaBubbles({
             style={
               {
                 left: `${b.leftPercent}%`,
-                animation: `seaBubbleAscent ${b.duration}s linear infinite, seaBubbleSway ${b.swayDuration}s ease-in-out infinite alternate`,
+                animation: `seaBubbleAscent ${b.duration}s linear infinite`,
                 animationDelay: `-${b.delay}s`,
                 "--bubble-target-opacity": b.targetOpacity,
-                "--sway-distance": `${b.swayDistance}px`,
                 "--reduced-top": `${b.reducedTop}%`,
               } as React.CSSProperties
             }

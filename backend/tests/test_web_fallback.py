@@ -32,18 +32,13 @@ def test_empty_local_hits_are_weak():
     assert hits_are_weak([], "anything") is True
 
 
-def test_missing_brave_key_falls_back_to_duckduckgo(monkeypatch):
-    """When no Brave key is set, search_web falls back to DuckDuckGo."""
+def test_missing_search_key_is_reported_as_configuration_error(monkeypatch):
     monkeypatch.setattr(settings, "brave_api_key", "")
-    # Mock duckduckgo_search to return empty results (no live network calls)
-    monkeypatch.setattr(
-        "app.retrieval.web.duckduckgo_search",
-        lambda *_a, **_kw: [],
-    )
+    monkeypatch.setattr(settings, "tavily_api_key", "")
     result = gather_web_fallback("room systems")
     assert result.passages == []
-    assert result.note == "No matching web results found."
-    assert result.searched is True
+    assert "not configured" in result.note
+    assert result.searched is False
 
 
 def test_weak_retrieval_fetches_and_fences(monkeypatch):

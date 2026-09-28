@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     mcp_enabled: bool = False
     mcp_credentials_key: str = ""
     brave_api_key: str = ""
+    tavily_api_key: str = ""
     mcp_playwright_enabled: bool = False
     mcp_ms365_enabled: bool = False
     ms365_mcp_token: str = ""
