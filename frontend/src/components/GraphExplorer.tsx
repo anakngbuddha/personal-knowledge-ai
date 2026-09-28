@@ -14,8 +14,6 @@ import {
   ActivityIcon,
   BookOpenIcon,
   CheckIcon,
-  DatabaseIcon,
-  FileTextIcon,
   FilterIcon,
   InfoIcon,
   LayersVectorIcon,
@@ -161,29 +159,12 @@ function tickSim(
 }
 
 /* ── Props ───────────────────────────────────────────────────────────── */
-export interface TabItem {
-  id: string;
-  name: string;
-  icon: React.ComponentType<{ size?: number }>;
-  badge?: string;
-}
-
 interface Props {
-  sourceCount?: number;
-  tabs?: TabItem[];
-  activeTab?: string;
-  onTabChange?: (tab: any) => void;
-  onNavigate?: (tab: "sources" | "map" | "ask" | "notes") => void;
   onMapChanged?: () => void;
 }
 
 /* ── Component ───────────────────────────────────────────────────────── */
 export function GraphExplorer({
-  sourceCount = 0,
-  tabs,
-  activeTab = "map",
-  onTabChange,
-  onNavigate,
   onMapChanged,
 }: Props) {
   /* View mode */
@@ -202,6 +183,7 @@ export function GraphExplorer({
 
   /* Selection & hover */
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [showControls, setShowControls] = useState(false);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [neighborhood, setNeighborhood] = useState<NeighborhoodOut | null>(null);
   const [impactResult, setImpactResult] = useState<GraphQueryOut | null>(null);
@@ -229,6 +211,17 @@ export function GraphExplorer({
   const panRef = useRef({ x: 0, y: 0, startX: 0, startY: 0, panning: false });
   const zoomRef = useRef(1);
   const [viewportZoom, setViewportZoom] = useState(100);
+
+  useEffect(() => {
+    if (!showControls && !selectedNodeId) return;
+    function closeTopLayer(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (selectedNodeId) setSelectedNodeId(null);
+      else setShowControls(false);
+    }
+    window.addEventListener("keydown", closeTopLayer);
+    return () => window.removeEventListener("keydown", closeTopLayer);
+  }, [showControls, selectedNodeId]);
 
   /* ── Fetch Graph ───────────────────────────────────────────────────── */
   const fetchGraph = useCallback(async () => {
@@ -774,6 +767,7 @@ export function GraphExplorer({
       if (draggingRef.current !== null) {
         const n = simNodesRef.current[draggingRef.current];
         setSelectedNodeId(n.id);
+        setShowControls(false);
         n.fx = null;
         n.fy = null;
         draggingRef.current = null;
@@ -927,6 +921,7 @@ export function GraphExplorer({
   const jumpToNode = useCallback(
     (id: string) => {
       setSelectedNodeId(id);
+      setShowControls(false);
       const target = simNodesRef.current.find((n) => n.id === id);
       const canvas = canvasRef.current;
       if (target && canvas) {
@@ -970,75 +965,24 @@ export function GraphExplorer({
 
   return (
     <div className="map-desk">
-      {/* ── Left Column: Workspace Navigation & Map Filters ────────────── */}
-      <aside className="map-sources">
-        {/* Workspace Tab Navigation (Matching Ask Intelligence) */}
-        {tabs && onTabChange && (
-          <div className="sidebar-workspace-nav">
-            <div className="sidebar-section-title">WORKSPACE</div>
-            <div className="workspace-tabs-list">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    className={`workspace-tab-btn ${isActive ? "active" : ""}`}
-                    onClick={() => onTabChange(tab.id)}
-                  >
-                    <span className="tab-btn-icon">
-                      <Icon size={17} />
-                    </span>
-                    <span className="tab-btn-name">{tab.name}</span>
-                    {tab.badge && (
-                      <span
-                        className={`tab-btn-badge ${
-                          tab.badge === "Live" ? "live" : tab.badge === "AI" ? "ai" : ""
-                        }`}
-                      >
-                        {tab.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+      {/* The app shell owns workspace navigation; keep map tools in an on-demand drawer. */}
+      {showControls && (
+        <button
+          type="button"
+          className="map-drawer-scrim"
+          aria-label="Close map controls"
+          onClick={() => setShowControls(false)}
+        />
+      )}
+      <aside id="map-controls-panel" className={`map-sources map-controls-drawer ${showControls ? "open" : "closed"}`} aria-label="Map controls">
+        <div className="map-drawer-header">
+          <div>
+            <span className="map-drawer-kicker">KNOWLEDGE MAP</span>
+            <h2>Map controls</h2>
           </div>
-        )}
-
-        {/* View Mode Segmented Controller */}
-        <div className="map-view-segment-card">
-          <div className="sidebar-section-title">PERSPECTIVE</div>
-          <div className="segmented-control">
-            <button
-              type="button"
-              className={`segmented-item ${viewMode === "map" ? "active" : ""}`}
-              onClick={() => setViewMode("map")}
-              title="Interactive 2D Knowledge Graph"
-            >
-              <NetworkIcon size={15} />
-              <span>Map</span>
-            </button>
-            <button
-              type="button"
-              className={`segmented-item ${viewMode === "editor" ? "active" : ""}`}
-              onClick={() => setViewMode("editor")}
-              title="Edit Catalog & Context Relationships"
-            >
-              <BookOpenIcon size={15} />
-              <span>Editor</span>
-            </button>
-            <button
-              type="button"
-              className={`segmented-item ${viewMode === "import" ? "active" : ""}`}
-              onClick={() => setViewMode("import")}
-              title="Import spreadsheet products"
-            >
-              <UploadCloudIcon size={15} />
-              <span>Import</span>
-            </button>
-          </div>
+          <button type="button" className="map-drawer-close" onClick={() => setShowControls(false)} aria-label="Close map controls">
+            ×
+          </button>
         </div>
 
         {/* Catalog Filters */}
@@ -1199,6 +1143,16 @@ export function GraphExplorer({
           </div>
 
           <div className="header-right">
+            <button
+              type="button"
+              className={`map-controls-trigger ${showControls ? "active" : ""}`}
+              aria-expanded={showControls}
+              aria-controls="map-controls-panel"
+              onClick={() => setShowControls((open) => !open)}
+            >
+              <FilterIcon size={14} />
+              <span>Controls</span>
+            </button>
             {/* Quick View Controls */}
             {viewMode === "map" && (
               <div className="canvas-hud-controls">
@@ -1240,6 +1194,29 @@ export function GraphExplorer({
             )}
           </div>
         </header>
+
+        <nav className="map-mode-nav" aria-label="Knowledge Map views">
+          {([
+            ["map", "Map", NetworkIcon],
+            ["editor", "Catalog editor", BookOpenIcon],
+            ["import", "Import products", UploadCloudIcon],
+          ] as const).map(([mode, label, Icon]) => (
+            <button
+              key={mode}
+              type="button"
+              className={`map-mode-tab ${viewMode === mode ? "active" : ""}`}
+              aria-pressed={viewMode === mode}
+              onClick={() => {
+                setViewMode(mode);
+                setSelectedNodeId(null);
+                setShowControls(false);
+              }}
+            >
+              <Icon size={15} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
 
         {/* Center Workspace Body */}
         <div className="map-stage-viewport">
@@ -1367,12 +1344,22 @@ export function GraphExplorer({
         </div>
       </main>
 
-      {/* ── Right Column: Node Inspector & Impact Analyzer ───────────── */}
-      <aside className="map-side">
+      {/* Selected node details stay available without reserving canvas width. */}
+      {selectedNode && (
+      <button
+        type="button"
+        className="map-drawer-scrim map-inspector-scrim"
+        aria-label="Close node details"
+        onClick={() => setSelectedNodeId(null)}
+      />
+      )}
+      <aside className={`map-side map-detail-drawer ${selectedNode ? "open" : "closed"}`} aria-label="Selected product details">
         <div className="side-section">
           <div className="side-section-header">
-            <span className="side-title">NODE INSPECTOR</span>
-            <span className="side-meta-mono">Live Inspector</span>
+            <span className="side-title">PRODUCT DETAILS</span>
+            <button type="button" className="map-drawer-close" onClick={() => setSelectedNodeId(null)} aria-label="Close node details">
+              ×
+            </button>
           </div>
 
           {selectedNode ? (
@@ -1584,13 +1571,6 @@ export function GraphExplorer({
                 </div>
               )}
 
-              <button
-                type="button"
-                className="citation-clear-btn"
-                onClick={() => setSelectedNodeId(null)}
-              >
-                Close inspector
-              </button>
             </div>
           ) : (
             /* Apple-Style Empty State */

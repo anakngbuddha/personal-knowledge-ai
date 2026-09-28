@@ -270,16 +270,6 @@ export default function App() {
             {activeTab === "map" && (
               <GraphExplorer
                 key={mapVersion}
-                sourceCount={documents.length}
-                onNavigate={(tab) => {
-                  setActiveTab(tab === "map" ? "map" : tab === "ask" ? "ask" : "sources");
-                  setSeedQuestion(null);
-                }}
-                activeTab={activeTab}
-                onTabChange={(t) => {
-                  setActiveTab(t);
-                  setSeedQuestion(null);
-                }}
                 onMapChanged={() => setMapVersion((v) => v + 1)}
               />
             )}
