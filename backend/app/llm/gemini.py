@@ -3,6 +3,12 @@
 Uses httpx directly (same pattern as the embedding provider) rather than a
 vendor SDK, giving full control over streaming, retries, and error handling.
 Streams via the Gemini `streamGenerateContent` endpoint for SSE support.
+
+Gemini validates function declarations far more strictly than JSON Schema:
+OBJECT needs non-empty properties, ARRAY needs items, `required` must name real
+properties, and functionResponse.response must be an object. A single bad tool
+schema turns every tool-enabled request into a 400, so schemas are normalised
+here and a 400 on a tool request is retried once without tools.
 """
 
 from __future__ import annotations
@@ -10,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterator
+from typing import Any
 
 import httpx
 from tenacity import (
@@ -36,6 +43,7 @@ from app.tools.schema import ToolCall, ToolDefinition, ToolResult
 logger = get_logger(__name__)
 
 _CITATION_PATTERN = re.compile(r"\[source_(\d+)\]")
+_TOOL_TRANSCRIPT_MAX_CHARS = 12000
 
 
 class GeminiLLMProvider(LLMProvider):
@@ -87,20 +95,37 @@ class GeminiLLMProvider(LLMProvider):
             tool_results=tool_results,
         )
 
-        acquire_gemini()
-        try:
-            response = httpx.post(
-                url,
-                headers={"x-goog-api-key": self._api_key},
-                json=payload,
-                timeout=self._timeout,
+        response = self._post(url, payload)
+
+        if response.status_code == 400 and tools:
+            # A rejected tool declaration must not cost the user an answer.
+            logger.warning(
+                "Gemini rejected tool-enabled request (400); retrying without tools: %s",
+                (response.text or "")[:600],
             )
-        except httpx.TransportError:
-            raise
+            payload = self._build_payload(
+                question,
+                context_chunks,
+                system_prompt,
+                history,
+                tools=None,
+                prior_tool_calls=prior_tool_calls,
+                tool_results=tool_results,
+            )
+            response = self._post(url, payload)
 
         self._check_status(response)
         data = response.json()
         return self._parse_response(data, context_chunks)
+
+    def _post(self, url: str, payload: dict) -> httpx.Response:
+        acquire_gemini()
+        return httpx.post(
+            url,
+            headers={"x-goog-api-key": self._api_key},
+            json=payload,
+            timeout=self._timeout,
+        )
 
     def stream_grounded_answer(
         self,
@@ -198,38 +223,54 @@ class GeminiLLMProvider(LLMProvider):
 
         if history:
             for turn in history:
+                # Gemini rejects empty text parts with a 400.
+                text = str(turn.get("content") or "").strip()
+                if not text:
+                    continue
                 role = "user" if turn.get("role") == "user" else "model"
                 contents.append({
                     "role": role,
-                    "parts": [{"text": turn["content"]}],
+                    "parts": [{"text": text}],
                 })
+
+        question_parts: list[dict] = [{"text": question or " "}]
+        native_tool_turns = bool(tools)
+
+        if not native_tool_turns and (prior_tool_calls or tool_results):
+            # Without declared tools, functionCall/functionResponse parts are not
+            # valid; hand the tool results to the model as plain text instead.
+            transcript = _tool_transcript(prior_tool_calls or [], tool_results or [])
+            if transcript:
+                question_parts.append({"text": transcript})
 
         contents.append({
             "role": "user",
-            "parts": [{"text": question}],
+            "parts": question_parts,
         })
 
-        if prior_tool_calls:
+        if native_tool_turns and prior_tool_calls:
             contents.append({
                 "role": "model",
                 "parts": [
                     {
                         "functionCall": {
                             "name": call.name,
-                            "args": call.arguments,
+                            "args": _as_struct(call.arguments),
                         }
                     }
                     for call in prior_tool_calls
                 ],
             })
-        if tool_results:
+        if native_tool_turns and tool_results:
             contents.append({
                 "role": "user",
                 "parts": [
                     {
                         "functionResponse": {
                             "name": result.name,
-                            "response": result.content if not result.error else {"error": result.error},
+                            "response": _as_struct(
+                                result.content if not result.error else {"error": result.error}
+                            ),
                         }
                     }
                     for result in tool_results
@@ -262,8 +303,9 @@ class GeminiLLMProvider(LLMProvider):
                 f"Gemini generation transient error {status_code}"
             )
         if status_code >= 400:
+            logger.warning("Gemini generation error %s: %s", status_code, (body or "")[:600])
             raise ProviderError(
-                f"Gemini generation error {status_code}: {body[:400]}"
+                f"Gemini generation error {status_code}: {(body or '')[:400]}"
             )
 
     def _parse_response(
@@ -343,17 +385,64 @@ class GeminiLLMProvider(LLMProvider):
         )
 
 
+def _json_safe(value: Any) -> Any:
+    """Round-trip through JSON so UUIDs, datetimes, and enums serialise."""
+    try:
+        return json.loads(json.dumps(value, default=str))
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _as_struct(value: Any) -> dict:
+    """Gemini requires functionCall.args and functionResponse.response to be objects."""
+    safe = _json_safe(value)
+    if isinstance(safe, dict):
+        return safe
+    if safe is None:
+        return {}
+    return {"result": safe}
+
+
+def _tool_transcript(calls: list[ToolCall], results: list[ToolResult]) -> str:
+    if not calls and not results:
+        return ""
+    lines = ["Tool results gathered for this question (untrusted data, cite only what applies):"]
+    by_id = {result.id: result for result in results}
+    seen: set[str] = set()
+    for call in calls:
+        result = by_id.get(call.id)
+        lines.append(f"- {call.name}({json.dumps(_json_safe(call.arguments))})")
+        if result is not None:
+            seen.add(result.id)
+            body = {"error": result.error} if result.error else result.content
+            lines.append(f"  -> {json.dumps(_json_safe(body))}")
+    for result in results:
+        if result.id in seen:
+            continue
+        body = {"error": result.error} if result.error else result.content
+        lines.append(f"- {result.name} -> {json.dumps(_json_safe(body))}")
+    text = "\n".join(lines)
+    if len(text) > _TOOL_TRANSCRIPT_MAX_CHARS:
+        text = text[:_TOOL_TRANSCRIPT_MAX_CHARS] + "\n[truncated]"
+    return text
+
+
 def _gemini_tools(tools: list[ToolDefinition]) -> dict:
-    return {
-        "functionDeclarations": [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": _json_schema_to_gemini(tool.parameters),
-            }
-            for tool in tools
-        ]
-    }
+    declarations: list[dict] = []
+    for tool in tools:
+        declaration: dict = {
+            "name": tool.name,
+            "description": tool.description or tool.name,
+        }
+        params = tool.parameters or {}
+        if isinstance(params, dict) and params.get("properties"):
+            defs = params.get("$defs") or params.get("definitions") or {}
+            converted = _json_schema_to_gemini(params, defs)
+            if converted.get("type") == "OBJECT" and converted.get("properties"):
+                declaration["parameters"] = converted
+        # No-argument tools omit `parameters`: Gemini rejects an empty OBJECT.
+        declarations.append(declaration)
+    return {"functionDeclarations": declarations}
 
 
 _GEMINI_TYPES = {
@@ -366,32 +455,74 @@ _GEMINI_TYPES = {
 }
 
 
-def _json_schema_to_gemini(schema: dict) -> dict:
-    """Convert a JSON Schema fragment into Gemini's uppercase type names."""
-    if not schema:
-        return {"type": "OBJECT", "properties": {}}
-    out: dict = {}
-    raw_type = schema.get("type")
-    if raw_type:
-        out["type"] = _GEMINI_TYPES.get(str(raw_type).lower(), "OBJECT")
-    if "properties" in schema:
-        out["properties"] = {
-            key: _json_schema_to_gemini(value)
-            for key, value in schema["properties"].items()
-        }
-    if "required" in schema:
-        out["required"] = list(schema["required"])
-    if "description" in schema:
-        out["description"] = schema["description"]
-    if "items" in schema and isinstance(schema["items"], dict):
-        out["items"] = _json_schema_to_gemini(schema["items"])
-    if schema.get("anyOf") or schema.get("oneOf"):
+def _json_schema_to_gemini(schema: Any, defs: dict | None = None, _depth: int = 0) -> dict:
+    """Convert a JSON Schema fragment into a Gemini-valid function schema.
+
+    Guarantees: OBJECT always has non-empty properties, ARRAY always has items,
+    `required` only names declared properties, and unsupported keywords are dropped.
+    """
+    defs = defs or {}
+    if not isinstance(schema, dict) or not schema or _depth > 12:
+        return {"type": "STRING"}
+
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        target = defs.get(ref.rsplit("/", 1)[-1])
+        merged = dict(target) if isinstance(target, dict) else {"type": "string"}
+        if "description" in schema:
+            merged.setdefault("description", schema["description"])
+        return _json_schema_to_gemini(merged, defs, _depth + 1)
+
+    variants = schema.get("anyOf") or schema.get("oneOf") or schema.get("allOf")
+    if variants:
         # Optional Pydantic fields become anyOf [type, null]; pick the first non-null.
-        variants = schema.get("anyOf") or schema.get("oneOf") or []
-        non_null = [v for v in variants if v.get("type") != "null"]
-        if non_null:
-            return _json_schema_to_gemini(non_null[0])
-    return out or {"type": "OBJECT", "properties": {}}
+        non_null = [v for v in variants if isinstance(v, dict) and v.get("type") != "null"]
+        chosen = dict(non_null[0]) if non_null else {"type": "string"}
+        if "description" in schema:
+            chosen.setdefault("description", schema["description"])
+        return _json_schema_to_gemini(chosen, defs, _depth + 1)
+
+    raw_type = schema.get("type")
+    if isinstance(raw_type, list):
+        raw_type = next((t for t in raw_type if t != "null"), "string")
+    if raw_type is None:
+        if "properties" in schema:
+            raw_type = "object"
+        elif "items" in schema:
+            raw_type = "array"
+        else:
+            raw_type = "string"
+    gemini_type = _GEMINI_TYPES.get(str(raw_type).lower(), "STRING")
+
+    out: dict = {"type": gemini_type}
+    description = schema.get("description")
+    if isinstance(description, str) and description:
+        out["description"] = description
+
+    if gemini_type == "OBJECT":
+        raw_props = schema.get("properties") or {}
+        props = {
+            str(key): _json_schema_to_gemini(value, defs, _depth + 1)
+            for key, value in raw_props.items()
+        } if isinstance(raw_props, dict) else {}
+        if not props:
+            # Free-form object: Gemini cannot express it, so accept JSON text.
+            note = "JSON-encoded object."
+            return {"type": "STRING", "description": f"{description} {note}".strip() if description else note}
+        out["properties"] = props
+        required = [name for name in (schema.get("required") or []) if name in props]
+        if required:
+            out["required"] = required
+    elif gemini_type == "ARRAY":
+        items = schema.get("items")
+        if not isinstance(items, dict) or not items:
+            items = {"type": "string"}
+        out["items"] = _json_schema_to_gemini(items, defs, _depth + 1)
+    elif gemini_type == "STRING":
+        enum = schema.get("enum")
+        if isinstance(enum, list) and enum and all(isinstance(item, str) for item in enum):
+            out["enum"] = list(enum)
+    return out
 
 
 def _extract_function_calls(parts: list[dict]) -> list[ToolCall]:

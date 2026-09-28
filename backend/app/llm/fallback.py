@@ -6,6 +6,10 @@ An empty OPENROUTER_API_KEY leaves the original error in place.
 When *both* providers return rate-limit errors, the wrapper waits with
 exponential backoff (up to MAX_RETRIES attempts) before giving up.  This
 prevents transient 429 bursts from surfacing to the caller immediately.
+
+The primary's real error is always logged, and carried into the final message
+when the fallback is rate-limited, so a Gemini 400 is never reported as a
+plain "rate limited".
 """
 
 from __future__ import annotations
@@ -30,6 +34,11 @@ _FALLBACK_ERRORS = (ProviderError, httpx.TransportError)
 MAX_RETRIES = 3
 _BACKOFF_BASE = 2.0   # seconds
 _BACKOFF_MAX = 30.0    # seconds
+
+
+def _brief(exc: BaseException, limit: int = 300) -> str:
+    text = str(exc) or type(exc).__name__
+    return text if len(text) <= limit else text[:limit] + "..."
 
 
 class FallbackLLMProvider(LLMProvider):
@@ -104,16 +113,26 @@ class FallbackLLMProvider(LLMProvider):
             fallback = self._ready_fallback()
             if fallback is None:
                 raise
-            logger.warning("Primary LLM failed (%s); using OpenRouter", type(exc).__name__)
-            return fallback.generate_grounded_answer(
-                question,
-                context_chunks,
-                system_prompt=system_prompt,
-                history=history,
-                tools=tools,
-                prior_tool_calls=prior_tool_calls,
-                tool_results=tool_results,
+            logger.warning(
+                "Primary LLM failed (%s: %s); using OpenRouter",
+                type(exc).__name__, _brief(exc),
             )
+            try:
+                return fallback.generate_grounded_answer(
+                    question,
+                    context_chunks,
+                    system_prompt=system_prompt,
+                    history=history,
+                    tools=tools,
+                    prior_tool_calls=prior_tool_calls,
+                    tool_results=tool_results,
+                )
+            except ProviderRateLimited as fallback_exc:
+                if isinstance(exc, ProviderRateLimited):
+                    raise
+                raise ProviderRateLimited(
+                    f"{_brief(fallback_exc, 200)} (primary model error: {_brief(exc, 200)})"
+                ) from fallback_exc
 
     def stream_grounded_answer(
         self,
@@ -168,7 +187,10 @@ class FallbackLLMProvider(LLMProvider):
             fallback = self._ready_fallback()
             if fallback is None:
                 raise
-            logger.warning("Primary LLM stream failed (%s); using OpenRouter", type(exc).__name__)
+            logger.warning(
+                "Primary LLM stream failed (%s: %s); using OpenRouter",
+                type(exc).__name__, _brief(exc),
+            )
             yield from fallback.stream_grounded_answer(question, context_chunks, **kwargs)
             return
         yield first
