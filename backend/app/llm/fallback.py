@@ -1,15 +1,13 @@
-"""Try the primary LLM, then OpenRouter once, with retry-on-rate-limit.
+"""Try Gemini first; use OpenRouter only when Gemini is rate-limited.
 
-Gemini keeps its own retries. This wrapper runs only after those are exhausted.
+OpenRouter (Qwen) is strictly a rate-limit fallback. Only ProviderRateLimited
+(Gemini 429, plus 5xx which gemini.py maps to it) hands the request over.
+Any other Gemini failure, such as a 400 Bad Request or a network error, is
+raised as-is so real bugs are visible instead of being masked by the fallback.
 An empty OPENROUTER_API_KEY leaves the original error in place.
 
 When *both* providers return rate-limit errors, the wrapper waits with
-exponential backoff (up to MAX_RETRIES attempts) before giving up.  This
-prevents transient 429 bursts from surfacing to the caller immediately.
-
-The primary's real error is always logged, and carried into the final message
-when the fallback is rate-limited, so a Gemini 400 is never reported as a
-plain "rate limited".
+exponential backoff (up to MAX_RETRIES attempts) before giving up.
 """
 
 from __future__ import annotations
@@ -17,10 +15,8 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 
-import httpx
-
 from app.core.config import settings
-from app.core.errors import ProviderError, ProviderRateLimited
+from app.core.errors import ProviderRateLimited
 from app.core.logging import get_logger
 from app.jobs.backoff import backoff_seconds
 from app.llm.base import GroundedAnswer, GroundedAnswerChunk, LLMProvider
@@ -28,7 +24,8 @@ from app.tools.schema import ToolCall, ToolDefinition, ToolResult
 
 logger = get_logger(__name__)
 
-_FALLBACK_ERRORS = (ProviderError, httpx.TransportError)
+# Only rate limiting on the primary triggers the OpenRouter fallback.
+_FALLBACK_ERRORS = (ProviderRateLimited,)
 
 # Retry configuration for when both providers are rate-limited.
 MAX_RETRIES = 3
@@ -98,7 +95,7 @@ class FallbackLLMProvider(LLMProvider):
         prior_tool_calls: list[ToolCall] | None = None,
         tool_results: list[ToolResult] | None = None,
     ) -> GroundedAnswer:
-        """Single attempt: primary → fallback."""
+        """Single attempt: Gemini, then OpenRouter only if Gemini is rate-limited."""
         try:
             return self._primary.generate_grounded_answer(
                 question,
@@ -114,25 +111,17 @@ class FallbackLLMProvider(LLMProvider):
             if fallback is None:
                 raise
             logger.warning(
-                "Primary LLM failed (%s: %s); using OpenRouter",
-                type(exc).__name__, _brief(exc),
+                "Primary LLM rate-limited (%s); using OpenRouter", _brief(exc),
             )
-            try:
-                return fallback.generate_grounded_answer(
-                    question,
-                    context_chunks,
-                    system_prompt=system_prompt,
-                    history=history,
-                    tools=tools,
-                    prior_tool_calls=prior_tool_calls,
-                    tool_results=tool_results,
-                )
-            except ProviderRateLimited as fallback_exc:
-                if isinstance(exc, ProviderRateLimited):
-                    raise
-                raise ProviderRateLimited(
-                    f"{_brief(fallback_exc, 200)} (primary model error: {_brief(exc, 200)})"
-                ) from fallback_exc
+            return fallback.generate_grounded_answer(
+                question,
+                context_chunks,
+                system_prompt=system_prompt,
+                history=history,
+                tools=tools,
+                prior_tool_calls=prior_tool_calls,
+                tool_results=tool_results,
+            )
 
     def stream_grounded_answer(
         self,
@@ -177,7 +166,7 @@ class FallbackLLMProvider(LLMProvider):
         context_chunks: list[dict],
         **kwargs,
     ) -> Iterator[GroundedAnswerChunk]:
-        """Single attempt: primary stream → fallback stream."""
+        """Single attempt: Gemini stream, then OpenRouter only if Gemini is rate-limited."""
         stream = self._primary.stream_grounded_answer(question, context_chunks, **kwargs)
         try:
             first = next(stream)
@@ -188,8 +177,7 @@ class FallbackLLMProvider(LLMProvider):
             if fallback is None:
                 raise
             logger.warning(
-                "Primary LLM stream failed (%s: %s); using OpenRouter",
-                type(exc).__name__, _brief(exc),
+                "Primary LLM stream rate-limited (%s); using OpenRouter", _brief(exc),
             )
             yield from fallback.stream_grounded_answer(question, context_chunks, **kwargs)
             return
