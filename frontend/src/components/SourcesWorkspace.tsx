@@ -1,15 +1,11 @@
 import React, { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import {
-  ActivityIcon,
   CheckIcon,
-  DatabaseIcon,
   ExternalLinkIcon,
   FileTextIcon,
-  FilterIcon,
   FolderIcon,
   GridIcon,
-  InfoIcon,
   LayersVectorIcon,
   ListIcon,
   RefreshCwIcon,
@@ -21,6 +17,7 @@ import {
   ZapIcon,
 } from "./Icons";
 import { api } from "../services/api";
+import { sortKnowledgeDocuments, type SourceSort } from "./sourceSorting";
 import type {
   DocumentChunk,
   FreshnessAlert,
@@ -34,15 +31,6 @@ import type {
   VendorSource,
 } from "../types";
 
-type Tab = "sources" | "ask" | "notes" | "map" | "connections" | "settings";
-
-export interface TabItem {
-  id: Tab;
-  name: string;
-  icon: React.ComponentType<{ size?: number }>;
-  badge?: string;
-}
-
 interface Props {
   documents: KnowledgeDocument[];
   loading: boolean;
@@ -52,9 +40,6 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onNavigate: (tab: "ask" | "map" | "notes" | "connections" | "settings", prompt?: string) => void;
-  activeTab?: Tab;
-  onTabChange?: (tab: Tab) => void;
-  tabs?: TabItem[];
 }
 
 type PerspectiveMode = "library" | "passages" | "watches";
@@ -136,20 +121,11 @@ export function SourcesWorkspace({
   selectedId,
   onSelect,
   onNavigate,
-  activeTab = "sources",
-  onTabChange,
-  tabs,
 }: Props) {
   // Perspective & View Mode State
   const [perspective, setPerspective] = useState<PerspectiveMode>("library");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [uploaderExpanded, setUploaderExpanded] = useState(true);
-
-  // Search & Filter State
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [formatFilter, setFormatFilter] = useState<string>("all");
-  const [vendorFilter, setVendorFilter] = useState<string>("all");
 
   // Upload Tracking State
   const [uploadItems, setUploadItems] = useState<TrackedUpload[]>([]);
@@ -164,7 +140,6 @@ export function SourcesWorkspace({
   const [docChunks, setDocChunks] = useState<DocumentChunk[]>([]);
   const [chunksLoading, setChunksLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<GraphEdge[]>([]);
-  const [inspectorLoading, setInspectorLoading] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   // Inline Edit State
@@ -195,6 +170,8 @@ export function SourcesWorkspace({
   const [watchUrl, setWatchUrl] = useState("");
   const [watchBusy, setWatchBusy] = useState(false);
   const [watchMessage, setWatchMessage] = useState<string | null>(null);
+  const [sourceSort, setSourceSort] = useState<SourceSort>("modified");
+  const inspectorDialogRef = useRef<HTMLElement>(null);
 
   // Setup folder picker attribute
   useEffect(() => {
@@ -241,7 +218,7 @@ export function SourcesWorkspace({
     return () => clearTimeout(timer);
   }, [uploadItems, refresh]);
 
-  // Load selected document details for Inspector
+  // Load selected document details for the source detail dialog.
   useEffect(() => {
     if (!selectedId) {
       setSelectedDoc(null);
@@ -253,7 +230,6 @@ export function SourcesWorkspace({
       return;
     }
 
-    setInspectorLoading(true);
     api
       .getDocument(selectedId)
       .then((doc) => {
@@ -266,8 +242,8 @@ export function SourcesWorkspace({
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Could not load document details");
         setSelectedDoc(null);
-      })
-      .finally(() => setInspectorLoading(false));
+        onSelect(null);
+      });
 
     setChunksLoading(true);
     api
@@ -281,6 +257,16 @@ export function SourcesWorkspace({
       .then((edges) => setSuggestions(edges.filter((e) => e.document_id === selectedId)))
       .catch(() => setSuggestions([]));
   }, [selectedId, setError]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    inspectorDialogRef.current?.focus();
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onSelect(null);
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedId, onSelect]);
 
   // Load Watches when in watches perspective
   useEffect(() => {
@@ -512,47 +498,9 @@ export function SourcesWorkspace({
     }
   }
 
-  // Dynamic list of unique vendors for filtering
-  const availableVendors = useMemo(() => {
-    const set = new Set<string>();
-    documents.forEach((d) => {
-      if (d.vendor) set.add(d.vendor);
-      if (d.detected_vendors) d.detected_vendors.forEach((v) => set.add(v));
-    });
-    return Array.from(set).sort();
-  }, [documents]);
-
-  // Filtered documents
-  const filteredDocuments = useMemo(() => {
-    return documents.filter((doc) => {
-      // Query filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const nameMatch = doc.original_filename.toLowerCase().includes(q);
-        const titleMatch = doc.title?.toLowerCase().includes(q);
-        const vendorMatch = doc.vendor?.toLowerCase().includes(q);
-        const summaryMatch = doc.summary?.toLowerCase().includes(q);
-        const productMatch = doc.products_referenced?.some((p) => p.toLowerCase().includes(q));
-        if (!nameMatch && !titleMatch && !vendorMatch && !summaryMatch && !productMatch) {
-          return false;
-        }
-      }
-      // Status filter
-      if (statusFilter !== "all" && doc.status !== statusFilter) return false;
-      // Format filter
-      if (formatFilter !== "all") {
-        const ext = doc.original_filename.split(".").pop()?.toLowerCase();
-        if (ext !== formatFilter) return false;
-      }
-      // Vendor filter
-      if (vendorFilter !== "all") {
-        if (doc.vendor !== vendorFilter && !doc.detected_vendors?.includes(vendorFilter)) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [documents, searchQuery, statusFilter, formatFilter, vendorFilter]);
+  const sortedDocuments = useMemo(() => {
+    return sortKnowledgeDocuments(documents, sourceSort);
+  }, [documents, sourceSort]);
 
   // Total stats
   const totalChunksCount = useMemo(() => {
@@ -565,225 +513,6 @@ export function SourcesWorkspace({
 
   return (
     <div className="sources-desk">
-      {/* ── Left Column: Workspace Navigation, Perspectives & Filters ── */}
-      <aside className="sources-sources">
-        {/* Workspace Tab Navigation (Matching Ask Intelligence & Knowledge Map) */}
-        {tabs && onTabChange && (
-          <div className="sidebar-workspace-nav">
-            <div className="sidebar-section-title">WORKSPACE</div>
-            <div className="workspace-tabs-list">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    className={`workspace-tab-btn ${isActive ? "active" : ""}`}
-                    onClick={() => onTabChange(tab.id)}
-                  >
-                    <span className="tab-btn-icon">
-                      <Icon size={17} />
-                    </span>
-                    <span className="tab-btn-name">{tab.name}</span>
-                    {tab.badge && (
-                      <span
-                        className={`tab-btn-badge ${
-                          tab.badge === "Live" ? "live" : tab.badge === "AI" ? "ai" : ""
-                        }`}
-                      >
-                        {tab.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Perspective Mode Segmented Control */}
-        <div className="sources-perspective-segment">
-          <div className="sidebar-section-title">PERSPECTIVE</div>
-          <div className="segmented-control">
-            <button
-              type="button"
-              className={`segmented-item ${perspective === "library" ? "active" : ""}`}
-              onClick={() => setPerspective("library")}
-              title="Catalog Library & Uploads"
-            >
-              <FileTextIcon size={14} />
-              <span>Library</span>
-            </button>
-            <button
-              type="button"
-              className={`segmented-item ${perspective === "passages" ? "active" : ""}`}
-              onClick={() => setPerspective("passages")}
-              title="Hybrid Vector & Passages Search"
-            >
-              <LayersVectorIcon size={14} />
-              <span>Passages</span>
-            </button>
-            <button
-              type="button"
-              className={`segmented-item ${perspective === "watches" ? "active" : ""}`}
-              onClick={() => setPerspective("watches")}
-              title="Datasheet Watches & Freshness"
-            >
-              <ZapIcon size={14} />
-              <span>Watches</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Source Filters Card */}
-        <div className="sources-setup-card sources-filters-card">
-          <div className="sources-setup-header">FILTER SOURCES</div>
-
-          {/* Search Filter Input */}
-          <div className="filter-group">
-            <div className="sources-filter-search">
-              <SearchIcon size={13} style={{ color: "var(--text-muted)" }} />
-              <input
-                type="text"
-                className="sources-filter-input"
-                placeholder="Search sources…"
-                aria-label="Search sources"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="filter-clear-btn"
-                  onClick={() => setSearchQuery("")}
-                  aria-label="Clear source search"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Status Filter */}
-          <div className="filter-group">
-            <label className="filter-label">Status</label>
-            <div className="filter-chips-row">
-              {["all", "ready", "processing", "failed"].map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  className={`filter-chip ${statusFilter === st ? "active" : ""}`}
-                  onClick={() => setStatusFilter(st)}
-                >
-                  {st.charAt(0).toUpperCase() + st.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Format Filter */}
-          <div className="filter-group">
-            <label className="filter-label">Format</label>
-            <div className="filter-chips-row">
-              {["all", "pdf", "docx", "xlsx", "pptx", "md", "txt"].map((fmt) => (
-                <button
-                  key={fmt}
-                  type="button"
-                  className={`filter-chip ${formatFilter === fmt ? "active" : ""}`}
-                  onClick={() => setFormatFilter(fmt)}
-                >
-                  {fmt.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Vendor Filter */}
-          {availableVendors.length > 0 && (
-            <div className="filter-group">
-              <label className="filter-label">Vendor</label>
-              <select
-                className="filter-select"
-                value={vendorFilter}
-                onChange={(e) => setVendorFilter(e.target.value)}
-              >
-                <option value="all">All Vendors ({availableVendors.length})</option>
-                {availableVendors.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {(searchQuery || statusFilter !== "all" || formatFilter !== "all" || vendorFilter !== "all") && (
-            <button
-              type="button"
-              className="filter-reset-link"
-              onClick={() => {
-                setSearchQuery("");
-                setStatusFilter("all");
-                setFormatFilter("all");
-                setVendorFilter("all");
-              }}
-            >
-              Reset all filters
-            </button>
-          )}
-        </div>
-
-        {/* Ingestion Workflow Steps Card (Matching Ask Intelligence) */}
-        <div className="sources-setup-card">
-          <div className="sources-setup-header">INGESTION PIPELINE</div>
-          <div className="setup-steps-list">
-            <div className="setup-step-row">
-              <span className="setup-step-num">1</span>
-              <span className="setup-step-text">Ingest &amp; OCR documents</span>
-            </div>
-            <div className="setup-step-row">
-              <span className="setup-step-num">2</span>
-              <span className="setup-step-text">Semantic chunking &amp; HNSW</span>
-            </div>
-            <div className="setup-step-row">
-              <span className="setup-step-num">3</span>
-              <span className="setup-step-text">Grounded hybrid reasoning</span>
-            </div>
-          </div>
-          <div className="setup-links-row">
-            <button type="button" className="setup-link-blue" onClick={() => onNavigate("ask")}>
-              Ask Intelligence
-            </button>
-            <button type="button" className="setup-link-gray" onClick={() => onNavigate("map")}>
-              View Map
-            </button>
-          </div>
-        </div>
-
-        {/* Vector Memory Telemetry Card (Matching Ask Intelligence & Map) */}
-        <div className="vector-memory-card">
-          <div className="vector-memory-row">
-            <div className="vector-memory-icon-wrap">
-              <LayersVectorIcon size={16} />
-            </div>
-            <div className="vector-memory-info">
-              <div className="vector-memory-title-row">
-                <span className="vector-memory-title">Vector Memory</span>
-                <span className="vector-memory-hnsw">HNSW</span>
-              </div>
-              <div className="vector-memory-meta">
-                {documents.length} sources indexed &bull; isolation active
-              </div>
-            </div>
-          </div>
-          <div className="vector-memory-sub-row">
-            <span>Dim: 1536 (OpenAI / ada-002)</span>
-            <span style={{ color: "#10b981", fontWeight: 600 }}>Sync: OK</span>
-          </div>
-        </div>
-      </aside>
-
       {/* ── Center Column: Main Interactive Workspace ────────────────── */}
       <main className="sources-main">
         {error && <div className="banner error">{error}</div>}
@@ -838,6 +567,25 @@ export function SourcesWorkspace({
             </button>
           </div>
         </header>
+
+        <nav className="sources-perspective-nav" aria-label="Source views">
+          {([
+            ["library", "Library", FileTextIcon],
+            ["passages", "Passages", LayersVectorIcon],
+            ["watches", "Watches", ZapIcon],
+          ] as const).map(([mode, label, Icon]) => (
+            <button
+              key={mode}
+              type="button"
+              className={`sources-perspective-tab ${perspective === mode ? "active" : ""}`}
+              onClick={() => setPerspective(mode)}
+              aria-current={perspective === mode ? "page" : undefined}
+            >
+              <Icon size={15} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
 
         {/* Collapsible Cupertino Dropzone Drawer */}
         {uploaderExpanded && (
@@ -971,24 +719,22 @@ export function SourcesWorkspace({
             {/* Filter Summary Row */}
             <div className="sources-filter-summary">
               <span className="filter-summary-count">
-                Showing <strong>{filteredDocuments.length}</strong> of {documents.length} sources
+                Showing <strong>{documents.length}</strong> {documents.length === 1 ? "source" : "sources"}
                 {totalPagesCount > 0 && ` &bull; ${totalPagesCount} pages`}
                 {totalChunksCount > 0 && ` &bull; ${totalChunksCount} vector chunks`}
+                {documents.length > 0 && ` • ${documents.filter((document) => document.status === "ready").length} ready`}
               </span>
-              {(searchQuery || statusFilter !== "all" || formatFilter !== "all" || vendorFilter !== "all") && (
-                <button
-                  type="button"
-                  className="filter-clear-summary-btn"
-                  onClick={() => {
-                    setSearchQuery("");
-                    setStatusFilter("all");
-                    setFormatFilter("all");
-                    setVendorFilter("all");
-                  }}
+              <label className="sources-sort-control">
+                <span>Sort</span>
+                <select
+                  aria-label="Sort sources"
+                  value={sourceSort}
+                  onChange={(event) => setSourceSort(event.target.value as SourceSort)}
                 >
-                  Clear filters
-                </button>
-              )}
+                  <option value="modified">Last modified</option>
+                  <option value="name">Name</option>
+                </select>
+              </label>
             </div>
 
             {loading ? (
@@ -996,16 +742,14 @@ export function SourcesWorkspace({
                 <div className="loading-pulse-ring" />
                 <p>Retrieving documents from vector storage…</p>
               </div>
-            ) : filteredDocuments.length === 0 ? (
+            ) : documents.length === 0 ? (
               <div className="sources-empty-desk">
                 <SparkleSquircleIcon size={52} className="empty-squircle" />
                 <h3 className="empty-title">
-                  {documents.length === 0 ? "Knowledge Catalog Empty" : "No documents match filters"}
+                  "Knowledge Catalog Empty"
                 </h3>
                 <p className="empty-desc">
-                  {documents.length === 0
-                    ? "Upload PDF technical guides, hardware specifications, datasheets, or markdown notes to ground the intelligence engine."
-                    : "Try broadening your query or resetting status/vendor filters."}
+                  "Upload documents to build your knowledge library and ground your AI workflows."
                 </p>
                 <button
                   type="button"
@@ -1022,7 +766,7 @@ export function SourcesWorkspace({
             ) : viewMode === "grid" ? (
               /* Grid View of Cupertino Document Cards */
               <div className="source-cards-grid">
-                {filteredDocuments.map((doc, idx) => {
+                {sortedDocuments.map((doc, idx) => {
                   const isSelected = doc.id === selectedId;
                   const format = getFileFormatMeta(doc.original_filename);
 
@@ -1146,7 +890,7 @@ export function SourcesWorkspace({
                   <span className="col-status">STATUS</span>
                   <span className="col-actions">ACTIONS</span>
                 </div>
-                {filteredDocuments.map((doc, idx) => {
+                {sortedDocuments.map((doc, idx) => {
                   const isSelected = doc.id === selectedId;
                   const format = getFileFormatMeta(doc.original_filename);
 
@@ -1444,11 +1188,29 @@ export function SourcesWorkspace({
         )}
       </main>
 
-      {/* ── Right Column: Live Source & Passage Inspector ────────────── */}
-      <aside className="sources-side">
-        <div className="side-section-header">
-          <span className="side-title">SOURCE DETAILS</span>
-          <span className="side-meta-mono">Live Inspector</span>
+      {selectedId && (
+      <div
+        className="source-detail-backdrop"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onSelect(null);
+        }}
+      >
+      <section
+        className="sources-side source-detail-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="source-detail-title"
+        tabIndex={-1}
+        ref={inspectorDialogRef}
+      >
+        <div className="source-detail-header">
+          <div>
+            <span className="side-title">SOURCE DETAILS</span>
+            <h2 id="source-detail-title">{selectedDoc?.title || selectedDoc?.original_filename || "Source details"}</h2>
+          </div>
+          <button type="button" className="source-detail-close" onClick={() => onSelect(null)} aria-label="Close source details">
+            ×
+          </button>
         </div>
 
         {selectedDoc ? (
@@ -1479,6 +1241,7 @@ export function SourcesWorkspace({
                 className="btn-ask-intelligence-hero"
                 onClick={() => {
                   const title = selectedDoc.title || selectedDoc.original_filename;
+                  onSelect(null);
                   onNavigate(
                     "ask",
                     `Summarize key specifications, architecture, and requirements in ${title}`
@@ -1599,15 +1362,12 @@ export function SourcesWorkspace({
                         <div className="chips-wrap">
                           {(selectedDoc.detected_products || selectedDoc.products_referenced || []).map(
                             (prod) => (
-                              <button
+                              <span
                                 key={prod}
-                                type="button"
                                 className="apple-product-chip"
-                                onClick={() => setSearchQuery(prod)}
-                                title={`Filter library by ${prod}`}
                               >
                                 {prod}
-                              </button>
+                              </span>
                             )
                           )}
                         </div>
@@ -1784,27 +1544,14 @@ export function SourcesWorkspace({
             )}
           </div>
         ) : (
-          /* Empty Inspector State (Matching Ask Intelligence) */
-          <div className="citation-inspector-empty">
-            <div className="citation-icon-squircle">
-              <FileTextIcon size={24} />
-            </div>
-            <p className="citation-empty-text">No source selected</p>
-            <p className="empty-inspector-sub">
-              Select any document in the catalog to inspect its executive synthesis, detected products, graph relationships, and vector passages.
-            </p>
-            {documents.length > 0 && (
-              <button
-                type="button"
-                className="citation-click-link"
-                onClick={() => onSelect(documents[0].id)}
-              >
-                Inspect first document &rarr;
-              </button>
-            )}
+          <div className="source-detail-loading" role="status">
+            <div className="loading-pulse-ring" />
+            <p>Loading source details…</p>
           </div>
         )}
-      </aside>
+      </section>
+      </div>
+      )}
     </div>
   );
 }

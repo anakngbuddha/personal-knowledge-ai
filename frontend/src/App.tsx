@@ -298,11 +298,6 @@ export default function App() {
                   if (prompt) setSeedQuestion(prompt);
                   setActiveTab(tab);
                 }}
-                activeTab={activeTab}
-                onTabChange={(t) => {
-                  setActiveTab(t);
-                  setSeedQuestion(null);
-                }}
               />
             )}
           </main>
