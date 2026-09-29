@@ -7,14 +7,16 @@ import type { PortfolioGraphOut } from "../services/catalog";
 import { IntegrationsPanel } from "./IntegrationsPanel";
 import { GraphExplorer } from "./GraphExplorer";
 
-const { listMcpIntegrations, getPortfolioGraph, listEdges } = vi.hoisted(() => ({
+const { listMcpIntegrations, upsertMcpIntegration, testMcpIntegration, getPortfolioGraph, listEdges } = vi.hoisted(() => ({
   listMcpIntegrations: vi.fn(),
+  upsertMcpIntegration: vi.fn(),
+  testMcpIntegration: vi.fn(),
   getPortfolioGraph: vi.fn(),
   listEdges: vi.fn(),
 }));
 
 vi.mock("../services/api", () => ({
-  api: { listMcpIntegrations, upsertMcpIntegration: vi.fn(), testMcpIntegration: vi.fn() },
+  api: { listMcpIntegrations, upsertMcpIntegration, testMcpIntegration },
 }));
 
 vi.mock("../services/catalog", async (importOriginal) => {
@@ -76,6 +78,25 @@ describe("Connectors redesign", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Custom MCP Server/ }));
     expect(screen.getByText("Custom MCP setup")).toBeTruthy();
+  });
+
+  it("expands connector settings and keeps save and test actions available", async () => {
+    listMcpIntegrations.mockResolvedValue(connectorData);
+    upsertMcpIntegration.mockResolvedValue(undefined);
+    testMcpIntegration.mockResolvedValue({ status: "healthy", tools: [{ name: "search" }] });
+    render(<IntegrationsPanel />);
+
+    const settings = await screen.findByRole("button", { name: "Brave Search settings" });
+    fireEvent.click(settings);
+    expect(settings.getAttribute("aria-expanded")).toBe("true");
+    const connector = within(settings.closest("article") as HTMLElement);
+    expect(connector.getByPlaceholderText("Stored securely — paste to rotate")).toBeTruthy();
+
+    fireEvent.click(connector.getByRole("button", { name: "Save & Enable" }));
+    await waitFor(() => expect(upsertMcpIntegration).toHaveBeenCalledWith("brave", expect.objectContaining({ enabled: true })));
+
+    fireEvent.click(connector.getByRole("button", { name: "Test" }));
+    await waitFor(() => expect(testMcpIntegration).toHaveBeenCalledWith("brave"));
   });
 });
 

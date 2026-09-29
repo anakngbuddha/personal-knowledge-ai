@@ -15,15 +15,12 @@ import {
 } from "./Icons";
 import { CustomMcpStudio } from "./CustomMcpStudio";
 
-/* ── Per-connector metadata: label, icon, description, color accent ── */
+/* ── Per-connector metadata: label, icon, description, category ── */
 const CONNECTOR_META: Record<
   string,
   {
     label: string;
     blurb: string;
-    station: string;
-    accent: string;
-    accentSoft: string;
     category: string;
     IconComponent: React.ComponentType<{ size?: number; className?: string }>;
   }
@@ -31,27 +28,18 @@ const CONNECTOR_META: Record<
   brave: {
     label: "Brave Search",
     blurb: "Public web and news search powered by Brave. Add your API key to enable live web queries within grounded answers.",
-    station: "02.1",
-    accent: "#f97316",
-    accentSoft: "rgba(249, 115, 22, 0.12)",
     category: "Search",
     IconComponent: SearchIcon,
   },
   playwright: {
     label: "Playwright Browser",
     blurb: "Headless browser for reading vendor documentation and public web pages. Configure an optional host allowlist for security.",
-    station: "02.2",
-    accent: "#06b6d4",
-    accentSoft: "rgba(6, 182, 212, 0.12)",
     category: "Browser",
     IconComponent: NetworkIcon,
   },
   ms365: {
     label: "Microsoft 365",
     blurb: "Read-only access to Outlook mail, calendar events, OneDrive / SharePoint files, Excel workbooks, and contacts via Microsoft Graph.",
-    station: "02.3",
-    accent: "#6366f1",
-    accentSoft: "rgba(99, 102, 241, 0.12)",
     category: "Productivity",
     IconComponent: DatabaseIcon,
   },
@@ -61,9 +49,6 @@ function getConnectorMeta(slug: string) {
   return CONNECTOR_META[slug] ?? {
     label: slug,
     blurb: `External connector: ${slug}`,
-    station: "02.x",
-    accent: "#64748b",
-    accentSoft: "rgba(100, 116, 139, 0.12)",
     category: "Custom",
     IconComponent: ZapIcon,
   };
@@ -241,9 +226,9 @@ export function IntegrationsPanel() {
         </div>
       )}
 
-      {/* ── Connector Cards Grid ── */}
+      {/* ── Connector Catalog ── */}
       <div className="connectors-grid">
-        {filteredIntegrations.map((row, idx) => {
+        {filteredIntegrations.map((row) => {
           const meta = getConnectorMeta(row.server_slug);
           const isExpanded = expandedSlug === row.server_slug;
           const isSaving = saving === row.server_slug;
@@ -254,11 +239,10 @@ export function IntegrationsPanel() {
             <article
               key={row.server_slug}
               className={`connector-card ${row.enabled ? "enabled" : "disabled"} ${isExpanded ? "expanded" : ""}`}
-              style={{ "--card-accent": meta.accent, "--card-accent-soft": meta.accentSoft, "--stagger-index": idx } as React.CSSProperties}
             >
               {/* Card Header */}
               <button type="button" className="connector-card-header" aria-expanded={isExpanded} aria-label={`${meta.label} settings`} onClick={() => setExpandedSlug(isExpanded ? null : row.server_slug)}>
-                <div className="connector-card-icon-squircle" style={{ background: meta.accentSoft, color: meta.accent }}>
+                <div className="connector-card-icon-squircle">
                   <IconComponent size={20} />
                 </div>
                 <div className="connector-card-titles">

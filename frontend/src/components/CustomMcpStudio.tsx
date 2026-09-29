@@ -276,6 +276,7 @@ export function CustomMcpStudio() {
           <button
             type="button"
             onClick={() => setActiveTab("claude")}
+            aria-pressed={activeTab === "claude"}
             style={{
               padding: "8px 16px",
               borderRadius: "8px",
@@ -293,6 +294,7 @@ export function CustomMcpStudio() {
           <button
             type="button"
             onClick={() => setActiveTab("cursor")}
+            aria-pressed={activeTab === "cursor"}
             style={{
               padding: "8px 16px",
               borderRadius: "8px",
@@ -310,6 +312,7 @@ export function CustomMcpStudio() {
           <button
             type="button"
             onClick={() => setActiveTab("console")}
+            aria-pressed={activeTab === "console"}
             style={{
               padding: "8px 16px",
               borderRadius: "8px",
@@ -327,6 +330,7 @@ export function CustomMcpStudio() {
           <button
             type="button"
             onClick={() => setActiveTab("manifest")}
+            aria-pressed={activeTab === "manifest"}
             style={{
               padding: "8px 16px",
               borderRadius: "8px",
@@ -432,6 +436,7 @@ export function CustomMcpStudio() {
                 <button
                   type="button"
                   onClick={() => setClaudeMode("python_remote")}
+                  aria-pressed={claudeMode === "python_remote"}
                   style={{
                     flex: 1,
                     padding: "6px 12px",
@@ -450,6 +455,7 @@ export function CustomMcpStudio() {
                 <button
                   type="button"
                   onClick={() => setClaudeMode("npx_remote")}
+                  aria-pressed={claudeMode === "npx_remote"}
                   style={{
                     flex: 1,
                     padding: "6px 12px",
@@ -468,6 +474,7 @@ export function CustomMcpStudio() {
                 <button
                   type="button"
                   onClick={() => setClaudeMode("local_script")}
+                  aria-pressed={claudeMode === "local_script"}
                   style={{
                     flex: 1,
                     padding: "6px 12px",
@@ -600,6 +607,7 @@ export function CustomMcpStudio() {
                     key={t.name}
                     type="button"
                     onClick={() => handleToolSelect(t)}
+                    aria-pressed={isSelected}
                     style={{
                       display: "flex",
                       flexDirection: "column",
