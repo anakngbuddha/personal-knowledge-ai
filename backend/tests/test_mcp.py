@@ -209,6 +209,48 @@ def test_playwright_metadata_url_is_ssrf_blocked(mcp_env):
     assert mcp_env.calls == []
 
 
+def test_research_mcp_is_tenant_scoped_and_fenced(mcp_env):
+    from app.mcp.registry_bridge import build_spec
+    from app.mcp.sandbox import allowed_original
+
+    db = _session()
+    first = Organization(id=uuid.uuid4(), slug="research-a", name="Research A")
+    second = Organization(id=uuid.uuid4(), slug="research-b", name="Research B")
+    db.add_all([first, second])
+    db.commit()
+    ws = Workspace(id=uuid.uuid4(), org_id=first.id, name="Default")
+    db.add(ws)
+    db.add_all([
+        McpIntegration(org_id=first.id, server_slug="exa", enabled=True,
+                       config={}, secret_ciphertext=encrypt_secret("exa-test"), status="disconnected"),
+        McpIntegration(org_id=first.id, server_slug="firecrawl", enabled=True,
+                       config={"allowed_hosts": ["example.com"]},
+                       secret_ciphertext=encrypt_secret("fc-test"), status="disconnected"),
+    ])
+    db.commit()
+    ctx = ToolContext(db=db, principal=owner_principal(first.id), workspace_id=ws.id)
+    other = ToolContext(db=db, principal=owner_principal(second.id), workspace_id=ws.id)
+    exa = build_spec(ctx, "exa")
+    assert exa.http_url == "https://mcp.exa.ai/mcp"
+    assert exa.http_headers == {"Authorization": "Bearer exa-test"}
+    assert build_spec(other, "exa") is None
+    assert not allowed_original("exa", "agent_run")
+    assert not allowed_original("firecrawl", "firecrawl_find_tools")
+    names = {item.name for item in default_definitions(ctx)}
+    assert "mcp_exa_web_search_exa" in names
+    assert "mcp_firecrawl_firecrawl_scrape" in names
+    assert "mcp_exa_web_search_exa" not in {item.name for item in default_definitions(other)}
+    found = execute_tool(ToolCall(id="search", name="mcp_exa_web_search_exa",
+                                  arguments={"query": "vendor backup service", "numResults": 3}), ctx)
+    assert found.error is None
+    assert found.content["untrusted"] is True
+    assert mcp_env.calls[-1][0:2] == ("exa", "web_search_exa")
+    blocked = execute_tool(ToolCall(id="crawl", name="mcp_firecrawl_firecrawl_crawl",
+                                    arguments={"url": "http://169.254.169.254/", "limit": 2}), ctx)
+    assert blocked.error and "ssrf" in blocked.error.lower()
+    assert mcp_env.calls[-1][0] == "exa"
+
+
 def test_secret_roundtrip_is_not_logged(mcp_env, mcp_api: Session):
     secret = "super-secret-brave-key-do-not-log"
     token = mint_token(org_id=mcp_api.org_a_id, role=Role.ADMIN)

@@ -176,7 +176,7 @@ export const api = {
       body:JSON.stringify({product, proposed_version:proposedVersion||null})
     }),
   listMcpIntegrations: () => request<McpIntegrationList>("/integrations/mcp"),
-  upsertMcpIntegration: (slug:string, body:{enabled:boolean; secret?:string; allowed_hosts?:string[]; http_url?:string|null}) =>
+  upsertMcpIntegration: (slug:string, body:{enabled:boolean; secret?:string; allowed_hosts?:string[]; http_url?:string|null; sheet_targets?: import("../types").SheetTarget[]}) =>
     request<McpIntegration>(`/integrations/mcp/${encodeURIComponent(slug)}`, {
       method:"PUT",
       headers:{"Content-Type":"application/json"},

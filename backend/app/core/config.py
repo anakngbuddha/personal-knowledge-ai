@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     freshness_request_delay_seconds: float = 1.0
     # Monitored pages are sources an operator chose. Approved so citations can
     # see them. Set false to leave scraped pages in the draft review queue.
-    freshness_auto_approve: bool = True
+    freshness_auto_approve: bool = False
     restore_drill_sla_seconds: float = 300.0
     sso_enabled: bool = False
     sso_credentials_key: str = ""
@@ -222,6 +222,8 @@ class Settings(BaseSettings):
         if self.environment.lower() == "production":
             if self.auth_mode != "jwt": raise ValueError("AUTH_MODE must be jwt in production")
             if not self.jwt_secret_key or len(self.jwt_secret_key) < 32: raise ValueError("JWT_SECRET_KEY must be at least 32 characters in production")
+            if not self.rls_required: raise ValueError("RLS_REQUIRED must be true in production")
+            if self.freshness_auto_approve: raise ValueError("FRESHNESS_AUTO_APPROVE must be false in production")
         return self
 
     @property

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -153,7 +154,7 @@ class SdkMcpClient:
 
 def _connect(spec: ServerSpec):
     if spec.http_url:
-        return _http_transport(spec.http_url)
+        return _http_transport(spec)
     return _stdio_transport(spec)
 
 
@@ -175,13 +176,25 @@ def _stdio_transport(spec: ServerSpec):
     return Client(stdio_client(params))
 
 
-def _http_transport(url: str):
+def _http_transport(spec: ServerSpec):
     try:
         from mcp import Client
+        from mcp.client.streamable_http import streamable_http_client
+        import httpx2
     except ImportError as exc:
         raise AppError(
             "MCP Python SDK is not installed",
             status_code=500,
             code="mcp_sdk_missing",
         ) from exc
-    return Client(url)
+    if not spec.http_headers:
+        return Client(spec.http_url)
+    @asynccontextmanager
+    async def authenticated_transport():
+        async with httpx2.AsyncClient(
+            headers=spec.http_headers, timeout=30.0, follow_redirects=False
+        ) as http_client:
+            async with streamable_http_client(spec.http_url, http_client=http_client) as streams:
+                yield streams
+
+    return Client(authenticated_transport())

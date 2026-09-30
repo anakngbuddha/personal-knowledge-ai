@@ -18,6 +18,7 @@ import {
 } from "./components/Icons";
 import { IntegrationsPanel } from "./components/IntegrationsPanel";
 import { NotesPanel } from "./components/NotesPanel";
+import { OpportunitiesWorkspace } from "./components/OpportunitiesWorkspace";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SourcesWorkspace } from "./components/SourcesWorkspace";
 import { useDocuments } from "./hooks/useDocuments";
@@ -26,7 +27,7 @@ import { api } from "./services/api";
 import { apiPointsAtLocalhostFromRemote, getAccessToken, onServerWake, onSessionExpired, setAccessToken } from "./services/http";
 import { SERVER_WAKING } from "./services/errors";
 
-type Tab = "sources" | "ask" | "notes" | "map" | "connections" | "settings";
+type Tab = "sources" | "ask" | "notes" | "map" | "opportunities" | "connections" | "settings";
 
 interface TabItem {
   id: Tab;
@@ -144,6 +145,7 @@ export default function App() {
 
   const tabs: TabItem[] = [
     { id: "ask", name: "Ask Intelligence", icon: StarIcon },
+    { id: "opportunities", name: "Opportunities", icon: ZapIcon },
     { id: "notes", name: "Notes", icon: BookOpenIcon },
     { id: "sources", name: "Sources", icon: FileTextIcon, badge: documents.length > 0 ? String(documents.length) : undefined },
     { id: "connections", name: "Connectors", icon: ZapIcon },
@@ -267,6 +269,7 @@ export default function App() {
               />
             )}
             {activeTab === "connections" && <IntegrationsPanel />}
+            {activeTab === "opportunities" && <OpportunitiesWorkspace />}
             {activeTab === "map" && (
               <GraphExplorer
                 key={mapVersion}

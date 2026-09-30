@@ -390,7 +390,16 @@ def set_approval_state(db: Session, document: Document, state: str) -> Document:
 
 
 def delete_document(db: Session, document: Document) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    storage_key = document.storage_key
+    try:
+        db.delete(document)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise AppError("document is referenced by retained records", status_code=409,
+                       code="document_retained") from exc
+    # A restrictive provenance FK must never leave a retained source without its bytes.
     with suppress(Exception):
-        get_storage().delete(document.storage_key)
-    db.delete(document)
-    db.commit()
+        get_storage().delete(storage_key)

@@ -386,7 +386,15 @@ export interface GraphEdge {
   created_at?: string | null;
 }
 
-export interface McpIntegration {
+  export interface SheetTarget {
+    alias: string;
+    workspace_id: string;
+    spreadsheet_id: string;
+    tab: string;
+    draft: boolean;
+  }
+
+  export interface McpIntegration {
   id?: string | null;
   server_slug: string;
   enabled: boolean;
@@ -395,7 +403,8 @@ export interface McpIntegration {
   has_secret: boolean;
   allowed_hosts: string[];
   http_url?: string | null;
-  allowed_tools: string[];
+    allowed_tools: string[];
+    sheet_targets?: SheetTarget[];
 }
 
 export interface McpIntegrationList {

@@ -166,3 +166,12 @@ def test_production_rejects_insecure_auth_defaults():
         Settings.model_validate(
             {"environment": "production", "auth_mode": "jwt", "jwt_secret_key": "changeme"}
         )
+    with pytest.raises(ValidationError, match="RLS_REQUIRED"):
+        Settings.model_validate(
+            {"environment": "production", "auth_mode": "jwt", "jwt_secret_key": "x" * 40}
+        )
+    with pytest.raises(ValidationError, match="FRESHNESS_AUTO_APPROVE"):
+        Settings.model_validate(
+            {"environment": "production", "auth_mode": "jwt", "jwt_secret_key": "x" * 40,
+             "rls_required": True, "freshness_auto_approve": True}
+        )

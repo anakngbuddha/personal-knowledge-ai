@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../services/api";
-import type { McpIntegration, McpIntegrationList } from "../types";
+import type { McpIntegration, McpIntegrationList, SheetTarget } from "../types";
 import {
   ZapIcon,
   CheckIcon,
@@ -43,6 +43,24 @@ const CONNECTOR_META: Record<
     category: "Productivity",
     IconComponent: DatabaseIcon,
   },
+  exa: {
+    label: "Exa Research",
+    blurb: "Discover public sources for reviewed competitive and vendor research. Requires a tenant API key.",
+    category: "Search",
+    IconComponent: SearchIcon,
+  },
+  firecrawl: {
+    label: "Firecrawl",
+    blurb: "Read or crawl public pages on approved hosts for source review. Requires an API key and host allowlist.",
+    category: "Research",
+    IconComponent: NetworkIcon,
+  },
+  google_sheets: {
+    label: "Google Sheets",
+    blurb: "Export issued customer quotes to a tenant owned spreadsheet. Add a Google service account JSON credential with Sheets API access.",
+    category: "Productivity",
+    IconComponent: DatabaseIcon,
+  },
 };
 
 function getConnectorMeta(slug: string) {
@@ -60,6 +78,7 @@ export function IntegrationsPanel() {
   const [saving, setSaving] = useState<string | null>(null);
   const [secretDraft, setSecretDraft] = useState<Record<string, string>>({});
   const [hostDraft, setHostDraft] = useState<Record<string, string>>({});
+  const [sheetTargets, setSheetTargets] = useState<SheetTarget[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [expandedSlug, setExpandedSlug] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { status: string; toolCount: number } | null>>({});
@@ -76,6 +95,7 @@ export function IntegrationsPanel() {
         hosts[row.server_slug] = (row.allowed_hosts || []).join(", ");
       }
       setHostDraft(hosts);
+      setSheetTargets(next.integrations.find((row) => row.server_slug === "google_sheets")?.sheet_targets || []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load integrations");
@@ -99,6 +119,7 @@ export function IntegrationsPanel() {
         enabled,
         allowed_hosts: hosts,
         secret: secret || undefined,
+        ...(row.server_slug === "google_sheets" ? { sheet_targets: sheetTargets } : {}),
       });
       setSecretDraft((prev) => ({ ...prev, [row.server_slug]: "" }));
       await refresh();
@@ -299,6 +320,16 @@ export function IntegrationsPanel() {
               <div className={`connector-config-panel ${isExpanded ? "open" : ""}`}>
                 <div className="connector-config-inner">
                   <div className="connector-config-divider" />
+                  {row.server_slug === "google_sheets" && <div className="connector-field-group">
+                    <label className="connector-field-label">Workspace sheets</label>
+                    <span className="connector-field-hint">Read or edit configured team sheets. Issued quote exports cannot be edited by tools.</span>
+                    {sheetTargets.map((target, index) => <fieldset key={index}>
+                      {([['alias', 'Sheet alias'], ['workspace_id', 'Workspace ID'], ['spreadsheet_id', 'Spreadsheet ID'], ['tab', 'Tab name']] as const).map(([field, label]) => <label key={field}>{label}<input className="connector-field-input" value={target[field]} onChange={(event) => setSheetTargets((current) => current.map((item, at) => at === index ? { ...item, [field]: event.target.value } : item))} /></label>)}
+                      <label><input type="checkbox" checked={target.draft} onChange={(event) => setSheetTargets((current) => current.map((item, at) => at === index ? { ...item, draft: event.target.checked } : item))} />Allow draft edits</label>
+                      <button type="button" onClick={() => setSheetTargets((current) => current.filter((_, at) => at !== index))}>Remove sheet</button>
+                    </fieldset>)}
+                    <button type="button" disabled={sheetTargets.length >= 50} onClick={() => setSheetTargets((current) => [...current, { alias: "", workspace_id: "", spreadsheet_id: "", tab: "Sheet1", draft: false }])}>Add workspace sheet</button>
+                  </div>}
 
                   {/* Secret / Host Configuration */}
                   {row.server_slug === "playwright" ? (

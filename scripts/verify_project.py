@@ -7,6 +7,8 @@ import sys
 import os
 import py_compile
 import subprocess
+import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 def print_section(title: str):
@@ -37,22 +39,22 @@ def run_backend_tests(workspace: Path) -> bool:
     tests_dir = backend_dir / "tests"
     
     if not tests_dir.exists():
-        print("[INFO] No backend/tests directory found. Skipping.")
-        return True
+        print("[FAIL] Required backend/tests directory is missing.")
+        return False
         
     print("Running pytest on backend/tests...")
     try:
-        res = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests", "-v"],
-            cwd=str(backend_dir),
-            capture_output=True,
-            text=True,
-            check=False
-        )
+        with tempfile.TemporaryDirectory(prefix="pka-verification-") as report_dir:
+            report = Path(report_dir) / "pytest.xml"
+            res = subprocess.run(
+                [sys.executable, "-m", "pytest", "tests", "-v", "-rs", f"--junitxml={report}"],
+                cwd=str(backend_dir), capture_output=True, text=True, check=False,
+            )
+            acceptable = acceptable_backend_skips(report) if res.returncode == 0 else False
         if res.returncode == 0:
             print("[PASS] Pytest test suite passed successfully:")
             print(res.stdout.strip())
-            return True
+            return acceptable
         else:
             print(f"[FAIL] Pytest exited with code {res.returncode}:")
             if res.stdout.strip():
@@ -64,25 +66,45 @@ def run_backend_tests(workspace: Path) -> bool:
         print(f"[ERROR] Could not execute pytest: {e}")
         return False
 
+
+def acceptable_backend_skips(report: Path) -> bool:
+    """Only a missing PostgreSQL test service is an accepted local skip."""
+    if not report.exists():
+        print("[FAIL] Pytest did not produce its verification report.")
+        return False
+    skipped = ET.parse(report).findall(".//testcase/skipped")
+    unexpected = [node for node in skipped if node.get("message") !=
+                  "no reachable DATABASE_URL; set one to run the integration tests"]
+    if unexpected:
+        print(f"[FAIL] {len(unexpected)} unexpected skipped test(s).")
+        return False
+    if skipped:
+        print(f"[LIMITATION] {len(skipped)} PostgreSQL integration tests require a reachable DATABASE_URL.")
+    return True
+
 def verify_frontend(workspace: Path) -> bool:
     print_section("3. Frontend Typecheck & Build Verification")
     frontend_dir = workspace / "frontend"
     if not frontend_dir.exists():
-        print("[INFO] No frontend directory found. Skipping.")
-        return True
+        print("[FAIL] Required frontend directory is missing.")
+        return False
         
     node_modules = frontend_dir / "node_modules"
     if not node_modules.exists():
-        print("[INFO] frontend/node_modules not installed. Checking package.json & tsconfig.json syntax...")
-        pkg = frontend_dir / "package.json"
-        tsconfig = frontend_dir / "tsconfig.json"
-        if pkg.exists() and tsconfig.exists():
-            print("[PASS] Frontend configuration files present and valid.")
-            return True
+        print("[FAIL] frontend/node_modules is missing; install dependencies before verification.")
         return False
         
     print("Running npm run build (tsc typechecking + vite bundle)...")
     try:
+        tests = subprocess.run(
+            ["npm.cmd" if os.name == "nt" else "npm", "test", "--", "--reporter=dot"],
+            cwd=str(frontend_dir), capture_output=True, text=True, check=False,
+        )
+        print(tests.stdout.strip())
+        if tests.returncode != 0:
+            print("[FAIL] Frontend regression tests failed.")
+            print(tests.stderr.strip())
+            return False
         res = subprocess.run(
             ["npm.cmd" if os.name == "nt" else "npm", "run", "build"],
             cwd=str(frontend_dir),
@@ -99,8 +121,8 @@ def verify_frontend(workspace: Path) -> bool:
             print(res.stderr.strip())
             return False
     except Exception as e:
-        print(f"[WARNING] npm command not available or failed to execute: {e}")
-        return True
+        print(f"[FAIL] npm command not available or failed to execute: {e}")
+        return False
 
 def verify_graphify(workspace: Path) -> bool:
     print_section("4. Graphify Knowledge Graph Integrity")

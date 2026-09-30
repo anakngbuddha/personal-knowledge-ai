@@ -1012,6 +1012,249 @@ class ReferenceArchitectureProduct(Base):
     )
 
 
+class SalesAccount(Base):
+    """Customer identity within one organization; CRM IDs are connector-scoped."""
+
+    __tablename__ = "sales_accounts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    external_system: Mapped[str | None] = mapped_column(String(64))
+    external_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "external_system", "external_id", name="uq_sales_account_external"),
+    )
+
+
+class Opportunity(Base):
+    """A tenant and workspace scoped sales cycle."""
+
+    __tablename__ = "opportunities"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sales_accounts.id", ondelete="RESTRICT"), index=True
+    )
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False, default="discovery")
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("stage in ('discovery', 'solution', 'pricing', 'proposal', 'won', 'lost')", name="ck_opportunity_stage"),
+        CheckConstraint("version > 0", name="ck_opportunity_version"),
+        Index("ix_opportunities_org_workspace_created", "org_id", "workspace_id", "created_at"),
+    )
+
+
+class OpportunityParticipant(Base):
+    """Explicit access to an opportunity for a member of the same tenant."""
+
+    __tablename__ = "opportunity_participants"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    access: Mapped[str] = mapped_column(String(8), nullable=False, default="read")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("opportunity_id", "user_id", name="uq_opportunity_participant"),
+        CheckConstraint("access in ('read', 'edit')", name="ck_opportunity_participant_access"),
+    )
+
+
+class OpportunityRequirement(Base):
+    """Atomic customer need and its reviewed coverage decision."""
+
+    __tablename__ = "opportunity_requirements"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL")
+    )
+    original_text: Mapped[str] = mapped_column(Text, nullable=False)
+    acceptance_criterion: Mapped[str | None] = mapped_column(Text)
+    priority: Mapped[str] = mapped_column(String(16), nullable=False, default="must")
+    coverage_state: Mapped[str] = mapped_column(String(16), nullable=False, default="unreviewed")
+    coverage_note: Mapped[str | None] = mapped_column(Text)
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("priority in ('must', 'should', 'could')", name="ck_requirement_priority"),
+        CheckConstraint("coverage_state in ('unreviewed', 'covered', 'partial', 'gap', 'excluded')", name="ck_requirement_coverage"),
+        CheckConstraint("version > 0", name="ck_requirement_version"),
+        Index("ix_requirements_opportunity_priority", "opportunity_id", "priority", "coverage_state"),
+    )
+
+
+class ProviderSkuMap(Base):
+    """Reviewed tenant catalog mapping; a provider SKU is never inferred at quote time."""
+
+    __tablename__ = "provider_sku_maps"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    service: Mapped[str] = mapped_column(String(128), nullable=False)
+    sku: Mapped[str] = mapped_column(String(255), nullable=False)
+    meter: Mapped[str | None] = mapped_column(String(255))
+    region: Mapped[str] = mapped_column(String(128), nullable=False)
+    billing_mode: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("provider in ('huawei', 'aws', 'azure', 'gcp')", name="ck_sku_map_provider"),
+        CheckConstraint("status in ('draft', 'approved', 'retired')", name="ck_sku_map_status"),
+        Index("ix_sku_map_product_region", "org_id", "product_id", "region"),
+    )
+
+
+class StoredPriceObservation(Base):
+    """Immutable tenant-scoped snapshot of a normalized provider or contract rate."""
+
+    __tablename__ = "price_observations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    sku_map_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("provider_sku_maps.id", ondelete="RESTRICT"), nullable=False, index=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    commercial_cost_per_unit: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CommercialPolicyRecord(Base):
+    __tablename__ = "commercial_policies"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("org_id", "version", name="uq_commercial_policy_version"),)
+
+
+class SalesQuote(Base):
+    __tablename__ = "sales_quotes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("opportunities.id", ondelete="RESTRICT"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SalesQuoteVersion(Base):
+    __tablename__ = "sales_quote_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    quote_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sales_quotes.id", ondelete="RESTRICT"), nullable=False, index=True)
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    policy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("commercial_policies.id", ondelete="RESTRICT"), nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("quote_id", "number", name="uq_sales_quote_version"),
+        CheckConstraint("status in ('draft', 'review', 'approved', 'issued')", name="ck_sales_quote_status"),
+        CheckConstraint("number > 0", name="ck_sales_quote_version_positive"),
+    )
+
+
+class SalesQuoteExport(Base):
+    """Single outbound Sheets export attempt per immutable quote version."""
+
+    __tablename__ = "sales_quote_exports"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    quote_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sales_quote_versions.id", ondelete="RESTRICT"), nullable=False)
+    destination: Mapped[str] = mapped_column(String(32), nullable=False, default="google_sheets")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    external_id: Mapped[str | None] = mapped_column(String(255))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("quote_version_id", "destination", name="uq_sales_quote_export_destination"),
+        CheckConstraint("status in ('pending', 'completed', 'needs_reconciliation', 'retry_authorized')", name="ck_sales_quote_export_status"),
+    )
+
+
+class SalesClaim(Base):
+    """A reviewed statement bound to one immutable source version and opportunity."""
+
+    __tablename__ = "sales_claims"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    opportunity_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    statement: Mapped[str] = mapped_column(Text, nullable=False)
+    competitor: Mapped[str | None] = mapped_column(String(255))
+    source_document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False)
+    source_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_anchor: Mapped[str] = mapped_column(String(512), nullable=False)
+    valid_until: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    review_reason: Mapped[str | None] = mapped_column(Text)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (
+        CheckConstraint("status in ('draft', 'approved', 'revoked')", name="ck_sales_claim_status"),
+        CheckConstraint("version > 0 AND source_version > 0", name="ck_sales_claim_version"),
+        Index("ix_sales_claims_opportunity_status", "opportunity_id", "status"),
+    )
+
+
 class AuditLog(Base):
     """Append-only audit trail for sensitive tenant operations.
 

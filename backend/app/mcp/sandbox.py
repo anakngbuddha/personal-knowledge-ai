@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from app.core.config import settings
 from app.core.errors import AppError, SsrfBlocked
 from app.documents.injection import wrap_untrusted
-from app.mcp.servers import BRAVE, MS365, PLAYWRIGHT
+from app.mcp.servers import BRAVE, EXA, FIRECRAWL, GOOGLE_SHEETS, MS365, PLAYWRIGHT
 from app.net.ssrf import validate_url
 
 # Original MCP tool names we will invoke. Anything else is unknown_tool.
@@ -38,11 +38,17 @@ MS365_ALLOWED = frozenset(
         "search_contacts",
     }
 )
+EXA_ALLOWED = frozenset({"web_search_exa"})
+FIRECRAWL_ALLOWED = frozenset({"firecrawl_scrape", "firecrawl_crawl"})
+SHEETS_ALLOWED = frozenset({"read_sheet", "write_draft"})
 
 ALLOWED_BY_SLUG = {
     BRAVE: BRAVE_ALLOWED,
     PLAYWRIGHT: PLAYWRIGHT_ALLOWED,
     MS365: MS365_ALLOWED,
+    EXA: EXA_ALLOWED,
+    FIRECRAWL: FIRECRAWL_ALLOWED,
+    GOOGLE_SHEETS: SHEETS_ALLOWED,
 }
 
 PLAYWRIGHT_BLOCKED = frozenset(
@@ -128,6 +134,44 @@ def check_playwright_call(
     parsed = urlparse(normalized)
     if parsed.scheme not in {"http", "https"}:
         raise SsrfBlocked(f"scheme {parsed.scheme!r} is not allowed")
+
+
+def check_research_call(slug: str, original: str, arguments: dict[str, Any], *,
+                        allowed_hosts: tuple[str, ...] | list[str] = ()) -> None:
+    """Constrain external research spend and reject unapproved crawl targets."""
+    if slug == EXA:
+        query = arguments.get("query")
+        if not isinstance(query, str) or not 1 <= len(query.strip()) <= 500:
+            raise McpSandboxError("Exa query must contain 1–500 characters")
+        if set(arguments) - {"query", "numResults"}:
+            raise McpSandboxError("unsupported Exa search arguments")
+        count = arguments.get("numResults", 5)
+        if type(count) is not int or not 1 <= count <= 10:
+            raise McpSandboxError("Exa result count must be 1–10")
+        return
+    if slug != FIRECRAWL:
+        return
+    if not allowed_hosts:
+        raise McpSandboxError("Firecrawl requires a destination host allowlist")
+    if set(arguments) - {"url", "limit", "maxDepth", "formats", "onlyMainContent"}:
+        raise McpSandboxError("unsupported Firecrawl arguments")
+    url = arguments.get("url")
+    if not isinstance(url, str):
+        raise McpSandboxError("Firecrawl requires a URL")
+    _, host = validate_url(url)
+    if not _host_permitted(host, allowed_hosts):
+        raise SsrfBlocked(f"host {host!r} is not on the Firecrawl allowlist")
+    if original == "firecrawl_crawl":
+        limit = arguments.get("limit", 5)
+        depth = arguments.get("maxDepth", 1)
+        if type(limit) is not int or not 1 <= limit <= 10:
+            raise McpSandboxError("crawl page limit must be 1–10")
+        if type(depth) is not int or not 1 <= depth <= 2:
+            raise McpSandboxError("crawl depth must be 1–2")
+    else:
+        formats = arguments.get("formats", ["markdown"])
+        if formats != ["markdown"]:
+            raise McpSandboxError("only markdown scrape output is permitted")
 
 
 def fence_result(payload: Any, *, source: str) -> dict[str, Any]:

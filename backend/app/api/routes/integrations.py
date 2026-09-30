@@ -10,10 +10,14 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.db.session import get_db
-from app.mcp.credentials import encrypt_secret, secret_configured
+from app.mcp.credentials import decrypt_secret, encrypt_secret, secret_configured
+from app.mcp.sheets_tools import SheetTarget
 from app.mcp.registry_bridge import ping_server
 from app.mcp.sandbox import ALLOWED_BY_SLUG
 from app.mcp.servers import (
+    EXA,
+    FIRECRAWL,
+    GOOGLE_SHEETS,
     SERVER_SLUGS,
     STATUS_CONNECTED,
     STATUS_DISABLED,
@@ -46,6 +50,7 @@ class McpIntegrationOut(BaseModel):
     allowed_hosts: list[str] = Field(default_factory=list)
     http_url: str | None = None
     allowed_tools: list[str] = Field(default_factory=list)
+    sheet_targets: list[SheetTarget] = Field(default_factory=list)
 
 
 class McpIntegrationListOut(BaseModel):
@@ -60,6 +65,7 @@ class McpIntegrationUpsertIn(BaseModel):
     secret: str | None = Field(default=None, max_length=8192)
     allowed_hosts: list[str] = Field(default_factory=list, max_length=50)
     http_url: str | None = Field(default=None, max_length=2048)
+    sheet_targets: list[SheetTarget] | None = Field(default=None, max_length=50)
 
 
 class McpPingOut(BaseModel):
@@ -94,6 +100,7 @@ def _serialize(slug: str, row) -> McpIntegrationOut:
         allowed_hosts=list(config.get("allowed_hosts") or []),
         http_url=config.get("http_url"),
         allowed_tools=sorted(ALLOWED_BY_SLUG.get(slug, ())),
+        sheet_targets=config.get("sheet_targets", []) if slug == GOOGLE_SHEETS else [],
     )
 
 
@@ -135,8 +142,25 @@ def upsert_mcp_integration(
     _require_admin(principal)
     if not known_slug(server_slug):
         raise HTTPException(status_code=404, detail="not found")
+    if server_slug in (EXA, FIRECRAWL, GOOGLE_SHEETS) and payload.http_url:
+        raise HTTPException(status_code=422, detail="integration endpoints are fixed by the platform")
     existing = get_integration(db, principal.org_id, server_slug)
     config = dict(existing.config or {}) if existing is not None else {}
+    if payload.sheet_targets is not None:
+        if server_slug != GOOGLE_SHEETS:
+            raise HTTPException(422, "sheet targets apply only to Google Sheets")
+        aliases = [target.alias for target in payload.sheet_targets]
+        if len(set(aliases)) != len(aliases):
+            raise HTTPException(422, "sheet aliases must be unique")
+        from sqlalchemy import select
+        from app.db.models import Workspace
+        for target in payload.sheet_targets:
+            workspace = db.scalars(select(Workspace).where(
+                Workspace.id == target.workspace_id, Workspace.org_id == principal.org_id,
+            )).first()
+            if workspace is None:
+                raise HTTPException(422, "sheet target workspace is outside the tenant")
+        config["sheet_targets"] = [target.model_dump(mode="json") for target in payload.sheet_targets]
     hosts = [h.strip() for h in payload.allowed_hosts if h and h.strip()]
     for host in hosts:
         if len(host) > 253:
@@ -152,7 +176,15 @@ def upsert_mcp_integration(
     if payload.secret:
         if not secret_configured():
             raise HTTPException(status_code=500, detail="MCP_CREDENTIALS_KEY is not configured")
+        if server_slug == GOOGLE_SHEETS:
+            from app.sales.sheets import validate_service_account_config
+            try:
+                validate_service_account_config(payload.secret)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
         ciphertext = encrypt_secret(payload.secret)
+    if server_slug in (EXA, FIRECRAWL, GOOGLE_SHEETS) and payload.enabled and not ciphertext:
+        raise HTTPException(status_code=422, detail="integration requires tenant credentials")
     status = STATUS_DISCONNECTED if payload.enabled else STATUS_DISABLED
     row = upsert_integration(
         db,
@@ -184,6 +216,25 @@ def test_mcp_integration(
     _require_admin(principal)
     if not known_slug(server_slug):
         raise HTTPException(status_code=404, detail="not found")
+    if server_slug == GOOGLE_SHEETS:
+        row = get_integration(db, principal.org_id, server_slug)
+        if row is None or not row.enabled or not row.secret_ciphertext:
+            raise HTTPException(status_code=409, detail="tenant Google Sheets integration is not configured")
+        from app.sales.sheets import SheetExportError, service_account_access_token
+        try:
+            service_account_access_token(decrypt_secret(row.secret_ciphertext))
+        except (AppError, SheetExportError) as exc:
+            row.status = STATUS_ERROR
+            row.last_error = "Google Sheets authorization failed"
+            db.commit()
+            raise HTTPException(status_code=502, detail="Google Sheets authorization failed") from exc
+        row.status = STATUS_CONNECTED
+        row.last_error = None
+        db.commit()
+        record_audit(db, principal, "mcp_test", "mcp_integration", server_slug,
+                     {"server": server_slug, "tool_count": 3})
+        return McpPingOut(server=server_slug, status=STATUS_CONNECTED,
+                          tools=["export_issued_quote", "read_sheet", "write_draft"])
     workspace_id = uuid.uuid4()
     ctx = ToolContext(db=db, principal=principal, workspace_id=workspace_id)
     try:

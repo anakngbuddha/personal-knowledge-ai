@@ -193,6 +193,138 @@ MIGRATIONS=[
  "CREATE INDEX IF NOT EXISTS ix_agent_actions_workspace_id ON agent_actions(workspace_id)",
  "CREATE INDEX IF NOT EXISTS ix_agent_actions_user_id ON agent_actions(user_id)"],True),
  ("0024_agent_actions_rls",[],True),
+ ("0025_sales_foundation",[
+  """CREATE TABLE IF NOT EXISTS sales_accounts (
+   id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   name varchar(255) NOT NULL, external_system varchar(64), external_id varchar(255),
+   created_at timestamptz NOT NULL DEFAULT now(),
+   CONSTRAINT uq_sales_account_external UNIQUE (org_id, external_system, external_id))""",
+  """CREATE TABLE IF NOT EXISTS opportunities (
+   id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+   account_id uuid REFERENCES sales_accounts(id) ON DELETE RESTRICT,
+   owner_id uuid, title varchar(255) NOT NULL, stage varchar(32) NOT NULL DEFAULT 'discovery',
+   currency varchar(3) NOT NULL DEFAULT 'USD', version integer NOT NULL DEFAULT 1,
+   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+   CONSTRAINT ck_opportunity_stage CHECK (stage in ('discovery', 'solution', 'pricing', 'proposal', 'won', 'lost')),
+   CONSTRAINT ck_opportunity_version CHECK (version > 0))""",
+  """CREATE TABLE IF NOT EXISTS opportunity_requirements (
+   id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   opportunity_id uuid NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+   source_document_id uuid REFERENCES documents(id) ON DELETE SET NULL,
+   original_text text NOT NULL, acceptance_criterion text,
+   priority varchar(16) NOT NULL DEFAULT 'must', coverage_state varchar(16) NOT NULL DEFAULT 'unreviewed',
+   coverage_note text, reviewer_id uuid, version integer NOT NULL DEFAULT 1,
+   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+   CONSTRAINT ck_requirement_priority CHECK (priority in ('must', 'should', 'could')),
+   CONSTRAINT ck_requirement_coverage CHECK (coverage_state in ('unreviewed', 'covered', 'partial', 'gap', 'excluded')),
+   CONSTRAINT ck_requirement_version CHECK (version > 0))""",
+  "CREATE INDEX IF NOT EXISTS ix_sales_accounts_org_id ON sales_accounts(org_id)",
+  "CREATE INDEX IF NOT EXISTS ix_opportunities_org_id ON opportunities(org_id)",
+  "CREATE INDEX IF NOT EXISTS ix_opportunities_workspace_id ON opportunities(workspace_id)",
+  "CREATE INDEX IF NOT EXISTS ix_opportunities_account_id ON opportunities(account_id)",
+  "CREATE INDEX IF NOT EXISTS ix_opportunities_owner_id ON opportunities(owner_id)",
+  "CREATE INDEX IF NOT EXISTS ix_opportunities_org_workspace_created ON opportunities(org_id, workspace_id, created_at)",
+  "CREATE INDEX IF NOT EXISTS ix_opportunity_requirements_org_id ON opportunity_requirements(org_id)",
+  "CREATE INDEX IF NOT EXISTS ix_opportunity_requirements_opportunity_id ON opportunity_requirements(opportunity_id)",
+  "CREATE INDEX IF NOT EXISTS ix_requirements_opportunity_priority ON opportunity_requirements(opportunity_id, priority, coverage_state)",
+ ],True),
+ ("0026_sales_foundation_rls",[],True),
+ ("0027_opportunity_participants",[
+  """CREATE TABLE IF NOT EXISTS opportunity_participants (
+   id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   opportunity_id uuid NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+   user_id uuid NOT NULL, access varchar(8) NOT NULL DEFAULT 'read',
+   created_at timestamptz NOT NULL DEFAULT now(),
+   CONSTRAINT uq_opportunity_participant UNIQUE (opportunity_id, user_id),
+   CONSTRAINT ck_opportunity_participant_access CHECK (access in ('read', 'edit')))""",
+  "CREATE INDEX IF NOT EXISTS ix_opportunity_participants_org_id ON opportunity_participants(org_id)",
+  "CREATE INDEX IF NOT EXISTS ix_opportunity_participants_opportunity_id ON opportunity_participants(opportunity_id)",
+  "CREATE INDEX IF NOT EXISTS ix_opportunity_participants_user_id ON opportunity_participants(user_id)",
+ ],True),
+ ("0028_opportunity_participants_rls",[],True),
+ ("0029_sales_commerce",[
+  """CREATE TABLE IF NOT EXISTS provider_sku_maps (
+   id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   product_id uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   provider varchar(16) NOT NULL, service varchar(128) NOT NULL, sku varchar(255) NOT NULL,
+   meter varchar(255), region varchar(128) NOT NULL, billing_mode varchar(64) NOT NULL,
+   status varchar(16) NOT NULL DEFAULT 'draft', reviewer_id uuid,
+   created_at timestamptz NOT NULL DEFAULT now(),
+   CONSTRAINT ck_sku_map_provider CHECK (provider in ('huawei', 'aws', 'azure', 'gcp')),
+   CONSTRAINT ck_sku_map_status CHECK (status in ('draft', 'approved', 'retired')))""",
+  """CREATE TABLE IF NOT EXISTS price_observations (
+   id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   sku_map_id uuid NOT NULL REFERENCES provider_sku_maps(id) ON DELETE RESTRICT,
+   payload jsonb NOT NULL, payload_sha256 varchar(64) NOT NULL,
+   commercial_cost_per_unit varchar(64) NOT NULL,
+   source_kind varchar(16) NOT NULL, created_at timestamptz NOT NULL DEFAULT now())""",
+  """CREATE TABLE IF NOT EXISTS commercial_policies (
+   id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   payload jsonb NOT NULL, version varchar(64) NOT NULL, created_by uuid,
+   created_at timestamptz NOT NULL DEFAULT now(),
+   CONSTRAINT uq_commercial_policy_version UNIQUE (org_id, version))""",
+  """CREATE TABLE IF NOT EXISTS sales_quotes (
+   id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   opportunity_id uuid NOT NULL REFERENCES opportunities(id) ON DELETE RESTRICT,
+   created_at timestamptz NOT NULL DEFAULT now())""",
+  """CREATE TABLE IF NOT EXISTS sales_quote_versions (
+   id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   quote_id uuid NOT NULL REFERENCES sales_quotes(id) ON DELETE RESTRICT,
+   number integer NOT NULL, status varchar(16) NOT NULL DEFAULT 'draft',
+   policy_id uuid NOT NULL REFERENCES commercial_policies(id) ON DELETE RESTRICT,
+   snapshot jsonb NOT NULL, snapshot_sha256 varchar(64) NOT NULL,
+   created_by uuid, approved_by uuid, approved_at timestamptz, issued_at timestamptz,
+   created_at timestamptz NOT NULL DEFAULT now(),
+   CONSTRAINT uq_sales_quote_version UNIQUE (quote_id, number),
+   CONSTRAINT ck_sales_quote_status CHECK (status in ('draft', 'review', 'approved', 'issued')),
+   CONSTRAINT ck_sales_quote_version_positive CHECK (number > 0))""",
+  "CREATE INDEX IF NOT EXISTS ix_provider_sku_maps_org_id ON provider_sku_maps(org_id)",
+  "CREATE INDEX IF NOT EXISTS ix_provider_sku_maps_product_id ON provider_sku_maps(product_id)",
+  "CREATE INDEX IF NOT EXISTS ix_sku_map_product_region ON provider_sku_maps(org_id, product_id, region)",
+  "CREATE INDEX IF NOT EXISTS ix_price_observations_org_id ON price_observations(org_id)",
+  "CREATE INDEX IF NOT EXISTS ix_price_observations_sku_map_id ON price_observations(sku_map_id)",
+  "CREATE INDEX IF NOT EXISTS ix_commercial_policies_org_id ON commercial_policies(org_id)",
+  "CREATE INDEX IF NOT EXISTS ix_sales_quotes_org_id ON sales_quotes(org_id)",
+  "CREATE INDEX IF NOT EXISTS ix_sales_quotes_opportunity_id ON sales_quotes(opportunity_id)",
+  "CREATE INDEX IF NOT EXISTS ix_sales_quote_versions_org_id ON sales_quote_versions(org_id)",
+  "CREATE INDEX IF NOT EXISTS ix_sales_quote_versions_quote_id ON sales_quote_versions(quote_id)",
+ ],True),
+ ("0030_sales_commerce_rls",[],True),
+ ("0031_price_cost_provenance",[
+  "ALTER TABLE price_observations ADD COLUMN IF NOT EXISTS commercial_cost_per_unit varchar(64) NOT NULL DEFAULT '0'",
+ ],True),
+ ("0032_sales_quote_exports",[
+  """CREATE TABLE IF NOT EXISTS sales_quote_exports (
+   id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   quote_version_id uuid NOT NULL REFERENCES sales_quote_versions(id) ON DELETE RESTRICT,
+   destination varchar(32) NOT NULL DEFAULT 'google_sheets',
+   status varchar(16) NOT NULL DEFAULT 'pending', external_id varchar(255), created_by uuid,
+   created_at timestamptz NOT NULL DEFAULT now(), completed_at timestamptz,
+   CONSTRAINT uq_sales_quote_export_destination UNIQUE (quote_version_id, destination),
+   CONSTRAINT ck_sales_quote_export_status CHECK (status in ('pending', 'completed', 'needs_reconciliation')))""",
+  "CREATE INDEX IF NOT EXISTS ix_sales_quote_exports_org_id ON sales_quote_exports(org_id)",
+ ],True),
+ ("0033_sales_quote_exports_rls",[],True),
+ ("0034_sales_quote_export_retry",[
+  "ALTER TABLE sales_quote_exports DROP CONSTRAINT IF EXISTS ck_sales_quote_export_status",
+  "ALTER TABLE sales_quote_exports ADD CONSTRAINT ck_sales_quote_export_status CHECK (status in ('pending', 'completed', 'needs_reconciliation', 'retry_authorized'))",
+ ],True),
+ ("0035_sales_claims",[
+  """CREATE TABLE IF NOT EXISTS sales_claims (
+   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+   opportunity_id uuid NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+   statement text NOT NULL, competitor varchar(255), source_document_id uuid NOT NULL REFERENCES documents(id) ON DELETE RESTRICT,
+   source_version integer NOT NULL, source_content_hash varchar(64) NOT NULL, source_anchor varchar(512) NOT NULL,
+   valid_until date NOT NULL, status varchar(16) NOT NULL DEFAULT 'draft', created_by uuid NOT NULL, reviewer_id uuid,
+   review_reason text, reviewed_at timestamptz, version integer NOT NULL DEFAULT 1, created_at timestamptz NOT NULL DEFAULT now(),
+   CONSTRAINT ck_sales_claim_status CHECK (status in ('draft', 'approved', 'revoked')),
+   CONSTRAINT ck_sales_claim_version CHECK (version > 0 AND source_version > 0))""",
+  "CREATE INDEX IF NOT EXISTS ix_sales_claims_org_id ON sales_claims(org_id)",
+  "CREATE INDEX IF NOT EXISTS ix_sales_claims_opportunity_id ON sales_claims(opportunity_id)",
+  "CREATE INDEX IF NOT EXISTS ix_sales_claims_opportunity_status ON sales_claims(opportunity_id,status)",
+ ],True),
+ ("0036_sales_claims_rls",[],True),
 ]
 
 def applied_migrations(engine: Engine)->set[str]:
@@ -210,7 +342,7 @@ def run_migrations(engine: Engine)->list[str]:
   if postgres_only and not is_pg:
    with engine.begin() as conn: _record(conn,name)
    logger.info("migration %s skipped on %s; create_all already covers it",name,engine.dialect.name); continue
-  if name in ("0022_row_level_security", "0024_agent_actions_rls"):
+  if name in ("0022_row_level_security", "0024_agent_actions_rls", "0026_sales_foundation_rls", "0028_opportunity_participants_rls", "0030_sales_commerce_rls", "0033_sales_quote_exports_rls", "0036_sales_claims_rls"):
    _apply_rls(engine)
    with engine.begin() as conn: _record(conn,name)
    ran.append(name)

@@ -19,6 +19,7 @@ sse-starlette>=2.0
 pyyaml>=6.0
 cryptography>=42.0
 mcp>=1.28
+google-auth[requests]>=2.40
 # Optional, only needed when OCR_PROVIDER=tesseract (also needs the tesseract binary):
 #   pytesseract>=0.3.10
 #   pillow>=10.3

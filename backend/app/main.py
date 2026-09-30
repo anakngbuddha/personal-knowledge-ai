@@ -20,6 +20,9 @@ from app.api.routes import (
     mcp_server,
     notebooks,
     notes,
+    opportunities,
+    sales_quotes,
+    sales_claims,
     ops,
     phase8,
     runtime,
@@ -104,6 +107,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(sales_claims.router)
 app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(search.router)
@@ -122,6 +126,8 @@ app.include_router(integrations.router)
 app.include_router(mcp_server.router)
 app.include_router(notebooks.router)
 app.include_router(notes.router)
+app.include_router(opportunities.router)
+app.include_router(sales_quotes.router)
 app.include_router(freshness.router)
 app.include_router(ops.router)
 app.include_router(runtime.router)

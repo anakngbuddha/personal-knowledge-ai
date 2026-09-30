@@ -14,8 +14,14 @@ from dataclasses import dataclass, field
 BRAVE = "brave"
 PLAYWRIGHT = "playwright"
 MS365 = "ms365"
+EXA = "exa"
+FIRECRAWL = "firecrawl"
+GOOGLE_SHEETS = "google_sheets"
 
-SERVER_SLUGS = (BRAVE, PLAYWRIGHT, MS365)
+SERVER_SLUGS = (BRAVE, PLAYWRIGHT, MS365, EXA, FIRECRAWL, GOOGLE_SHEETS)
+
+EXA_MCP_URL = "https://mcp.exa.ai/mcp"
+FIRECRAWL_MCP_URL = "https://mcp.firecrawl.dev/v2/mcp"
 
 STATUS_DISCONNECTED = "disconnected"
 STATUS_CONNECTED = "connected"
@@ -37,6 +43,7 @@ class ServerSpec:
     args: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
     http_url: str | None = None
+    http_headers: dict[str, str] = field(default_factory=dict)
     allowed_hosts: tuple[str, ...] = ()
 
 
@@ -60,6 +67,10 @@ def ms365_args() -> tuple[str, ...]:
 
 
 def default_args(slug: str) -> tuple[str, ...]:
+    if slug == GOOGLE_SHEETS:
+        return ()  # In-process restricted API bridge; never launch an external server.
+    if slug in (EXA, FIRECRAWL):
+        return ()  # Fixed hosted HTTPS endpoints; no downloaded child process.
     if slug == BRAVE:
         return brave_args()
     if slug == PLAYWRIGHT:

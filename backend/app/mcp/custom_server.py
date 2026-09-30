@@ -359,6 +359,14 @@ def execute_mcp_tool_call(
     args: dict[str, Any],
 ) -> dict[str, Any]:
     """Execute a read or write MCP tool call with principal authorization."""
+    if name.startswith("mcp_google_sheets_"):
+        ctx = _sheet_context(db, principal)
+        if ctx is None:
+            return {"error": "Sheets integration unavailable"}
+        from app.tools.registry import execute_tool
+        from app.tools.schema import ToolCall
+        result = execute_tool(ToolCall(id="external-sheet-call", name=name, arguments=args), ctx)
+        return {"error": result.error} if result.error else result.content
     if name in WRITE_TOOLS and not may_run_write_tools(principal):
         return {"error": "forbidden: your role or token scope does not allow write tools"}
 
@@ -744,6 +752,27 @@ def execute_mcp_tool_call(
     return {"error": f"Unknown MCP tool: {name}"}
 
 
+def _sheet_context(db: Session, principal: Principal):
+    from app.core.config import settings
+    if not settings.mcp_enabled:
+        return None
+    from app.db.models import Workspace
+    from sqlalchemy import select
+    from app.tools.registry import ToolContext
+    workspace = db.scalars(select(Workspace).where(Workspace.org_id == principal.org_id)
+                           .order_by(Workspace.created_at, Workspace.id).limit(1)).first()
+    return ToolContext(db, principal, workspace.id) if workspace else None
+
+
+def _sheet_manifest(db: Session, principal: Principal) -> list[dict]:
+    ctx = _sheet_context(db, principal)
+    if ctx is None:
+        return []
+    from app.mcp.registry_bridge import mcp_definitions_for
+    return [{"name": tool.name, "description": tool.description, "inputSchema": tool.parameters}
+            for tool in mcp_definitions_for(ctx) if tool.name.startswith("mcp_google_sheets_")]
+
+
 # ── JSON-RPC 2.0 Dispatcher ──────────────────────────────────────────────────
 
 def handle_mcp_jsonrpc_request(
@@ -799,7 +828,7 @@ def handle_mcp_jsonrpc_request(
                         "inputSchema": t["inputSchema"],
                     }
                     for t in MCP_TOOLS
-                ]
+                ] + _sheet_manifest(db, principal)
             },
         }
 
