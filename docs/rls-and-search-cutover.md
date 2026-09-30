@@ -3,6 +3,13 @@
 The web process must connect with a PostgreSQL role that has neither `SUPERUSER`
 nor `BYPASSRLS`. The Aiven `avnadmin` connection is for schema migrations only.
 
+If Render exits with `RLS_REQUIRED must be true in production` before opening a
+port, set `RLS_REQUIRED=true` in the service's Environment settings and redeploy.
+The blueprint now supplies this value for Blueprint-managed services; existing
+services configured manually must update their environment explicitly. Complete
+the database role and migration steps below before redeploying. The port scan
+message is a consequence of the settings failure, not a port configuration issue.
+
 1. Create an Aiven service user named `pka_app` in the Aiven console. Connect as
    `avnadmin` and confirm `rolsuper = false` and `rolbypassrls = false` in
    `pg_roles` for `pka_app`. Do not grant it the admin role or ownership of the

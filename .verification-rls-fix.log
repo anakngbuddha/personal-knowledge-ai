@@ -5,7 +5,7 @@
 ============================================================
  1. Python Syntax & Compilation Verification
 ============================================================
-Checking syntax for 292 Python files...
+Checking syntax for 293 Python files...
 [PASS] All Python files compiled successfully without syntax errors.
 
 ============================================================
@@ -20,7 +20,7 @@ cachedir: .pytest_cache
 rootdir: C:\Users\markmv\Desktop\personal-knowledge-ai\backend
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collecting ... collected 689 items
+collecting ... collected 690 items
 
 tests/test_advisor_recommend.py::test_tokens_drop_noise_words PASSED     [  0%]
 tests/test_advisor_recommend.py::test_each_requirement_gets_products_from_the_product_list PASSED [  0%]
@@ -152,7 +152,7 @@ tests/test_eval.py::test_adversarial_set_exists_and_is_valid PASSED      [ 18%]
 tests/test_eval.py::test_retrieval_baseline_exists PASSED                [ 18%]
 tests/test_eval.py::test_generation_baseline_exists PASSED               [ 18%]
 tests/test_extraction.py::test_detect_file_type PASSED                   [ 18%]
-tests/test_extraction.py::test_txt_headings_become_sections PASSED       [ 19%]
+tests/test_extraction.py::test_txt_headings_become_sections PASSED       [ 18%]
 tests/test_extraction_formats.py::test_pdf_pages_become_page_anchors PASSED [ 19%]
 tests/test_extraction_formats.py::test_pdf_chunks_carry_the_page_anchor PASSED [ 19%]
 tests/test_extraction_formats.py::test_docx_builds_a_heading_path_and_keeps_tables PASSED [ 19%]
@@ -214,14 +214,14 @@ tests/test_generation.py::test_factory_returns_fake_provider PASSED      [ 27%]
 tests/test_generation.py::test_build_retrieval_filters PASSED            [ 27%]
 tests/test_generation.py::test_grounded_answer_includes_conversation_and_message_ids PASSED [ 27%]
 tests/test_generation_adversarial.py::test_adversarial_prompt_injection_neutralization PASSED [ 27%]
-tests/test_generation_adversarial.py::test_system_prompt_refuses_unsupported_pricing_and_competitive_claims PASSED [ 28%]
+tests/test_generation_adversarial.py::test_system_prompt_refuses_unsupported_pricing_and_competitive_claims PASSED [ 27%]
 tests/test_generation_adversarial.py::test_fake_llm_refusal_on_empty_context PASSED [ 28%]
 tests/test_generation_adversarial.py::test_no_tool_access_in_generation_layer PASSED [ 28%]
 tests/test_generation_prompts.py::test_prompt_version_is_valid_semver PASSED [ 28%]
 tests/test_generation_prompts.py::test_system_prompt_contains_system_contract PASSED [ 28%]
 tests/test_generation_prompts.py::test_system_prompt_grounding_rules PASSED [ 28%]
 tests/test_generation_prompts.py::test_format_source_metadata_provenance PASSED [ 28%]
-tests/test_generation_prompts.py::test_build_context_block_empty_sources PASSED [ 29%]
+tests/test_generation_prompts.py::test_build_context_block_empty_sources PASSED [ 28%]
 tests/test_generation_prompts.py::test_build_context_block_with_sources PASSED [ 29%]
 tests/test_generation_prompts.py::test_build_user_message PASSED         [ 29%]
 tests/test_generation_prompts.py::test_format_history_turn PASSED        [ 29%]
@@ -276,21 +276,21 @@ tests/test_graph_integrity.py::test_capability_aliases_all_land_in_a_real_bucket
 tests/test_graph_query.py::TestImpactQuery::test_direct_prerequisites PASSED [ 36%]
 tests/test_graph_query.py::TestImpactQuery::test_transitive_prerequisites PASSED [ 36%]
 tests/test_graph_query.py::TestImpactQuery::test_direct_conflicts PASSED [ 36%]
-tests/test_graph_query.py::TestImpactQuery::test_transitive_requirement_conflict PASSED [ 37%]
+tests/test_graph_query.py::TestImpactQuery::test_transitive_requirement_conflict PASSED [ 36%]
 tests/test_graph_query.py::TestImpactQuery::test_direct_integrations PASSED [ 37%]
 tests/test_graph_query.py::TestImpactQuery::test_alternatives PASSED     [ 37%]
 tests/test_graph_query.py::TestImpactQuery::test_pending_edges_excluded PASSED [ 37%]
 tests/test_graph_query.py::TestImpactQuery::test_unknown_product_raises_valueerror PASSED [ 37%]
 tests/test_graph_query.py::TestImpactQuery::test_no_edges_returns_empty_results PASSED [ 37%]
 tests/test_graph_query.py::TestNeighborhood::test_neighborhood_includes_outgoing_requires PASSED [ 37%]
-tests/test_graph_query.py::TestNeighborhood::test_neighborhood_includes_incoming_requires PASSED [ 38%]
+tests/test_graph_query.py::TestNeighborhood::test_neighborhood_includes_incoming_requires PASSED [ 37%]
 tests/test_graph_query.py::TestNeighborhood::test_neighborhood_includes_conflicts PASSED [ 38%]
 tests/test_graph_query.py::TestNeighborhood::test_neighborhood_includes_integrations PASSED [ 38%]
 tests/test_graph_query.py::TestNeighborhood::test_unknown_product_raises_valueerror PASSED [ 38%]
 tests/test_graph_query.py::TestPortfolioGraph::test_builds_nodes_and_links PASSED [ 38%]
 tests/test_graph_query.py::TestPortfolioGraph::test_empty_catalog_builds_empty_graph PASSED [ 38%]
 tests/test_graph_query.py::TestPortfolioGraph::test_node_attributes_populated PASSED [ 38%]
-tests/test_health.py::test_health_reports_llm_key_without_secret PASSED  [ 39%]
+tests/test_health.py::test_health_reports_llm_key_without_secret PASSED  [ 38%]
 tests/test_health.py::test_llm_check_shape_for_fake_provider PASSED      [ 39%]
 tests/test_huawei_pricing.py::test_huawei_public_and_contract_amounts_are_distinct[asyncio] PASSED [ 39%]
 tests/test_huawei_pricing.py::test_huawei_rejects_other_spec_without_calling_provider[asyncio] PASSED [ 39%]
@@ -338,28 +338,28 @@ tests/test_mcp.py::test_cross_tenant_get_is_404 PASSED                   [ 45%]
 tests/test_mcp_isolation.py::test_child_env_drops_application_secrets PASSED [ 45%]
 tests/test_mcp_isolation.py::test_sandbox_wrapper_is_prepended PASSED    [ 45%]
 tests/test_mcp_isolation.py::test_packages_are_pinned PASSED             [ 45%]
-tests/test_mcp_transport_auth.py::test_message_without_token_is_rejected PASSED [ 46%]
+tests/test_mcp_transport_auth.py::test_message_without_token_is_rejected PASSED [ 45%]
 tests/test_mcp_transport_auth.py::test_message_without_token_on_authenticated_session_is_rejected PASSED [ 46%]
 tests/test_mcp_transport_auth.py::test_message_to_unknown_session_gets_no_direct_reply PASSED [ 46%]
 tests/test_mcp_transport_auth.py::test_message_from_another_user_cannot_use_the_session PASSED [ 46%]
 tests/test_mcp_transport_auth.py::test_session_owner_message_is_delivered_over_sse PASSED [ 46%]
 tests/test_mcp_transport_auth.py::test_rpc_requires_a_token PASSED       [ 46%]
 tests/test_mcp_transport_auth.py::test_revoked_member_is_rejected_before_expiry PASSED [ 46%]
-tests/test_mcp_transport_auth.py::test_downgraded_member_role_claim_is_ignored PASSED [ 47%]
+tests/test_mcp_transport_auth.py::test_downgraded_member_role_claim_is_ignored PASSED [ 46%]
 tests/test_mcp_transport_auth.py::test_viewer_cannot_read_a_document_search_would_hide PASSED [ 47%]
 tests/test_mcp_transport_auth.py::test_list_documents_applies_sensitivity_and_tenant PASSED [ 47%]
 tests/test_mcp_transport_auth.py::test_wrong_organization_token_sees_nothing_from_org_a PASSED [ 47%]
 tests/test_mcp_transport_auth.py::test_minted_mcp_tokens_are_short_lived_and_scoped PASSED [ 47%]
 tests/test_metadata.py::test_defaults_are_safe_never_permissive PASSED   [ 47%]
 tests/test_metadata.py::test_unfilled_curation_fields_are_reported_not_invented PASSED [ 47%]
-tests/test_metadata.py::test_a_resold_document_needs_its_upstream_source_of_truth PASSED [ 48%]
+tests/test_metadata.py::test_a_resold_document_needs_its_upstream_source_of_truth PASSED [ 47%]
 tests/test_metadata.py::test_incomplete_metadata_cannot_be_approved_when_auto_approve_is_off PASSED [ 48%]
 tests/test_metadata.py::test_auto_approve_allows_incomplete_metadata PASSED [ 48%]
 tests/test_metadata.py::test_complete_metadata_can_be_approved PASSED    [ 48%]
 tests/test_metadata.py::test_products_accept_a_comma_separated_string_from_a_form_post PASSED [ 48%]
 tests/test_metadata.py::test_blank_strings_become_none_so_they_count_as_missing PASSED [ 48%]
 tests/test_metadata.py::test_a_typo_in_a_label_is_rejected_not_coerced[sensitivity-publik] PASSED [ 48%]
-tests/test_metadata.py::test_a_typo_in_a_label_is_rejected_not_coerced[approval_state-aproved] PASSED [ 49%]
+tests/test_metadata.py::test_a_typo_in_a_label_is_rejected_not_coerced[approval_state-aproved] PASSED [ 48%]
 tests/test_metadata.py::test_a_typo_in_a_label_is_rejected_not_coerced[ownership-rented] PASSED [ 49%]
 tests/test_metadata.py::test_a_typo_in_a_label_is_rejected_not_coerced[source_type-fax] PASSED [ 49%]
 tests/test_metadata.py::test_unknown_metadata_keys_are_rejected PASSED   [ 49%]
@@ -400,35 +400,35 @@ tests/test_openrouter_fallback.py::test_embedding_refuses_when_index_is_768 PASS
 tests/test_openrouter_fallback.py::test_embedding_posts_when_dimensions_match PASSED [ 54%]
 tests/test_openrouter_fallback.py::test_factories_select_openrouter PASSED [ 54%]
 tests/test_openrouter_fallback.py::test_gemini_factory_wraps_fallback PASSED [ 54%]
-tests/test_openrouter_fallback.py::test_gemini_rate_limit_fails_over_without_retries PASSED [ 55%]
+tests/test_openrouter_fallback.py::test_gemini_rate_limit_fails_over_without_retries PASSED [ 54%]
 tests/test_openrouter_fallback.py::test_transport_error_is_fallback_eligible PASSED [ 55%]
 tests/test_openrouter_fallback.py::test_retry_succeeds_on_second_attempt PASSED [ 55%]
 tests/test_openrouter_fallback.py::test_retry_exhausted_raises PASSED    [ 55%]
 tests/test_openrouter_fallback.py::test_stream_retry_succeeds_on_second_attempt PASSED [ 55%]
 tests/test_opportunities.py::test_opportunity_requirement_review_and_conflict PASSED [ 55%]
 tests/test_opportunities.py::test_opportunity_is_hidden_from_other_tenant_and_owner PASSED [ 55%]
-tests/test_opportunities.py::test_review_requires_note_and_rejects_extra_fields PASSED [ 56%]
+tests/test_opportunities.py::test_review_requires_note_and_rejects_extra_fields PASSED [ 55%]
 tests/test_opportunities.py::test_participant_access_and_cross_tenant_grant PASSED [ 56%]
 tests/test_opportunities.py::test_import_mandatory_requirements_as_unreviewed PASSED [ 56%]
 tests/test_permissions.py::test_every_principal_gets_permission_predicates PASSED [ 56%]
 tests/test_permissions.py::test_removing_the_permission_predicates_fails_loudly PASSED [ 56%]
 tests/test_permissions.py::test_tenant_isolation_predicate_pins_the_callers_org PASSED [ 56%]
 tests/test_permissions.py::test_sensitivity_ceiling_is_enforced PASSED   [ 56%]
-tests/test_permissions.py::test_customer_data_grant_does_not_imply_vendor_restricted PASSED [ 57%]
+tests/test_permissions.py::test_customer_data_grant_does_not_imply_vendor_restricted PASSED [ 56%]
 tests/test_permissions.py::test_vendor_restricted_requires_its_own_flag PASSED [ 57%]
 tests/test_permissions.py::test_owner_sees_everything_by_decision PASSED [ 57%]
 tests/test_permissions.py::test_account_scope_requires_a_grant_but_keeps_unscoped_material_visible PASSED [ 57%]
 tests/test_permissions.py::test_no_grants_means_no_account_scoped_material_at_all PASSED [ 57%]
 tests/test_permissions.py::test_owner_has_no_account_predicate_because_scope_is_unlimited PASSED [ 57%]
 tests/test_permissions.py::test_viewer_only_sees_approved_collateral PASSED [ 57%]
-tests/test_permissions.py::test_a_caller_filter_cannot_widen_their_sensitivity_grant PASSED [ 58%]
+tests/test_permissions.py::test_a_caller_filter_cannot_widen_their_sensitivity_grant PASSED [ 57%]
 tests/test_permissions.py::test_a_caller_filter_cannot_widen_their_account_grant PASSED [ 58%]
 tests/test_permissions.py::test_corpus_predicates_are_always_present PASSED [ 58%]
 tests/test_permissions.py::test_predicate_set_describes_where_each_predicate_came_from PASSED [ 58%]
 tests/test_phase10.py::test_wikilink_parser_extracts_kinds_and_aliases PASSED [ 58%]
 tests/test_phase10.py::test_note_wikilinks_resolve_products_and_accounts PASSED [ 58%]
 tests/test_phase10.py::test_notes_are_tenant_isolated PASSED             [ 58%]
-tests/test_phase10.py::test_freshness_change_raises_staleness_alert PASSED [ 59%]
+tests/test_phase10.py::test_freshness_change_raises_staleness_alert PASSED [ 58%]
 tests/test_phase10.py::test_freshness_sources_are_tenant_isolated PASSED [ 59%]
 tests/test_phase10.py::test_oidc_callback_mints_local_jwt PASSED         [ 59%]
 tests/test_phase10.py::test_oidc_rejects_wrong_issuer PASSED             [ 59%]
@@ -462,38 +462,39 @@ tests/test_product_catalog.py::TestProductCRUD::test_slug_collision_gets_dedupli
 tests/test_product_catalog.py::TestProductCRUD::test_search_products PASSED [ 63%]
 tests/test_product_catalog.py::TestResoldValidation::test_resold_product_requires_valid_vendor PASSED [ 63%]
 tests/test_product_catalog.py::TestResoldValidation::test_resold_product_with_valid_vendor_succeeds PASSED [ 63%]
-tests/test_product_catalog.py::TestCapabilities::test_create_capability PASSED [ 64%]
+tests/test_product_catalog.py::TestCapabilities::test_create_capability PASSED [ 63%]
 tests/test_product_catalog.py::TestCapabilities::test_duplicate_capability_slug_returns_existing PASSED [ 64%]
 tests/test_product_catalog.py::TestCapabilities::test_assign_capability_to_product PASSED [ 64%]
 tests/test_product_catalog.py::TestCapabilities::test_remove_capability_from_product PASSED [ 64%]
 tests/test_product_catalog.py::TestReferenceArchitectures::test_create_reference_architecture PASSED [ 64%]
 tests/test_product_catalog.py::TestReferenceArchitectures::test_delete_reference_architecture PASSED [ 64%]
 tests/test_product_import.py::test_a_distributor_csv_maps_itself PASSED  [ 64%]
-tests/test_product_import.py::test_values_are_normalised_to_what_the_database_accepts PASSED [ 65%]
+tests/test_product_import.py::test_values_are_normalised_to_what_the_database_accepts PASSED [ 64%]
 tests/test_product_import.py::test_unusable_rows_are_reported_in_plain_words_not_dropped_silently PASSED [ 65%]
 tests/test_product_import.py::test_the_same_product_twice_in_one_file_is_imported_once PASSED [ 65%]
 tests/test_product_import.py::test_a_semicolon_file_is_still_a_csv PASSED [ 65%]
 tests/test_product_import.py::test_a_spreadsheet_with_a_blank_first_row_still_reads PASSED [ 65%]
 tests/test_product_import.py::test_no_name_column_is_a_question_not_a_crash PASSED [ 65%]
 tests/test_product_import.py::test_one_column_per_field_so_a_second_guess_is_left_to_a_person PASSED [ 65%]
-tests/test_product_import.py::test_a_very_long_list_is_truncated_and_says_so PASSED [ 66%]
+tests/test_product_import.py::test_a_very_long_list_is_truncated_and_says_so PASSED [ 65%]
 tests/test_product_import.py::test_a_pdf_is_not_a_product_list PASSED    [ 66%]
 tests/test_product_import.py::test_the_field_catalogue_names_one_required_column PASSED [ 66%]
 tests/test_query_rewrite.py::test_followup_is_rewritten_with_prior_question PASSED [ 66%]
 tests/test_query_rewrite.py::test_standalone_question_is_unchanged PASSED [ 66%]
 tests/test_query_rewrite.py::test_compare_questions_stay_one_query PASSED [ 66%]
 tests/test_query_rewrite.py::test_rewrite_does_not_call_the_model PASSED [ 66%]
-tests/test_query_rewrite.py::test_fake_llm_expert_mode_answers_without_sources PASSED [ 67%]
+tests/test_query_rewrite.py::test_fake_llm_expert_mode_answers_without_sources PASSED [ 66%]
 tests/test_query_rewrite.py::test_fake_llm_strict_mode_still_refuses_without_sources PASSED [ 67%]
 tests/test_queue_leases.py::test_lease_keeper_renews_until_stopped PASSED [ 67%]
 tests/test_queue_leases.py::test_lease_keeper_stops_when_the_lease_is_lost PASSED [ 67%]
 tests/test_queue_leases.py::test_long_job_is_not_reclaimed_while_renewing_and_late_finish_does_not_clobber SKIPPED [ 67%]
 tests/test_rate_limit.py::test_rate_limit_sliding_window PASSED          [ 67%]
 tests/test_rate_limit.py::test_rate_limit_none_user_and_disabled PASSED  [ 67%]
-tests/test_rate_limit.py::test_token_budget_unlimited_by_default PASSED  [ 68%]
+tests/test_rate_limit.py::test_token_budget_unlimited_by_default PASSED  [ 67%]
 tests/test_rate_limit.py::test_token_budget_prompt_limit_exhausted PASSED [ 68%]
 tests/test_rate_limit.py::test_token_budget_completion_limit_exhausted PASSED [ 68%]
 tests/test_rate_limit.py::test_record_token_usage PASSED                 [ 68%]
+tests/test_render_config.py::test_render_blueprint_passes_production_security_validation PASSED [ 68%]
 tests/test_retrieval_filters.py::test_no_filters_produces_no_predicates PASSED [ 68%]
 tests/test_retrieval_filters.py::test_every_required_filter_dimension_is_supported PASSED [ 68%]
 tests/test_retrieval_filters.py::test_approved_only_overrides_a_looser_approval_filter PASSED [ 68%]
@@ -503,21 +504,21 @@ tests/test_retrieval_filters.py::test_corpus_predicates_exclude_superseded_and_u
 tests/test_retrieval_filters.py::test_corpus_predicates_exclude_sample_material PASSED [ 69%]
 tests/test_retrieval_filters.py::test_predicate_set_partitions_by_origin PASSED [ 69%]
 tests/test_retrieval_filters.py::test_describe_is_json_safe PASSED       [ 69%]
-tests/test_retrieval_filters.py::test_exclude_injection_flagged_is_available_but_off_by_default PASSED [ 69%]
+tests/test_retrieval_filters.py::test_exclude_injection_flagged_is_available_but_off_by_default PASSED [ 70%]
 tests/test_retrieval_filters.py::test_unknown_filter_arguments_are_a_type_error_not_silently_ignored PASSED [ 70%]
 tests/test_retrieval_filters.py::test_rfp_intake_is_excluded_unless_the_query_names_documents PASSED [ 70%]
 tests/test_retrieval_filters.py::test_exclude_document_ids_produces_not_in_predicate PASSED [ 70%]
 tests/test_rfp_playbook.py::test_parse_csv_and_xlsx PASSED               [ 70%]
 tests/test_rfp_playbook.py::test_draft_without_evidence_is_non_compliant PASSED [ 70%]
 tests/test_rfp_playbook.py::test_conflicting_products_not_both_compliant PASSED [ 70%]
-tests/test_rfp_playbook.py::test_export_docx_omits_unapproved_rows PASSED [ 70%]
+tests/test_rfp_playbook.py::test_export_docx_omits_unapproved_rows PASSED [ 71%]
 tests/test_rfp_playbook.py::test_cross_tenant_deliverable_is_404 PASSED  [ 71%]
 tests/test_rfp_playbook.py::test_spreadsheet_bytes_stay_on_the_existing_parser PASSED [ 71%]
 tests/test_rfp_playbook.py::test_csv_is_classified_before_a_text_sniff_is_rejected PASSED [ 71%]
 tests/test_rfp_playbook.py::test_text_pdf_segments_must_sentences PASSED [ 71%]
 tests/test_rfp_playbook.py::test_scanned_pdf_uses_existing_ocr PASSED    [ 71%]
 tests/test_rfp_playbook.py::test_docx_rfp_segments_shall_sentences PASSED [ 71%]
-tests/test_rfp_playbook.py::test_segment_uses_model_json_and_fences_the_source PASSED [ 71%]
+tests/test_rfp_playbook.py::test_segment_uses_model_json_and_fences_the_source PASSED [ 72%]
 tests/test_rfp_playbook.py::test_invalid_json_falls_back_to_must_sentences PASSED [ 72%]
 tests/test_rfp_playbook.py::test_segment_falls_back_when_the_model_raises PASSED [ 72%]
 tests/test_rfp_playbook.py::test_segment_falls_back_when_the_token_budget_is_exhausted PASSED [ 72%]
@@ -572,14 +573,14 @@ tests/test_sales_signals.py::test_signals_cover_requirement_gaps_and_pending_app
 tests/test_sales_signals.py::test_same_tenant_nonparticipant_cannot_read_signals PASSED [ 79%]
 tests/test_salesperson_eval.py::test_salesperson_set_has_reference_and_ten_plus_cases PASSED [ 79%]
 tests/test_salesperson_eval.py::test_salesperson_suite_passes_with_fake_provider PASSED [ 79%]
-tests/test_salesperson_eval.py::test_prose_scorer_flags_jargon PASSED    [ 79%]
+tests/test_salesperson_eval.py::test_prose_scorer_flags_jargon PASSED    [ 80%]
 tests/test_salesperson_eval.py::test_empty_expert_vs_strict_behavior PASSED [ 80%]
 tests/test_scanning.py::test_clean_files_pass PASSED                     [ 80%]
 tests/test_scanning.py::test_office_macros_are_refused PASSED            [ 80%]
 tests/test_scanning.py::test_pdf_javascript_and_launch_actions_are_refused PASSED [ 80%]
 tests/test_scanning.py::test_embedded_executable_is_refused PASSED       [ 80%]
 tests/test_scanning.py::test_external_relationship_target_is_refused PASSED [ 80%]
-tests/test_scanning.py::test_scan_or_raise_converts_a_finding_into_an_error PASSED [ 80%]
+tests/test_scanning.py::test_scan_or_raise_converts_a_finding_into_an_error PASSED [ 81%]
 tests/test_scanning.py::test_disabled_scanner_is_recorded_not_hidden PASSED [ 81%]
 tests/test_search_sql.py::test_permission_predicates_reach_the_sql PASSED [ 81%]
 tests/test_search_sql.py::test_confidential_material_is_absent_from_an_internal_principals_sql PASSED [ 81%]
@@ -641,7 +642,7 @@ tests/test_ssrf.py::test_url_is_normalised_and_fragment_dropped PASSED   [ 89%]
 tests/test_ssrf.py::test_robots_longest_match_lets_allow_win_ties PASSED [ 89%]
 tests/test_ssrf.py::test_robots_specific_agent_overrides_wildcard PASSED [ 89%]
 tests/test_ssrf.py::test_robots_empty_file_allows_everything PASSED      [ 89%]
-tests/test_ssrf.py::test_fetch_robots_404_allows_the_origin PASSED       [ 89%]
+tests/test_ssrf.py::test_fetch_robots_404_allows_the_origin PASSED       [ 90%]
 tests/test_ssrf.py::test_fetch_robots_failure_is_not_permission PASSED   [ 90%]
 tests/test_ssrf_pinning.py::test_connection_goes_to_the_validated_address PASSED [ 90%]
 tests/test_ssrf_pinning.py::test_redirect_to_an_internal_host_is_blocked PASSED [ 90%]
@@ -718,7 +719,7 @@ tests/test_workflow_ui.py::test_safe_download_filename_strips_injection PASSED [
     _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-- generated xml file: C:\Users\markmv\AppData\Local\Temp\pka-verification-5ylwke5k\pytest.xml -
+- generated xml file: C:\Users\markmv\AppData\Local\Temp\pka-verification-udvrde5a\pytest.xml -
 =========================== short test summary info ===========================
 SKIPPED [1] tests\test_bootstrap.py:38: no reachable DATABASE_URL; set one to run the integration tests
 SKIPPED [1] tests\test_integration.py:57: no reachable DATABASE_URL; set one to run the integration tests
@@ -755,7 +756,7 @@ SKIPPED [1] tests\test_rls_postgres.py:112: no reachable DATABASE_URL; set one t
 SKIPPED [1] tests\test_rls_postgres.py:130: no reachable DATABASE_URL; set one to run the integration tests
 SKIPPED [1] tests\test_rls_postgres.py:137: no reachable DATABASE_URL; set one to run the integration tests
 SKIPPED [1] tests\test_rls_postgres.py:157: no reachable DATABASE_URL; set one to run the integration tests
-================= 654 passed, 35 skipped, 1 warning in 34.44s =================
+================= 655 passed, 35 skipped, 1 warning in 24.09s =================
 
 ============================================================
  3. Frontend Typecheck & Build Verification
@@ -767,25 +768,26 @@ Running npm run build (tsc typechecking + vite bundle)...
 
  RUN  v2.1.9 C:/Users/markmv/Desktop/personal-knowledge-ai/frontend
 
- ✓ src/components/WorkspaceDesign.test.tsx (3 tests) 540ms
- ✓ src/components/QuotePanel.test.tsx (3 tests) 154ms
- ✓ src/components/ClaimsPanel.test.tsx (3 tests) 228ms
- ✓ src/components/OpportunitiesWorkspace.test.tsx (2 tests) 149ms
- ✓ src/services/http.test.ts (6 tests) 80ms
- ✓ src/components/SourcesWorkspace.test.tsx (3 tests) 33ms
- ✓ src/components/sourceSorting.test.ts (2 tests) 65ms
- ✓ src/services/askRecovery.test.ts (3 tests) 9ms
+ ✓ src/components/WorkspaceDesign.test.tsx (3 tests) 1218ms
+   ✓ Knowledge Map redesign > keeps map controls in a closed drawer and switches between map, catalog, and import views 870ms
+ ✓ src/components/QuotePanel.test.tsx (3 tests) 110ms
+ ✓ src/components/ClaimsPanel.test.tsx (3 tests) 139ms
+ ✓ src/components/OpportunitiesWorkspace.test.tsx (2 tests) 76ms
+ ✓ src/services/http.test.ts (6 tests) 129ms
+ ✓ src/components/SourcesWorkspace.test.tsx (3 tests) 25ms
+ ✓ src/components/sourceSorting.test.ts (2 tests) 14ms
+ ✓ src/services/askRecovery.test.ts (3 tests) 6ms
 
  Test Files  8 passed (8)
       Tests  25 passed (25)
-   Start at  12:49:14
-   Duration  11.67s (transform 1.08s, setup 0ms, collect 2.91s, tests 1.26s, environment 2.49s, prepare 2.14s)
+   Start at  12:56:33
+   Duration  8.75s (transform 1.16s, setup 0ms, collect 2.72s, tests 1.72s, environment 1.97s, prepare 759ms)
 [PASS] Frontend build and TypeScript check passed successfully.
 
 ============================================================
  4. Graphify Knowledge Graph Integrity
 ============================================================
-[PASS] Graphify knowledge graph valid: 4878 nodes, 15170 edges, 176 communities.
+[PASS] Graphify knowledge graph valid: 4881 nodes, 15179 edges, 184 communities.
 
 ============================================================
  VERIFICATION SUMMARY

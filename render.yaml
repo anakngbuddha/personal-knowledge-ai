@@ -29,10 +29,10 @@ services:
         value: "false"
       - key: RLS_DEFAULT_DENY
         value: "true"
-      # Set RLS_REQUIRED=true only after DATABASE_URL uses a NOBYPASSRLS role.
+      # Production requires RLS; DATABASE_URL must use a NOBYPASSRLS role.
       # Migrations run separately with the administrator connection.
       - key: RLS_REQUIRED
-        sync: false
+        value: "true"
       - key: TAVILY_API_KEY
         sync: false
       - key: DEFAULT_ORG_SLUG

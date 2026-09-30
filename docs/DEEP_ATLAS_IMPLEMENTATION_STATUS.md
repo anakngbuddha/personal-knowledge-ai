@@ -15,12 +15,15 @@ Public list prices only; no tax, discount, markup, or required contract-cost inp
 - Opportunity follow-up signals report missing mandatory requirements, pending approvals, and expiring/expired saved price inputs. Signals enforce opportunity participation and tenant scope, verify quote snapshot integrity, and include price source references. The quote UI displays these signals and refreshes them after draft creation or state transitions.
 - Verification now runs frontend regression tests, fails for missing build tooling/dependencies, and rejects unexpected backend skips. Only the documented absence of a reachable PostgreSQL test database is accepted.
 - Google credential exchanges and Sheets API calls have bounded network timeouts.
+- Durable sales claim records bind each statement to an opportunity, source document version, content checksum, anchor, validity, author, and reviewer. A separate solutions engineer must approve it, and the source must already be approved. Decisions use optimistic versions and audited state transitions. Revocation stays possible after source withdrawal without returning inaccessible claim text.
+- The opportunity UI now supports source selection, draft claims, review rationales, approval/revocation, and a customer-safe battle-card preview. Source and claim lists apply the document permission predicates and opportunity participation checks. Battle cards revalidate source identity, approval, freshness, checksum, public sensitivity, and account scope every time; unusable claims are omitted.
+- PostgreSQL migrations `0035_sales_claims` and `0036_sales_claims_rls` add the claim table and tenant RLS. Source foreign keys preserve evidence; document deletion commits the database operation before removing stored bytes and returns a conflict when retained records prohibit deletion.
 
 ## Validation evidence
 
 Baseline full verifier: **622 backend tests passed, 35 PostgreSQL tests skipped**, successful frontend production build.
 
-Final verifier after the continuation: **647 backend tests passed, 35 necessary PostgreSQL skips; 22 frontend tests passed**. Python compilation, TypeScript/build, and Graphify integrity passed. Full output is recorded in [verification-final.log](../verification-final.log).
+Final verifier after the reviewed-claims continuation: **654 backend tests passed, 35 necessary PostgreSQL skips; 25 frontend tests passed**. Python compilation, TypeScript/build, and Graphify integrity passed. Full output is recorded in [verification-final.log](../verification-final.log).
 
 Corrective retries used: **0 of 7**. No failed test runs were suppressed or converted into passing tests. A Starlette/AnyIO deprecation warning remains informational.
 
@@ -34,7 +37,7 @@ The 35 skips all originate from the existing PostgreSQL fixture's `no reachable 
 | Solution bill of materials | Formal immutable solution entities, dependency completeness, reviewed evidence links, and production pilot coverage still need a dedicated pass. Quote snapshots already preserve their chosen mappings and quantities. |
 | CSP production enablement | Real tenant credentials, reviewed Southeast Asia product/region families, live credentialed smoke checks, complete provider capability/discovery coverage, pricing refresh jobs/cache/backoff/circuit breakers, and source-response checksums remain. The capture wiring and offline contract fixtures do not establish live availability. |
 | Four-provider comparison | Reviewed equivalence groups and a normalized comparison UI remain. Explicit unsupported results continue to apply to unsupported terms/tier families. |
-| Research | Exa and Firecrawl remain available in code and plan. A durable discovery/extraction/source review/claim approval workflow and reviewed reusable battle cards remain. Tool results alone are not approved claims. |
+| Research | Exa and Firecrawl remain available in code and plan. Claim approval and reviewed battle cards are implemented. Durable Exa discovery, human source selection, Firecrawl extraction, draft document ingestion, and their worker authorization/idempotency/quota checks remain. Tool results alone are not approved claims. |
 | Enterprise operations | Tenant sales/research/export quotas, fair scheduling measurements, defined SLOs, load tests, restore/audit reconstruction drills, and operational dashboards require implementation or deployment evidence. |
 | Sales intelligence | Follow-up signals are implemented. Management analytics, structured renewal records, evidence-backed expansion recommendations, and complete RFP response automation remain. Internal contract records will be needed before renewal intelligence can be truthful. |
 | External ERP/CRM | Removed from scope by the user; no connector or external order creation is required. |
