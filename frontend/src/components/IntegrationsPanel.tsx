@@ -80,7 +80,6 @@ export function IntegrationsPanel() {
   const [hostDraft, setHostDraft] = useState<Record<string, string>>({});
   const [sheetTargets, setSheetTargets] = useState<SheetTarget[]>([]);
   const [message, setMessage] = useState<string | null>(null);
-  const [expandedSlug, setExpandedSlug] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { status: string; toolCount: number } | null>>({});
   const [subTab, setSubTab] = useState<"connectors" | "custom_server">("connectors");
   const [searchQuery, setSearchQuery] = useState("");
@@ -251,7 +250,6 @@ export function IntegrationsPanel() {
       <div className="connectors-grid">
         {filteredIntegrations.map((row) => {
           const meta = getConnectorMeta(row.server_slug);
-          const isExpanded = expandedSlug === row.server_slug;
           const isSaving = saving === row.server_slug;
           const test = testResults[row.server_slug];
           const IconComponent = meta.IconComponent;
@@ -259,10 +257,9 @@ export function IntegrationsPanel() {
           return (
             <article
               key={row.server_slug}
-              className={`connector-card ${row.enabled ? "enabled" : "disabled"} ${isExpanded ? "expanded" : ""}`}
+              className={`connector-card ${row.enabled ? "enabled" : "disabled"}`}
             >
-              {/* Card Header */}
-              <button type="button" className="connector-card-header" aria-expanded={isExpanded} aria-label={`${meta.label} settings`} onClick={() => setExpandedSlug(isExpanded ? null : row.server_slug)}>
+              <div className="connector-card-header">
                 <div className="connector-card-icon-squircle">
                   <IconComponent size={20} />
                 </div>
@@ -277,13 +274,8 @@ export function IntegrationsPanel() {
                     <span className={`connector-status-dot ${row.enabled ? (row.status === "healthy" || row.status === "ok" ? "healthy" : "warn") : "off"}`} />
                     {row.enabled ? row.status : "off"}
                   </span>
-                  <span className={`connector-expand-chevron ${isExpanded ? "open" : ""}`}>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
                 </div>
-              </button>
+              </div>
 
               {/* Card Description */}
               <p className="connector-card-blurb">{meta.blurb}</p>
@@ -297,7 +289,7 @@ export function IntegrationsPanel() {
               )}
 
               {/* Allowed Tools Summary */}
-              {isExpanded && row.allowed_tools && row.allowed_tools.length > 0 && (
+              {row.allowed_tools && row.allowed_tools.length > 0 && (
                 <div className="connector-tools-row">
                   <span className="connector-tools-label">Tools:</span>
                   <div className="connector-tools-chips">
@@ -316,8 +308,8 @@ export function IntegrationsPanel() {
                 </div>
               )}
 
-              {/* Expandable Configuration Form */}
-              <div className={`connector-config-panel ${isExpanded ? "open" : ""}`}>
+              {/* Configuration stays visible so settings can be scanned and edited directly. */}
+              <div className="connector-config-panel open">
                 <div className="connector-config-inner">
                   <div className="connector-config-divider" />
                   {row.server_slug === "google_sheets" && <div className="connector-field-group">

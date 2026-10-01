@@ -1,7 +1,7 @@
 """Conversation and message management tests for Phase 3."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
@@ -148,6 +148,24 @@ def test_history_truncation(sqlite_session: Session):
     assert len(history) == 4
     assert history[0]["content"] == "Q4"
     assert history[-1]["content"] == "A5"
+
+
+def test_history_order_when_messages_share_clock_tick(sqlite_session: Session, monkeypatch):
+    conv = create_conversation(sqlite_session, workspace_id=sqlite_session.ws1_id)
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("app.generation.conversations.datetime", FrozenDatetime)
+    messages = [
+        add_message(sqlite_session, conversation_id=conv.id, role=role, content=content)
+        for role, content in [("user", "Q0"), ("assistant", "A0"), ("user", "Q1"), ("assistant", "A1")]
+    ]
+
+    assert all(left.created_at < right.created_at for left, right in zip(messages, messages[1:]))
+    assert [message["content"] for message in get_history(sqlite_session, conversation_id=conv.id, max_turns=1)] == ["Q1", "A1"]
 
 
 def test_auto_title(sqlite_session: Session):

@@ -377,7 +377,7 @@ export function CustomMcpStudio() {
 
         return (
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "20px" }}>
-            <div style={{ background: "var(--card-bg, #ffffff)", borderRadius: "12px", border: "1px solid var(--border-color, #e2e8f0)", padding: "20px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+            <div className="mcp-claude-panel" style={{ background: "var(--card-bg, #ffffff)", borderRadius: "12px", border: "1px solid var(--border-color, #e2e8f0)", padding: "20px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
                 <div>
                   <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: 700 }}>Claude Desktop Configuration</h3>
