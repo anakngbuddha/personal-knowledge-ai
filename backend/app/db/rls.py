@@ -69,6 +69,12 @@ def check_rls_posture(engine: Engine, *, required: bool) -> dict:
         problems.append("tables without ENABLE+FORCE RLS: " + ", ".join(posture["unprotected_tables"]))
     message = "row-level security is NOT enforced: " + "; ".join(problems)
     if required:
-        raise RuntimeError(message)
+        raise RuntimeError(
+            message + ". Use a restricted NOSUPERUSER NOBYPASSRLS login in DATABASE_URL "
+            "(not avnadmin). With the administrator connection, run "
+            "python -m app.db.migrate_cli --grant-runtime-role pka_app, then set "
+            "Render DATABASE_URL to that user's connection and redeploy. "
+            "Keep RLS_REQUIRED=true. See docs/rls-and-search-cutover.md."
+        )
     logger.error(message)
     return posture
