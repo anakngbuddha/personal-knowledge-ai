@@ -136,6 +136,8 @@ class ClamAvScanner(Scanner):
                     received = sock.recv(4096)
                     if not received:
                         break
+                    if len(response) + len(received) > 65536:
+                        raise ScannerUnavailable("clamd response size limit exceeded")
                     response += received
         except OSError as exc:
             raise ScannerUnavailable(f"clamd at {self._host}:{self._port} unreachable: {exc}") from exc

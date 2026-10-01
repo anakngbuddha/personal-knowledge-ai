@@ -29,3 +29,8 @@ dist/
 
 # Graphify generated assets
 graphify-out/
+
+# Generated verification/build artifacts
+*.log
+*.tsbuildinfo
+.audit-*.json

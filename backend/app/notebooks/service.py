@@ -165,13 +165,17 @@ def delete_notebook(db: Session, *, org_id: uuid.UUID, notebook_id: uuid.UUID) -
     db.commit()
 
 
-def source_membership(
-    db: Session, *, org_id: uuid.UUID, notebook_id: uuid.UUID
-) -> list[tuple[Document, bool]]:
-    notebook = get_notebook(db, org_id=org_id, notebook_id=notebook_id)
-    enabled = {row.document_id: row.enabled for row in notebook.sources}
-    documents = listable_sources(db, org_id=org_id, workspace_id=notebook.workspace_id)
-    return [(document, bool(enabled.get(document.id, False))) for document in documents]
+def source_membership(db: Session, *, org_id: uuid.UUID, notebook_id: uuid.UUID,
+                      limit: int = 100, offset: int = 0) -> list[tuple[Document, bool]]:
+    notebook = db.scalar(select(Notebook).where(Notebook.id == notebook_id, Notebook.org_id == org_id))
+    if notebook is None:
+        raise AppError("Notebook not found", status_code=404)
+    stmt = select(Document, NotebookSource.enabled).outerjoin(NotebookSource, (
+        (NotebookSource.document_id == Document.id) & (NotebookSource.notebook_id == notebook_id) & (NotebookSource.org_id == org_id)
+    )).where(Document.org_id == org_id, Document.workspace_id == notebook.workspace_id,
+             Document.is_current.is_(True), Document.is_demo.is_(False), ~Document.original_filename.startswith("note:"))
+    rows = db.execute(stmt.order_by(Document.uploaded_at.desc(), Document.id).limit(max(1, min(limit, 100))).offset(max(0, offset)))
+    return [(document, bool(enabled)) for document, enabled in rows]
 
 
 def set_enabled_sources(

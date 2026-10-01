@@ -43,6 +43,7 @@ from app.db.models import (
     ProductEdge,
     RelationType,
     SellingContext,
+    Workspace,
 )
 
 logger = get_logger(__name__)
@@ -216,13 +217,17 @@ def expand_from_rows(
 # -- the database half -----------------------------------------------------
 
 
-def expand(db: Session, *, workspace_id: uuid.UUID | None, question: str) -> GraphContext:
+def expand(db: Session, *, workspace_id: uuid.UUID | None, question: str, org_id: uuid.UUID | None = None) -> GraphContext:
     """Look the question up on the map. Never raises: an empty result is an answer."""
     if not settings.graph_expansion_enabled or workspace_id is None or not (question or "").strip():
         return GraphContext()
+    if org_id is None:
+        return GraphContext()
     try:
+        if db.scalar(select(Workspace.id).where(Workspace.id == workspace_id, Workspace.org_id == org_id)) is None:
+            return GraphContext()
         products = list(
-            db.scalars(select(Product).where(Product.workspace_id == workspace_id)).all()
+            db.scalars(select(Product).where(Product.workspace_id == workspace_id, Product.org_id == org_id).limit(2000)).all()
         )
         if not products:
             return GraphContext()
@@ -233,22 +238,25 @@ def expand(db: Session, *, workspace_id: uuid.UUID | None, question: str) -> Gra
         edges = list(
             db.scalars(
                 select(ProductEdge).where(
-                    ProductEdge.workspace_id == workspace_id,
+                    ProductEdge.workspace_id == workspace_id, ProductEdge.org_id == org_id,
                     ProductEdge.status == EdgeStatus.APPROVED,
                 )
+                .limit(2000)
             ).all()
         )
         links = list(
             db.scalars(
                 select(ProductContextLink).where(
-                    ProductContextLink.workspace_id == workspace_id,
+                    ProductContextLink.workspace_id == workspace_id, ProductContextLink.org_id == org_id,
                     ProductContextLink.status == EdgeStatus.APPROVED,
                 )
+                .limit(2000)
             ).all()
         )
         contexts = list(
             db.scalars(
-                select(SellingContext).where(SellingContext.workspace_id == workspace_id)
+                select(SellingContext).where(SellingContext.workspace_id == workspace_id, SellingContext.org_id == org_id)
+                .limit(2000)
             ).all()
         )
     except Exception:  # noqa: BLE001 - the map is never worth failing an answer over

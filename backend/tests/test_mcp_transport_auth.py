@@ -119,7 +119,7 @@ def env():
 
 
 def _token(env, key, role=Role.VIEWER, org=None):
-    return mint_token(org_id=org or env.org_a, user_id=env.users[key], role=str(role))
+    return mint_token(org_id=org or env.org_a, user_id=env.users[key], role=str(role), extra_claims={"typ": "mcp", "scope": "mcp:read mcp:write"})
 
 
 def _call(token, name, arguments):

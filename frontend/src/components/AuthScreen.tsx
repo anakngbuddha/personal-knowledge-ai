@@ -18,7 +18,6 @@ export function AuthScreen({
   const [org, setOrg] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [remember, setRemember] = useState(true);
 
   const validatePassword = (pwd: string) => {
     if (pwd.length < 10) return "Password must be at least 10 characters";
@@ -62,7 +61,7 @@ export function AuthScreen({
         mode === "login"
           ? await api.login(email, password)
           : await api.signup({ email, password, display_name: name, organization_name: org });
-      setAccessToken(result.access_token, { remember, expiresInSeconds: result.expires_in_seconds });
+      setAccessToken(result.access_token, { expiresInSeconds: result.expires_in_seconds });
       onAuthenticated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed");
@@ -238,10 +237,7 @@ export function AuthScreen({
           </div>
         )}
 
-        <label className="auth-remember">
-          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} disabled={busy} />
-          <span>Keep me signed in after closing the browser</span>
-        </label>
+        <p className="auth-remember">Your session ends when this browser tab closes.</p>
 
         {error && <div className="banner error">{error}</div>}
 

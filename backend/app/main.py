@@ -24,6 +24,7 @@ from app.api.routes import (
     sales_quotes,
     sales_claims,
     ops,
+    retention,
     phase8,
     runtime,
     search,
@@ -31,6 +32,7 @@ from app.api.routes import (
     workflows,
 )
 from app.core.config import settings
+from app.security.headers import SecurityMiddleware
 from app.core.logging import get_logger, setup_logging
 from app.db.bootstrap import ensure_schema, should_bootstrap
 from app.freshness.worker import start_freshness_workers, stop_freshness_workers
@@ -101,10 +103,12 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID"],
 )
+
+app.add_middleware(SecurityMiddleware)
 
 app.include_router(health.router)
 app.include_router(sales_claims.router)
@@ -130,6 +134,7 @@ app.include_router(opportunities.router)
 app.include_router(sales_quotes.router)
 app.include_router(freshness.router)
 app.include_router(ops.router)
+app.include_router(retention.router)
 app.include_router(runtime.router)
 
 

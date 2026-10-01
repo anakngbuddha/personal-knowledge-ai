@@ -17,6 +17,7 @@ from app.core.errors import AppError
 from app.db.models import Document
 from app.llm.factory import get_llm_provider
 from app.notes import service as notes_service
+from app.documents.injection import wrap_untrusted
 from app.studio.prompts import STUDIO_PROMPT_VERSION, STUDIO_SYSTEM_PROMPT
 
 KINDS = ("briefing", "faq", "compare")
@@ -109,7 +110,7 @@ def suggested_questions(db: Session, document: Document, *, provider=None) -> li
     try:
         answer = provider.generate_grounded_answer(
             f"Suggest questions for {_title(document)}",
-            [{"text": _summary(document), "citation": _title(document)}],
+            [{"text": wrap_untrusted(_summary(document)), "citation": _title(document)}],
             system_prompt=(
                 f"{STUDIO_SYSTEM_PROMPT}\nReply with a JSON array of up to 5 short questions. "
                 f"Prompt version {STUDIO_PROMPT_VERSION}."
@@ -182,7 +183,7 @@ def run_studio(
     provider = provider or get_llm_provider()
     context = [
         {
-            "text": f"{_title(document)}\n{_summary(document)}\n" + "\n".join(_facts(document)),
+            "text": wrap_untrusted(f"{_title(document)}\n{_summary(document)}\n" + "\n".join(_facts(document))),
             "citation": _title(document),
             "document_id": str(document.id),
         }

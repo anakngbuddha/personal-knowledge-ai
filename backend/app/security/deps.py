@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.models import AccessGrant, Organization
 from app.db.session import get_db, get_tenant_db, scope_session_to_org
-from app.security.accounts import OrganizationMembership
+from app.security.accounts import OrganizationMembership, UserAccount
 from app.security.jwt import JWTError, decode_jwt
 from app.security.labels import Role, Sensitivity, normalize
 from app.security.principal import Principal, owner_principal
@@ -77,14 +77,17 @@ def principal_from_claims(
     org = default_org or get_or_create_default_org(db)
     org_id = _uuid(payload.get("org_id")) or org.id
     user_id = _uuid(payload.get("sub") or payload.get("user_id"))
+    # The bearer signature was verified before this function is called.
+    scope_session_to_org(db, org_id)
 
     membership = None
     if user_id:
         try:
             membership = db.scalar(
-                select(OrganizationMembership).where(
+                select(OrganizationMembership).join(UserAccount, UserAccount.id == OrganizationMembership.user_id).where(
                     OrganizationMembership.org_id == org_id,
                     OrganizationMembership.user_id == user_id,
+                    UserAccount.is_active.is_(True),
                 )
             )
         except SQLAlchemyError:
@@ -95,8 +98,7 @@ def principal_from_claims(
     if is_production() and membership is None:
         raise HTTPException(403, "your account is not a member of this organization")
 
-    # Identity tables are exempt from RLS; grants are not. Scope the session as
-    # soon as membership is verified, before fetching any tenant-owned grants.
+    # Membership and grant queries use the verified token's tenant scope.
     scope_session_to_org(db, org_id)
 
     # Membership is the source of truth. The role claim is only a dev-mode fallback
@@ -191,3 +193,15 @@ def _uuid(value: object) -> uuid.UUID | None:
 
 def get_db_for_principal(principal: Principal = Depends(resolve_principal)) -> Iterator[Session]:
     yield from get_tenant_db(principal.org_id)
+
+
+def require_document_write(principal: Principal = Depends(resolve_principal)) -> Principal:
+    if not principal.can_write_catalog:
+        raise HTTPException(403, "solutions engineer role required")
+    return principal
+
+
+def require_document_approval(principal: Principal = Depends(resolve_principal)) -> Principal:
+    if not principal.is_admin:
+        raise HTTPException(403, "admin access required")
+    return principal

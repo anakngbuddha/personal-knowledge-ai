@@ -368,8 +368,8 @@ def fetch(url: str, *, max_bytes: int = MAX_FETCH_BYTES, transport=None) -> Fetc
                     if response.status_code >= 400:
                         raise SsrfBlocked(f"{current} returned HTTP {response.status_code}")
 
-                    content_type = (response.headers.get("content-type") or "").split(";")[0].strip()
-                    if content_type and not content_type.startswith(ALLOWED_CONTENT_TYPES):
+                    content_type = (response.headers.get("content-type") or "").split(";")[0].strip().lower()
+                    if content_type and content_type not in ALLOWED_CONTENT_TYPES:
                         raise SsrfBlocked(f"content type {content_type!r} is not accepted")
 
                     declared = (response.headers.get("content-length") or "").strip()

@@ -139,6 +139,8 @@ def test_brave_search_is_fenced_and_runs_in_loop(mcp_env):
     ws = Workspace(id=uuid.uuid4(), org_id=org.id, name="Default")
     db.add(ws)
     db.commit()
+    db.add(McpIntegration(org_id=org.id, server_slug="brave", enabled=True, config={}, status="connected"))
+    db.commit()
     ctx = ToolContext(db=db, principal=owner_principal(org.id), workspace_id=ws.id)
     tools = default_definitions(ctx)
     assert any(item.name == "mcp_brave_web_search" for item in tools)
@@ -194,6 +196,8 @@ def test_playwright_metadata_url_is_ssrf_blocked(mcp_env):
     db.commit()
     ws = Workspace(id=uuid.uuid4(), org_id=org.id, name="Default")
     db.add(ws)
+    db.commit()
+    db.add(McpIntegration(org_id=org.id, server_slug="playwright", enabled=True, config={}, status="connected"))
     db.commit()
     ctx = ToolContext(db=db, principal=owner_principal(org.id), workspace_id=ws.id)
     result = execute_tool(

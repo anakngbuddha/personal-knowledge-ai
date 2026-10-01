@@ -46,6 +46,14 @@ class CatalogService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _validate_collateral(self, org_id, workspace_id, ids):
+        expected = {uuid.UUID(str(value)) for value in (ids or [])}
+        if not expected:
+            return
+        found = set(self.db.scalars(select(Document.id).where(Document.id.in_(expected), Document.org_id == org_id, Document.workspace_id == workspace_id)))
+        if found != expected:
+            raise AppError("collateral document not found", status_code=404)
+
     # -----------------------------------------------------------------------
     # Products
     # -----------------------------------------------------------------------
@@ -56,6 +64,7 @@ class CatalogService:
         workspace_id: uuid.UUID,
         data: ProductIn,
     ) -> Product:
+        self._validate_collateral(org_id, workspace_id, data.collateral_document_ids)
         slug = data.slug or slugify(data.name)
         if not slug:
             slug = f"prod-{uuid.uuid4().hex[:8]}"
@@ -172,6 +181,8 @@ class CatalogService:
             return None
 
         update_dict = data.model_dump(exclude_unset=True)
+        if "collateral_document_ids" in update_dict:
+            self._validate_collateral(product.org_id, workspace_id, update_dict["collateral_document_ids"])
         if "slug" in update_dict and update_dict["slug"]:
             update_dict["slug"] = slugify(update_dict["slug"])
         if "collateral_document_ids" in update_dict and update_dict["collateral_document_ids"] is not None:
@@ -222,7 +233,7 @@ class CatalogService:
         return capability
 
     def list_capabilities(
-        self, org_id: uuid.UUID, category: str | None = None
+        self, org_id: uuid.UUID, category: str | None = None, limit: int = 100, offset: int = 0
     ) -> list[Capability]:
         stmt = (
             select(Capability)
@@ -232,7 +243,7 @@ class CatalogService:
         if category:
             stmt = stmt.where(Capability.category.ilike(f"%{category}%"))
         stmt = stmt.order_by(Capability.category.asc(), Capability.name.asc())
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(max(1, min(limit, 500))).offset(max(0, offset))).all())
 
     def get_capability(self, capability_id: uuid.UUID, org_id: uuid.UUID) -> Capability | None:
         stmt = (
@@ -385,6 +396,7 @@ class CatalogService:
         status: str | None = None,
         relation_type: str | None = None,
         product_id: uuid.UUID | None = None,
+        limit: int = 100, offset: int = 0,
     ) -> list[ProductEdge]:
         stmt = (
             select(ProductEdge)
@@ -409,7 +421,7 @@ class CatalogService:
             )
 
         stmt = stmt.order_by(ProductEdge.created_at.desc())
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(max(1, min(limit, 500))).offset(max(0, offset))).all())
 
     def update_edge(
         self,
@@ -499,7 +511,7 @@ class CatalogService:
         return arch
 
     def list_reference_architectures(
-        self, workspace_id: uuid.UUID
+        self, workspace_id: uuid.UUID, limit: int = 100, offset: int = 0
     ) -> list[ReferenceArchitecture]:
         stmt = (
             select(ReferenceArchitecture)
@@ -511,7 +523,7 @@ class CatalogService:
             .where(ReferenceArchitecture.workspace_id == workspace_id)
             .order_by(ReferenceArchitecture.name.asc())
         )
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(max(1, min(limit, 500))).offset(max(0, offset))).all())
 
     def get_reference_architecture(
         self, arch_id: uuid.UUID, workspace_id: uuid.UUID
@@ -546,7 +558,7 @@ class CatalogService:
 
     def get_portfolio(self, workspace_id: uuid.UUID) -> PortfolioGraphOut:
         products = self.list_products(workspace_id, limit=500)
-        edges = self.list_edges(workspace_id)
+        edges = self.list_edges(workspace_id, limit=500)
         return build_portfolio_graph(products, edges)
 
     def get_product_neighborhood(
@@ -554,7 +566,7 @@ class CatalogService:
     ) -> NeighborhoodOut:
         products = self.list_products(workspace_id, limit=500)
         prods_by_id = {p.id: p for p in products}
-        edges = self.list_edges(workspace_id)
+        edges = self.list_edges(workspace_id, limit=500)
         archs = self.list_reference_architectures(workspace_id)
         return get_neighborhood(product_id, edges, prods_by_id, archs)
 
@@ -563,29 +575,30 @@ class CatalogService:
     ) -> GraphQueryOut:
         products = self.list_products(workspace_id, limit=500)
         prods_by_id = {p.id: p for p in products}
-        edges = self.list_edges(workspace_id)
+        edges = self.list_edges(workspace_id, limit=500)
         archs = self.list_reference_architectures(workspace_id)
         return query_product_impact(product_id, edges, prods_by_id, archs)
 
     def audit_integrity(self, workspace_id: uuid.UUID) -> IntegrityReportOut:
         products = self.list_products(workspace_id, limit=500)
         prods_by_id = {p.id: p for p in products}
-        edges = self.list_edges(workspace_id)
+        edges = self.list_edges(workspace_id, limit=500)
         archs = self.list_reference_architectures(workspace_id)
         return run_integrity_check(edges, prods_by_id, archs)
 
     def audit_coverage(self, workspace_id: uuid.UUID, org_id: uuid.UUID) -> CoverageReportOut:
         products = self.list_products(workspace_id, limit=500)
-        capabilities = self.list_capabilities(org_id)
-        edges = self.list_edges(workspace_id)
+        capabilities = self.list_capabilities(org_id, limit=500)
+        edges = self.list_edges(workspace_id, limit=500)
 
         # Query documents referencing products
         docs = list(
             self.db.scalars(
                 select(Document).where(
                     Document.workspace_id == workspace_id,
+                    Document.org_id == org_id,
                     Document.is_current.is_(True),
-                )
+                ).limit(2000)
             ).all()
         )
         docs_by_prod: dict[uuid.UUID, list[Document]] = {}

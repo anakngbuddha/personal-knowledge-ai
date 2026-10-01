@@ -43,7 +43,7 @@ router = APIRouter(prefix="/api/sales", tags=["sales-quotes"])
 
 @router.get("/opportunities/{opportunity_id}/signals")
 def opportunity_signals(opportunity_id: uuid.UUID, limit: int = Query(50, ge=1, le=100),
-                       offset: int = Query(0, ge=0), db: Session = Depends(get_db),
+                       offset: int = Query(0, ge=0, le=10000), db: Session = Depends(get_db),
                        principal: Principal = Depends(resolve_principal)):
     """Evidence from stored sales records, with no inferred renewals or notifications."""
     _write(principal)
@@ -127,7 +127,7 @@ def create_sku_map(payload: SkuMapIn, db: Session = Depends(get_db), principal: 
 
 
 @router.get("/sku-maps")
-def list_sku_maps(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+def list_sku_maps(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
                   db: Session = Depends(get_db), principal: Principal = Depends(resolve_principal)):
     _write(principal)
     rows = db.scalars(select(ProviderSkuMap).where(
@@ -168,7 +168,7 @@ class ObservationOut(BaseModel):
 
 
 @router.get("/price-observations")
-def list_price_observations(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+def list_price_observations(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
                             sku_map_id: uuid.UUID | None = None,
                             db: Session = Depends(get_db), principal: Principal = Depends(resolve_principal)):
     _write(principal)
@@ -319,7 +319,7 @@ def create_policy(policy: ListPricePolicy, db: Session = Depends(get_db), princi
 
 
 @router.get("/policies")
-def list_policies(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+def list_policies(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
                   db: Session = Depends(get_db), principal: Principal = Depends(resolve_principal)):
     _write(principal)
     rows = db.scalars(select(CommercialPolicyRecord).where(
@@ -645,7 +645,7 @@ def reconcile_google_sheets_export(version_id: uuid.UUID, payload: SheetReconcil
 
 
 @router.get("/opportunities/{opportunity_id}/quotes")
-def list_quotes(opportunity_id: uuid.UUID, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+def list_quotes(opportunity_id: uuid.UUID, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
                 db: Session = Depends(get_db), principal: Principal = Depends(resolve_principal)):
     _visible_opportunity(db, principal, opportunity_id)
     rows = db.scalars(select(SalesQuoteVersion).join(SalesQuote, SalesQuoteVersion.quote_id == SalesQuote.id).where(

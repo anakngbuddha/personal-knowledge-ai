@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     saml_idp_issuer: str = ""
     saml_idp_secret: str = ""
     saml_allow_unsigned: bool = False
+    saml_idp_certificate: str = ""
+    saml_idp_sso_url: str = ""
+    credentials_previous_keys: dict[str, str] = {}
+    credentials_key_id: str = "v1"
 
     top_k: int = 8
     rrf_k: int = 60
@@ -168,7 +172,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 1440
-    allow_legacy_token_endpoint: bool = True
+    allow_legacy_token_endpoint: bool = False
 
     parse_timeout_seconds: float = 120.0
     max_archive_entries: int = 2000
@@ -224,6 +228,16 @@ class Settings(BaseSettings):
             if not self.jwt_secret_key or len(self.jwt_secret_key) < 32: raise ValueError("JWT_SECRET_KEY must be at least 32 characters in production")
             if not self.rls_required: raise ValueError("RLS_REQUIRED must be true in production")
             if self.freshness_auto_approve: raise ValueError("FRESHNESS_AUTO_APPROVE must be false in production")
+            if self.auto_approve_uploads: raise ValueError("AUTO_APPROVE_UPLOADS must be false in production")
+            if self.url_fetch_allow_private_ips: raise ValueError("private URL fetching is prohibited in production")
+            if self.malware_scanner != "clamav": raise ValueError("production ingestion requires ClamAV")
+            if self.saml_allow_unsigned: raise ValueError("unsigned SAML is prohibited")
+            if "*" in self.cors_origin_list: raise ValueError("CORS must use explicit origins")
+        for key in (self.mcp_credentials_key, self.sso_credentials_key, *self.credentials_previous_keys.values()):
+            if key:
+                from cryptography.fernet import Fernet
+                try: Fernet(key.encode("ascii"))
+                except (ValueError, UnicodeError) as exc: raise ValueError("credential keys must be valid Fernet keys") from exc
         return self
 
     @property

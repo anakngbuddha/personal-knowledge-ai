@@ -199,7 +199,7 @@ def get_playbooks(
 @router.get("/workflows/runs", response_model=WorkflowRunListOut)
 def list_runs(
     limit: int = Query(default=50, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> WorkflowRunListOut:

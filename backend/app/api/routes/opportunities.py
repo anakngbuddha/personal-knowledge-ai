@@ -227,7 +227,7 @@ def create_opportunity(
 @router.get("/opportunities", response_model=OpportunityListOut)
 def list_opportunities(
     limit: int = Query(default=50, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> OpportunityListOut:
@@ -416,7 +416,7 @@ def update_requirement(
 def get_coverage(
     opportunity_id: uuid.UUID,
     limit: int = Query(default=50, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> CoverageOut:

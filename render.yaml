@@ -5,7 +5,7 @@ services:
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --require-hashes -r requirements.lock
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
@@ -70,11 +70,11 @@ services:
       - key: WORKFLOW_WORKER_CONCURRENCY
         value: "1"
       - key: MALWARE_SCANNER
-        value: heuristic
+        value: clamav
       - key: OCR_PROVIDER
         value: gemini
       - key: AUTO_APPROVE_UPLOADS
-        value: "true"
+        value: "false"
       # The product list starts empty in production. The sample catalog is a demo.
       - key: DEMO_SEED_CATALOG
         value: "false"
@@ -88,3 +88,6 @@ services:
         value: "true"
       - key: URL_FETCH_ALLOW_PRIVATE_IPS
         value: "false"
+
+      # Configure the ClamAV host/port before enabling ingestion in production.
+      # Crawls always honor robots.txt; there is no bypass setting.

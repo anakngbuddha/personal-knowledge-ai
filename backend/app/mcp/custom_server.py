@@ -545,9 +545,9 @@ def execute_mcp_tool_call(
         limit = max(1, min(int(args.get("limit", 20) or 20), 100))
         offset = max(0, int(args.get("offset", 0) or 0))
 
-        listed = notes_service.list_notes(db, org_id=principal.org_id, limit=limit, offset=offset)
+        listed, total = notes_service.list_notes(db, org_id=principal.org_id, workspace_id=workspace_id, limit=limit, offset=offset)
         return {
-            "total": listed.total,
+            "total": total,
             "notes": [
                 {
                     "id": str(n.id),
@@ -555,7 +555,7 @@ def execute_mcp_tool_call(
                     "body_snippet": n.body[:200] if n.body else "",
                     "created_at": n.created_at.isoformat() if n.created_at else None,
                 }
-                for n in listed.notes
+                for n in listed
             ],
         }
 
@@ -575,7 +575,7 @@ def execute_mcp_tool_call(
                 "alternatives": impact.get("alternatives", []),
             }
         except Exception as exc:
-            return {"product": product, "error": str(exc)}
+            return {"product": product, "error": "MCP operation failed"}
 
     # 8. web_search (Read)
     if name == "web_search":
@@ -678,7 +678,7 @@ def execute_mcp_tool_call(
                 "message": f"Product '{prod.name}' registered in catalog graph",
             }
         except Exception as exc:
-            return {"error": f"Failed to register product: {exc}"}
+            return {"error": "Failed to register product"}
 
     # 12. link_catalog_products (Write)
     if name == "link_catalog_products":
@@ -732,7 +732,7 @@ def execute_mcp_tool_call(
                 "message": f"Linked '{src}' --[{rel}]--> '{tgt}' in catalog graph",
             }
         except Exception as exc:
-            return {"error": f"Failed to link products: {exc}"}
+            return {"error": "Failed to link products"}
 
     # 13. delete_note (Write)
     if name == "delete_note":
@@ -827,7 +827,7 @@ def handle_mcp_jsonrpc_request(
                         "description": t["description"],
                         "inputSchema": t["inputSchema"],
                     }
-                    for t in MCP_TOOLS
+                    for t in MCP_TOOLS if t["name"] not in WRITE_TOOLS or may_run_write_tools(principal)
                 ] + _sheet_manifest(db, principal)
             },
         }
@@ -864,7 +864,7 @@ def handle_mcp_jsonrpc_request(
                     "content": [
                         {
                             "type": "text",
-                            "text": json.dumps({"error": f"{type(exc).__name__}: {exc}"}),
+                            "text": json.dumps({"error": "MCP operation failed"}),
                         }
                     ],
                     "isError": True,

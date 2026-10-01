@@ -145,6 +145,9 @@ def resolve_mcp_principal(db: Session, raw_token: str | None) -> Principal:
         payload = decode_jwt(raw_token)
     except JWTError as exc:
         raise HTTPException(status_code=401, detail="invalid or expired token") from exc
+    scope = payload.get("scope")
+    if payload.get("typ") != "mcp" or not isinstance(scope, str) or MCP_READ_SCOPE not in scope.split():
+        raise HTTPException(401, "MCP token with read scope required")
     principal = principal_from_claims(db, payload, label="mcp")
     scope_session_to_org(db, principal.org_id)
     return principal
@@ -423,7 +426,9 @@ async def mcp_sse_endpoint(
 
     The session is bound to the principal that opened it.
     """
-    raw_token = _bearer(authorization) or (token.strip() if token else None)
+    if token is not None:
+        raise HTTPException(400, "use Authorization header")
+    raw_token = _bearer(authorization)
     principal = await run_in_threadpool(resolve_mcp_principal, db, raw_token)
     session_id = register_mcp_session(principal, anonymous_dev=raw_token is None)
     session = _SSE_SESSIONS[session_id]

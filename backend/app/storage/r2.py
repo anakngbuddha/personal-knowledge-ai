@@ -42,3 +42,13 @@ class R2Storage(ObjectStorage):
             self._client.delete_object(Bucket=self._bucket, Key=key)
         except (ClientError, BotoCoreError) as exc:
             raise StorageError(f"R2 delete failed for {key}: {exc}") from exc
+
+    def list_page(self, prefix, cursor=None, limit=100):
+        arguments = {"Bucket": self._bucket, "Prefix": prefix, "MaxKeys": min(max(limit, 1), 500)}
+        if cursor:
+            arguments["ContinuationToken"] = cursor
+        try:
+            result = self._client.list_objects_v2(**arguments)
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageError("object inventory unavailable") from exc
+        return [{"key": row["Key"], "modified": row["LastModified"]} for row in result.get("Contents", [])], result.get("NextContinuationToken")

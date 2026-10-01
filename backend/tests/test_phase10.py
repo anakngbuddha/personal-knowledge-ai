@@ -234,22 +234,9 @@ def test_freshness_sources_are_tenant_isolated(phase10_db):
     assert other.status_code == 404
 
 
-def test_oidc_callback_mints_local_jwt(phase10_db):
-    db = phase10_db
-    id_token = mint_oidc_id_token(
-        issuer="https://idp.example",
-        audience="se-workspace",
-        subject=str(uuid.uuid4()),
-        secret="oidc-test-secret",
-        role=Role.ADMIN,
-        org_id=str(db.org_a_id),
-        nonce="n-1",
-    )
-    response = client.post("/auth/oidc/callback", json={"id_token": id_token, "nonce": "n-1"})
-    assert response.status_code == 200, response.text
-    payload = decode_jwt(response.json()["access_token"])
-    assert payload["org_id"] == str(db.org_a_id)
-    assert payload["role"] == Role.ADMIN
+def test_oidc_implicit_callback_is_disabled(phase10_db):
+    response = client.post("/auth/oidc/callback", json={"id_token": "arbitrary", "nonce": "n-1"})
+    assert response.status_code == 410
 
 
 def test_oidc_rejects_wrong_issuer(phase10_db):
@@ -261,32 +248,12 @@ def test_oidc_rejects_wrong_issuer(phase10_db):
         role=Role.VIEWER,
     )
     response = client.post("/auth/oidc/callback", json={"id_token": id_token})
-    assert response.status_code == 401
+    assert response.status_code == 410
 
 
-def test_saml_acs_mints_local_jwt(phase10_db):
-    db = phase10_db
-    user = uuid.uuid4()
-    xml = (
-        "<Assertion>"
-        "<Issuer>https://idp.example/saml</Issuer>"
-        f"<Subject><NameID>{user}</NameID></Subject>"
-        '<Conditions NotOnOrAfter="2099-01-01T00:00:00Z"/>'
-        "<Audience>http://localhost:8000/auth/saml/acs</Audience>"
-        '<Attribute Name="role"><AttributeValue>solutions_engineer</AttributeValue></Attribute>'
-        f'<Attribute Name="org_id"><AttributeValue>{db.org_a_id}</AttributeValue></Attribute>'
-        "</Assertion>"
-    )
-    signature = sign_saml_assertion(xml, "saml-test-secret")
-    response = client.post(
-        "/auth/saml/acs",
-        json={"SAMLResponse": xml, "signature": signature},
-    )
-    assert response.status_code == 200, response.text
-    payload = decode_jwt(response.json()["access_token"])
-    assert payload["org_id"] == str(db.org_a_id)
-    assert payload["role"] == Role.SOLUTIONS_ENGINEER
-    assert payload["sub"] == str(user)
+def test_saml_legacy_hmac_request_rejected(phase10_db):
+    response = client.post("/auth/saml/acs", json={"SAMLResponse": "<Assertion/>", "signature": "hmac"})
+    assert response.status_code == 422
 
 
 def test_saml_expired_assertion_rejected(phase10_db):
@@ -300,7 +267,7 @@ def test_saml_expired_assertion_rejected(phase10_db):
     )
     signature = sign_saml_assertion(xml, "saml-test-secret")
     response = client.post("/auth/saml/acs", json={"SAMLResponse": xml, "signature": signature})
-    assert response.status_code == 401
+    assert response.status_code == 422
 
 
 def test_restore_drill_round_trip_within_sla(phase10_db):

@@ -117,27 +117,9 @@ def test_role_hierarchy_permissions():
 
 
 def test_auth_token_endpoint():
-    target_org = str(uuid.uuid4())
-    resp = client.post(
-        "/auth/token",
-        json={"org_id": target_org, "role": "solutions_engineer"},
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "access_token" in data
-    assert data["token_type"] == "bearer"
-    assert data["org_id"] == target_org
-    assert data["role"] == "solutions_engineer"
-
-    # Verify the minted token is accepted by /auth/me
-    token = data["access_token"]
-    me_resp = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
-    assert me_resp.status_code == 200
-    me_data = me_resp.json()
-    assert me_data["org_id"] == target_org
-    assert me_data["role"] == "solutions_engineer"
-    assert me_data["can_write_catalog"] is True
-    assert me_data["is_owner"] is False
+    resp = client.post("/auth/token", json={"org_id": str(uuid.uuid4()), "role": "owner"})
+    assert resp.status_code == 410
+    assert "access_token" not in resp.json()
 
 
 def test_auth_unauthenticated_request_rejected():

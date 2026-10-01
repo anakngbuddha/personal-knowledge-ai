@@ -19,6 +19,10 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import select, func
+from app.db.models import Message
+from app.db.pagination import seek_before
+from app.core.errors import AppError
 
 from app.core.errors import (
     GenerationRateLimited,
@@ -320,7 +324,6 @@ def create_conversation_endpoint(
     """Create a new conversation."""
     workspace_id = _workspace_id_from_principal(db, principal)
     if notebook_id is not None:
-        from app.core.errors import AppError
 
         try:
             notebook = notebooks.get_notebook(db, org_id=principal.org_id, notebook_id=notebook_id)
@@ -340,23 +343,26 @@ def create_conversation_endpoint(
 @router.get("/conversations", response_model=schemas.ConversationListOut)
 def list_conversations_endpoint(
     limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=10000),
     notebook_id: uuid.UUID | None = Query(default=None),
+    cursor: str | None = None,
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> schemas.ConversationListOut:
     """List conversations (paginated)."""
     workspace_id = _workspace_id_from_principal(db, principal)
     if notebook_id is not None:
-        from app.core.errors import AppError
 
         try:
             notebooks.get_notebook(db, org_id=principal.org_id, notebook_id=notebook_id)
         except AppError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
-    conversations, total = list_conversations(
-        db, workspace_id=workspace_id, limit=limit, offset=offset, notebook_id=notebook_id
-    )
+    try:
+        conversations, total = list_conversations(
+            db, workspace_id=workspace_id, limit=limit, offset=offset, notebook_id=notebook_id, cursor=cursor
+        )
+    except AppError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
     return schemas.ConversationListOut(
         conversations=[_conv_to_out(c) for c in conversations],
         total=total,
@@ -369,6 +375,9 @@ def list_conversations_endpoint(
 def get_conversation_endpoint(
     conversation_id: str,
     notebook_id: uuid.UUID | None = Query(default=None),
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=10000),
+    cursor: str | None = None,
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> schemas.ConversationOut:
@@ -382,7 +391,17 @@ def get_conversation_endpoint(
     conv = get_conversation(db, conversation_id=conv_uuid, workspace_id=workspace_id)
     if conv is None or (notebook_id is not None and conv.notebook_id != notebook_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return _conv_to_out(conv, include_messages=True)
+    try:
+        statement = seek_before(select(Message).where(Message.conversation_id == conv.id), Message.created_at, Message.id, cursor)
+    except AppError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    rows = list(db.scalars(statement.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit).offset(0 if cursor else offset)))
+    rows.reverse()
+    result = _conv_to_out(conv, include_messages=True, message_rows=rows)
+    result.message_total = db.scalar(select(func.count()).select_from(Message).where(Message.conversation_id == conv.id)) or 0
+    result.message_limit = limit
+    result.message_offset = offset
+    return result
 
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
@@ -469,6 +488,8 @@ def ask_in_conversation_endpoint(
 )
 def get_conversation_sources_endpoint(
     conversation_id: str,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> list[schemas.SourceMetadataOut]:
@@ -486,7 +507,7 @@ def get_conversation_sources_endpoint(
     seen_chunks: set[str] = set()
     aggregated_sources: list[schemas.SourceMetadataOut] = []
 
-    for msg in conv.messages:
+    for msg in db.scalars(select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at.desc(), Message.id.desc()).limit(limit).offset(offset)):
         sources_raw = msg.sources or []
         for s in sources_raw:
             chunk_id = s.get("chunk_id")
@@ -538,12 +559,12 @@ def _answer_to_out(answer, *, fallback_conversation_id: str | None) -> schemas.A
 
 
 def _conv_to_out(
-    conv, include_messages: bool = False
+    conv, include_messages: bool = False, message_rows=None
 ) -> schemas.ConversationOut:
     """Convert a Conversation ORM object to the output schema."""
     messages: list[schemas.MessageOut] = []
-    if include_messages and hasattr(conv, "messages"):
-        for msg in conv.messages:
+    if include_messages:
+        for msg in message_rows if message_rows is not None else conv.messages:
             sources_raw = msg.sources or []
             citations_raw = (msg.citations or {}).get("items", []) if isinstance(msg.citations, dict) else []
             trace = (msg.usage or {}).get("tool_trace", {})

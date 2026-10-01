@@ -52,6 +52,8 @@ def _database_reachable() -> bool:
 @pytest.fixture(scope="session")
 def database():
     if not _database_reachable():
+        if os.environ.get("REQUIRE_DB_TESTS") == "1":
+            pytest.fail("CI requires reachable PostgreSQL; database tests cannot skip")
         pytest.skip("no reachable DATABASE_URL; set one to run the integration tests")
     from app.db.migrations import run_migrations
     from app.db.models import Base

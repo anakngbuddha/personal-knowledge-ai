@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import time
 import uuid
 from datetime import timedelta
@@ -89,8 +90,8 @@ def decode_jwt(
     except Exception as exc:
         raise InvalidTokenError("malformed JWT header") from exc
 
-    if header.get("alg") != "HS256":
-        raise InvalidTokenError(f"unsupported JWT algorithm: {header.get('alg')}")
+    if not isinstance(header, dict) or header.get("alg") != "HS256":
+        raise InvalidTokenError("unsupported JWT algorithm")
 
     signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
     expected_sig = hmac.new(key, signing_input, hashlib.sha256).digest()
@@ -109,12 +110,23 @@ def decode_jwt(
     except Exception as exc:
         raise InvalidTokenError("malformed JWT payload") from exc
 
+    if not isinstance(payload, dict):
+        raise InvalidTokenError("JWT payload must be an object")
     if verify_exp:
-        exp = payload.get("exp")
-        if exp is not None:
-            now = int(time.time())
-            if now > exp:
-                raise TokenExpiredError("token has expired")
+        now = int(time.time())
+        for claim in ("exp", "iat", "nbf"):
+            value = payload.get(claim)
+            if claim in ("exp", "iat") and value is None:
+                raise InvalidTokenError("token missing timestamp")
+            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)):
+                raise InvalidTokenError("invalid token timestamp")
+        if now >= payload["exp"]:
+            raise TokenExpiredError("token has expired")
+        if payload["iat"] > now + 30 or payload.get("nbf", now) > now + 30:
+            raise InvalidTokenError("token is not yet valid")
+        maximum = max(settings.jwt_access_token_expire_minutes, settings.mcp_token_max_minutes) * 60
+        if payload["exp"] <= payload["iat"] or payload["exp"] - payload["iat"] > maximum:
+            raise InvalidTokenError("invalid token lifetime")
 
     return payload
 

@@ -143,6 +143,9 @@ class ConversationOut(BaseModel):
     notebook_id: str | None = None
     title: str | None = None
     messages: list[MessageOut] = Field(default_factory=list)
+    message_total: int = 0
+    message_limit: int = 100
+    message_offset: int = 0
     created_at: str
     updated_at: str
 

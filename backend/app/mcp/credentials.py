@@ -16,33 +16,32 @@ class CredentialError(AppError):
 
 def _fernet():
     from cryptography.fernet import Fernet, InvalidToken
-
     key = (settings.mcp_credentials_key or "").strip()
-    if not key:
-        raise CredentialError("MCP_CREDENTIALS_KEY is not configured")
     try:
         return Fernet(key.encode("ascii")), InvalidToken
-    except (ValueError, Exception):
-        digest = hashlib.sha256(key.encode("utf-8")).digest()
-        return Fernet(base64.urlsafe_b64encode(digest)), InvalidToken
+    except (ValueError, UnicodeError) as exc:
+        raise CredentialError("credential key must be a valid Fernet key") from exc
 
 
 def encrypt_secret(plaintext: str) -> bytes:
-    """Encrypt a tenant secret. Raises if the key is missing."""
-    fernet, _ = _fernet()
-    return fernet.encrypt(plaintext.encode("utf-8"))
+    from app.security.credential_crypto import encrypt
+    try:
+        return encrypt(settings.mcp_credentials_key, plaintext)
+    except Exception as exc:
+        raise CredentialError("credential encryption failed") from exc
 
 
 def decrypt_secret(ciphertext: bytes) -> str:
-    """Decrypt a tenant secret. Raises if the key is missing or the blob is corrupt."""
-    if not ciphertext:
-        raise CredentialError("missing ciphertext")
-    fernet, invalid = _fernet()
+    from app.security.credential_crypto import decrypt
     try:
-        return fernet.decrypt(bytes(ciphertext)).decode("utf-8")
-    except invalid as exc:
-        raise CredentialError("could not decrypt MCP secret") from exc
+        return decrypt(settings.mcp_credentials_key, ciphertext)
+    except Exception as exc:
+        raise CredentialError("credential decryption failed") from exc
 
 
 def secret_configured() -> bool:
-    return bool((settings.mcp_credentials_key or "").strip())
+    try:
+        _fernet()
+        return True
+    except CredentialError:
+        return False

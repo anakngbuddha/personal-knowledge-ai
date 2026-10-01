@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.errors import AppError
 from app.db.models import Note, NoteLink, NoteLinkKind, Product
 from app.notes.wikilinks import ParsedWikilink, extract_wikilinks
+from app.db.pagination import seek_before
 
 
 def _now() -> datetime:
@@ -207,6 +208,7 @@ def list_notes(
     offset: int = 0,
     search: str | None = None,
     notebook_id: uuid.UUID | None = None,
+    cursor: str | None = None,
 ) -> tuple[list[Note], int]:
     filters = [Note.org_id == org_id, Note.workspace_id == workspace_id]
     if notebook_id is not None:
@@ -220,12 +222,11 @@ def list_notes(
     total = db.scalar(select(func.count()).select_from(Note).where(*filters)) or 0
     rows = list(
         db.scalars(
-            select(Note)
+            seek_before(select(Note).where(*filters), Note.updated_at, Note.id, cursor)
             .options(selectinload(Note.links))
-            .where(*filters)
-            .order_by(Note.updated_at.desc())
+            .order_by(Note.updated_at.desc(), Note.id.desc())
             .limit(limit)
-            .offset(offset)
+            .offset(0 if cursor else offset)
         )
     )
     return rows, int(total)
@@ -237,6 +238,7 @@ def backlinks(
     org_id: uuid.UUID,
     kind: str,
     target_ref: str,
+    limit: int = 50, offset: int = 0,
 ) -> list[Note]:
     link_ids = select(NoteLink.note_id).where(
         NoteLink.org_id == org_id,
@@ -248,6 +250,12 @@ def backlinks(
             select(Note)
             .options(selectinload(Note.links))
             .where(Note.org_id == org_id, Note.id.in_(link_ids))
-            .order_by(Note.updated_at.desc())
+            .order_by(Note.updated_at.desc(), Note.id)
+            .limit(max(1, min(limit, 100))).offset(max(0, offset))
         )
     )
+
+
+def backlink_count(db: Session, *, org_id: uuid.UUID, kind: str, target_ref: str) -> int:
+    links = select(NoteLink.note_id).where(NoteLink.org_id == org_id, NoteLink.target_kind == kind, NoteLink.target_ref == target_ref)
+    return db.scalar(select(func.count()).select_from(Note).where(Note.org_id == org_id, Note.id.in_(links))) or 0

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import threading
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -69,13 +70,27 @@ class FakeMcpClient:
         return {"ok": True, "server": spec.slug, "tool": name, "arguments": arguments}
 
 
+_CALL_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="mcp")
+_CALL_SLOTS = threading.BoundedSemaphore(8)
+
+
 def _run_coro(coro, *, timeout: float):
+    if not _CALL_SLOTS.acquire(blocking=False):
+        coro.close()
+        raise AppError("MCP capacity exceeded", status_code=429)
+    async def bounded():
+        return await asyncio.wait_for(coro, timeout=timeout)
+    def run():
+        try:
+            return asyncio.run(bounded())
+        finally:
+            _CALL_SLOTS.release()
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result(timeout=timeout)
+        return run()
+    future = _CALL_POOL.submit(run)
+    return future.result(timeout=timeout + 1)
 
 
 def _serialize_result(result: Any) -> Any:
@@ -110,7 +125,8 @@ class SdkMcpClient:
 
     def list_tools(self, spec: ServerSpec) -> list[McpToolInfo]:
         timeout = float(settings.mcp_call_timeout_seconds)
-        raw = _run_coro(self._alist_tools(spec), timeout=timeout)
+        from app.mcp.process_calls import sdk_request
+        raw = sdk_request(spec, "list", timeout=timeout, max_bytes=settings.mcp_max_result_bytes)
         tools: list[McpToolInfo] = []
         for item in raw:
             tools.append(
@@ -124,7 +140,8 @@ class SdkMcpClient:
 
     def call_tool(self, spec: ServerSpec, name: str, arguments: dict[str, Any]) -> Any:
         timeout = float(settings.mcp_call_timeout_seconds)
-        return _run_coro(self._acall_tool(spec, name, arguments), timeout=timeout)
+        from app.mcp.process_calls import sdk_request
+        return sdk_request(spec, "call", name=name, arguments=arguments, timeout=timeout, max_bytes=settings.mcp_max_result_bytes)
 
     async def _alist_tools(self, spec: ServerSpec) -> list[dict[str, Any]]:
         async with _connect(spec) as session:
@@ -159,6 +176,8 @@ def _connect(spec: ServerSpec):
 
 
 def _stdio_transport(spec: ServerSpec):
+    if settings.environment.lower() == "production" and not settings.mcp_child_sandbox_command.strip():
+        raise AppError("MCP child sandbox is required", status_code=503)
     try:
         from mcp import Client, StdioServerParameters
         from mcp.client.stdio import stdio_client
@@ -177,6 +196,13 @@ def _stdio_transport(spec: ServerSpec):
 
 
 def _http_transport(spec: ServerSpec):
+    from urllib.parse import urlparse
+    from app.mcp.servers import EXA_MCP_URL, FIRECRAWL_MCP_URL
+    if spec.http_url not in (EXA_MCP_URL, FIRECRAWL_MCP_URL):
+        raise AppError("MCP endpoint is not approved", status_code=403)
+    if set(spec.http_headers) - {"Authorization"} or any("\r" in v or "\n" in v for v in spec.http_headers.values()):
+        raise AppError("invalid MCP headers", status_code=400)
+
     try:
         from mcp import Client
         from mcp.client.streamable_http import streamable_http_client
@@ -187,8 +213,6 @@ def _http_transport(spec: ServerSpec):
             status_code=500,
             code="mcp_sdk_missing",
         ) from exc
-    if not spec.http_headers:
-        return Client(spec.http_url)
     @asynccontextmanager
     async def authenticated_transport():
         async with httpx2.AsyncClient(

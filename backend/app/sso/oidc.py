@@ -41,13 +41,15 @@ def validate_oidc_id_token(
     secret: str,
     nonce: str | None = None,
 ) -> dict[str, Any]:
+    if not nonce:
+        raise InvalidTokenError("oidc nonce required")
     payload = decode_jwt(token, secret_key=secret)
     if payload.get("iss") != issuer:
         raise InvalidTokenError("oidc issuer mismatch")
     aud = payload.get("aud")
     if aud != audience and not (isinstance(aud, list) and audience in aud):
         raise InvalidTokenError("oidc audience mismatch")
-    if nonce is not None and payload.get("nonce") not in (None, nonce):
+    if nonce is not None and payload.get("nonce") != nonce:
         raise InvalidTokenError("oidc nonce mismatch")
     if not payload.get("sub"):
         raise InvalidTokenError("oidc token missing sub")

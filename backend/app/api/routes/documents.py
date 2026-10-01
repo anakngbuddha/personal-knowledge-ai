@@ -1,6 +1,7 @@
 import uuid
+from dataclasses import replace
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,7 @@ from app.core.errors import (
 from app.core.logging import get_logger
 from app.db.models import Document, DocumentChunk, DocumentStatus, IngestionJob
 from app.db.session import get_db
+from app.db.pagination import seek_before
 from app.documents import service
 from app.documents.metadata import DocumentMetadataIn
 from app.documents.schemas import (
@@ -31,9 +33,10 @@ from app.documents.schemas import (
     UploadReport,
     UrlIngestIn,
 )
-from app.security.deps import resolve_principal
+from app.security.deps import resolve_principal, require_document_write, require_document_approval
 from app.security.labels import ApprovalState, SourceType, normalize
 from app.security.principal import Principal
+from app.retrieval.access import get_readable_document, document_access_clause
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -42,9 +45,8 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 def _scoped(db: Session, principal: Principal, document_id: uuid.UUID) -> Document:
     """Fetch within the caller's tenant. A miss is 404, never 403: another tenant's
     document must not be distinguishable from one that does not exist."""
-    document = db.scalars(
-        select(Document).where(Document.id == document_id, Document.org_id == principal.org_id)
-    ).first()
+    curator = replace(principal, include_unapproved=True) if principal.can_write_catalog else principal
+    document = get_readable_document(db, curator, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="document not found")
     return document
@@ -56,13 +58,13 @@ def _as_http(exc: Exception) -> HTTPException:
     if isinstance(exc, (MalwareDetected, UnsafeFile)):
         return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, ScannerUnavailable):
-        return HTTPException(status_code=503, detail=str(exc))
+        return HTTPException(status_code=503, detail="scanner unavailable")
     if isinstance(exc, SsrfBlocked):
         return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, StorageError):
-        return HTTPException(status_code=502, detail=str(exc))
+        return HTTPException(status_code=502, detail="storage unavailable")
     if isinstance(exc, AppError):
-        return HTTPException(status_code=400, detail=str(exc))
+        return HTTPException(status_code=exc.status_code, detail=str(exc))
     raise exc
 
 
@@ -109,7 +111,7 @@ async def upload_documents(
     valid_until: str | None = Form(default=None),
     source_of_truth_url: str | None = Form(default=None),
     db: Session = Depends(get_db),
-    principal: Principal = Depends(resolve_principal),
+    principal: Principal = Depends(require_document_write),
 ) -> BulkUploadOut:
     """Bulk upload. Many files at once, or a whole folder drop from the browser.
 
@@ -137,10 +139,14 @@ async def upload_documents(
     )
 
     results: list[UploadReport] = []
+    aggregate_bytes = 0
     for upload in files:
         name = upload.filename or "upload"
         try:
-            data = await upload.read()
+            data = await upload.read(settings.max_upload_bytes + 1)
+            aggregate_bytes += len(data)
+            if aggregate_bytes > settings.max_upload_bytes * 4:
+                raise HTTPException(413, "batch upload size limit exceeded")
             if not data:
                 raise AppError("file is empty")
             if len(data) > settings.max_upload_bytes:
@@ -166,6 +172,8 @@ async def upload_documents(
                     ),
                 )
             )
+        except HTTPException:
+            raise
         except DuplicateDocument as exc:
             db.rollback()
             results.append(
@@ -178,12 +186,12 @@ async def upload_documents(
             )
         except Exception as exc:  # noqa: BLE001 - per-file isolation is the point
             db.rollback()
-            logger.warning("upload rejected for %r: %s", name, exc)
+            logger.warning("upload rejected: %s", type(exc).__name__)
             results.append(
                 UploadReport(
                     original_filename=name,
                     status="rejected",
-                    detail=f"{type(exc).__name__}: {exc}",
+                    detail="upload rejected",
                 )
             )
         finally:
@@ -201,7 +209,7 @@ async def upload_documents(
 def ingest_url(
     payload: UrlIngestIn,
     db: Session = Depends(get_db),
-    principal: Principal = Depends(resolve_principal),
+    principal: Principal = Depends(require_document_write),
 ) -> Document:
     """Ingest a URL through the SSRF-safe fetcher."""
     from app.net import ssrf
@@ -258,7 +266,7 @@ def _filename_for_url(url: str, content_type: str | None) -> str:
 def ingest_paste(
     payload: PasteIngestIn,
     db: Session = Depends(get_db),
-    principal: Principal = Depends(resolve_principal),
+    principal: Principal = Depends(require_document_write),
 ) -> Document:
     """Pasted text: discovery notes, an RFP extract, call notes typed up after the fact.
 
@@ -297,25 +305,31 @@ def ingest_paste(
 
 @router.get("", response_model=list[DocumentOut])
 def list_documents(
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=10000),
     status_filter: str | None = None,
     metadata_complete: bool | None = None,
     include_superseded: bool = False,
+    cursor: str | None = Query(None, max_length=512),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> list[Document]:
-    statement = select(Document).where(Document.org_id == principal.org_id)
+    curator = replace(principal, include_unapproved=True) if principal.can_write_catalog else principal
+    statement = select(Document).where(document_access_clause(curator))
     if not include_superseded:
         statement = statement.where(Document.is_current.is_(True))
     if status_filter:
         statement = statement.where(Document.status == status_filter)
     if metadata_complete is not None:
         statement = statement.where(Document.metadata_complete.is_(metadata_complete))
+    try:
+        statement = seek_before(statement, Document.uploaded_at, Document.id, cursor)
+    except AppError as exc:
+        raise _as_http(exc) from exc
     statement = (
-        statement.order_by(Document.uploaded_at.desc())
+        statement.order_by(Document.uploaded_at.desc(), Document.id.desc())
         .limit(min(max(limit, 1), 200))
-        .offset(max(offset, 0))
+        .offset(0 if cursor else max(offset, 0))
     )
     return list(db.scalars(statement))
 
@@ -334,7 +348,7 @@ def patch_metadata(
     document_id: uuid.UUID,
     payload: MetadataPatchIn,
     db: Session = Depends(get_db),
-    principal: Principal = Depends(resolve_principal),
+    principal: Principal = Depends(require_document_write),
 ) -> Document:
     """Fill in the curation metadata that bulk upload deliberately left blank.
 
@@ -343,6 +357,8 @@ def patch_metadata(
     edit is never overwritten by a later re-read.
     """
     document = _scoped(db, principal, document_id)
+    if payload.approval_state is not None and payload.approval_state != document.approval_state and not principal.is_admin:
+        raise HTTPException(403, "admin access required to change approval")
     merged = DocumentMetadataIn(
         title=payload.title if payload.title is not None else document.title,
         vendor=payload.vendor if payload.vendor is not None else document.vendor,
@@ -393,7 +409,7 @@ def set_approval(
     document_id: uuid.UUID,
     payload: ApprovalIn,
     db: Session = Depends(get_db),
-    principal: Principal = Depends(resolve_principal),
+    principal: Principal = Depends(require_document_approval),
 ) -> Document:
     document = _scoped(db, principal, document_id)
     try:
@@ -407,7 +423,7 @@ def set_approval(
 def delete_document(
     document_id: uuid.UUID,
     db: Session = Depends(get_db),
-    principal: Principal = Depends(resolve_principal),
+    principal: Principal = Depends(require_document_write),
 ) -> None:
     service.delete_document(db, _scoped(db, principal, document_id))
 
@@ -416,7 +432,7 @@ def delete_document(
 def reprocess_document(
     document_id: uuid.UUID,
     db: Session = Depends(get_db),
-    principal: Principal = Depends(resolve_principal),
+    principal: Principal = Depends(require_document_write),
 ) -> DocumentStatusOut:
     document = _scoped(db, principal, document_id)
     if document.status == DocumentStatus.PROCESSING:
@@ -459,8 +475,8 @@ def document_status(
 @router.get("/{document_id}/chunks", response_model=list[ChunkOut])
 def document_chunks(
     document_id: uuid.UUID,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> list[ChunkOut]:

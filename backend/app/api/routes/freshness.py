@@ -153,7 +153,7 @@ def _alert_out(row: FreshnessAlert) -> FreshnessAlertOut:
 @router.get("/sources", response_model=VendorSourceListOut)
 def list_sources(
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> VendorSourceListOut:
@@ -238,7 +238,7 @@ def run_check(
 @router.get("/alerts", response_model=FreshnessAlertListOut)
 def list_alerts(
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> FreshnessAlertListOut:

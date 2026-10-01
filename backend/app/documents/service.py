@@ -34,11 +34,12 @@ from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.core.config import settings
 from app.core.errors import AppError, DuplicateDocument
 from app.core.logging import get_logger
-from app.db.models import Document, DocumentChunk, DocumentStatus, Workspace
+from app.db.models import Document, DocumentChunk, DocumentStatus, Workspace, Organization
 from app.db.session import SessionLocal, mark_system_session
 from app.documents import extraction, injection
 from app.documents.chunking import chunk_blocks
@@ -121,7 +122,18 @@ def create_document(
     uploads are auto-approved. ``allow_incomplete_approval`` is only for
     operator-chosen vendor crawls, which are approved without a curation form.
     """
+    if len(data) > settings.max_upload_bytes:
+        raise AppError("upload size limit exceeded", status_code=413)
     meta = metadata or DocumentMetadataIn()
+    if meta.approval_state == ApprovalState.APPROVED and not principal.is_admin:
+        raise AppError("document approval requires an administrator", status_code=403)
+    # Serialize quota checks across application instances for the same tenant.
+    db.scalar(select(Organization.id).where(Organization.id == principal.org_id).with_for_update())
+    from datetime import datetime, timezone, timedelta
+    recent = db.scalar(select(func.count()).select_from(Document).where(Document.org_id == principal.org_id, Document.uploaded_at >= datetime.now(timezone.utc) - timedelta(minutes=1))) or 0
+    pending = db.scalar(select(func.count()).select_from(Document).where(Document.org_id == principal.org_id, Document.status.in_([DocumentStatus.UPLOADED, DocumentStatus.PROCESSING]))) or 0
+    if recent >= 100 or pending >= 500:
+        raise AppError("organization upload quota exceeded; retry later", status_code=429)
     if apply_auto_approve and settings.auto_approve_uploads:
         meta = meta.model_copy(update={"approval_state": ApprovalState.APPROVED})
     elif not (allow_incomplete_approval and meta.approval_state == ApprovalState.APPROVED):
@@ -216,7 +228,7 @@ def enqueue_ingestion(db: Session, document: Document, *, user_initiated: bool =
     queue.enqueue(db, document_id=document.id, org_id=document.org_id, user_initiated=user_initiated)
 
 
-def process_document(document_id: uuid.UUID) -> None:
+def process_document(document_id: uuid.UUID, *, expected_org_id: uuid.UUID | None = None) -> None:
     """Run extraction through persistence. Owns its own session: the worker calls it."""
     db = mark_system_session(SessionLocal())
     try:
@@ -225,6 +237,8 @@ def process_document(document_id: uuid.UUID) -> None:
             logger.warning("process_document: %s not found", document_id)
             return
 
+        if expected_org_id is not None and document.org_id != expected_org_id:
+            raise AppError("job tenant mismatch", status_code=403)
         document.status = DocumentStatus.PROCESSING
         document.error_message = None
         db.commit()
@@ -237,7 +251,9 @@ def process_document(document_id: uuid.UUID) -> None:
                 document.doc_metadata = extra
                 db.commit()
 
-            result = extraction.extract(data, document.file_type, on_progress=_progress)
+            from app.documents.isolated import extract_isolated
+            parser = extract_isolated if settings.environment.lower() == "production" else extraction.extract
+            result = parser(data, document.file_type, on_progress=_progress)
             chunks = chunk_blocks(result.blocks)
         finally:
             del data

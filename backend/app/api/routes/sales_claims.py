@@ -103,7 +103,7 @@ def create_claim(opportunity_id: uuid.UUID, payload: ClaimIn, db: Session = Depe
 
 
 @router.get("/opportunities/{opportunity_id}/claim-sources")
-def list_claim_sources(opportunity_id: uuid.UUID, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+def list_claim_sources(opportunity_id: uuid.UUID, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
                        db: Session = Depends(get_db), principal: Principal = Depends(resolve_principal)):
     _require_sales(principal)
     opportunity = _visible_opportunity(db, principal, opportunity_id)
@@ -117,7 +117,7 @@ def list_claim_sources(opportunity_id: uuid.UUID, limit: int = Query(50, ge=1, l
 
 
 @router.get("/opportunities/{opportunity_id}/claims")
-def list_claims(opportunity_id: uuid.UUID, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+def list_claims(opportunity_id: uuid.UUID, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
                 db: Session = Depends(get_db), principal: Principal = Depends(resolve_principal)):
     _require_sales(principal)
     _visible_opportunity(db, principal, opportunity_id)
@@ -176,7 +176,7 @@ def revoke_claim(claim_id: uuid.UUID, payload: ClaimDecision, db: Session = Depe
 
 
 @router.get("/opportunities/{opportunity_id}/battle-card")
-def export_battle_card(opportunity_id: uuid.UUID, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+def export_battle_card(opportunity_id: uuid.UUID, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
                        db: Session = Depends(get_db), principal: Principal = Depends(resolve_principal)):
     _require_sales(principal)
     _visible_opportunity(db, principal, opportunity_id)

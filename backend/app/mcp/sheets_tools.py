@@ -71,6 +71,7 @@ def execute_sheets_tool(original: str, arguments: dict, ctx) -> dict:
             raise AppError("Draft write access required", status_code=403)
         # Export artifacts remain immutable even if an administrator mislabels one as a draft.
         exported = ctx.db.scalars(select(SalesQuoteExport.id).where(
+            SalesQuoteExport.org_id == ctx.principal.org_id,
             SalesQuoteExport.external_id == target.spreadsheet_id,
         ).limit(1)).first()
         if exported is not None:

@@ -87,7 +87,7 @@ def _drill_out(row: RestoreDrill) -> RestoreDrillOut:
         within_sla=row.within_sla,
         row_counts_before=row.row_counts_before,
         row_counts_after=row.row_counts_after,
-        error_message=row.error_message,
+        error_message="restore drill failed" if row.error_message else None,
         started_at=row.started_at.isoformat() if row.started_at else None,
         finished_at=row.finished_at.isoformat() if row.finished_at else None,
     )
@@ -96,7 +96,7 @@ def _drill_out(row: RestoreDrill) -> RestoreDrillOut:
 @router.get("/ops/restore-drills", response_model=RestoreDrillListOut)
 def list_drills(
     limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> RestoreDrillListOut:
@@ -152,6 +152,8 @@ def sso_status(
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> SsoStatusOut:
+    if not principal.is_admin:
+        raise HTTPException(403, "admin access required")
     oidc_row = load_provider(db, principal.org_id, SsoProtocol.OIDC)
     saml_row = load_provider(db, principal.org_id, SsoProtocol.SAML)
     oidc_configured = bool((oidc_row and oidc_row.enabled) or env_oidc_configured())

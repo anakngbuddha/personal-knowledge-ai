@@ -134,6 +134,31 @@ def test_every_tenant_table_is_enabled_and_forced(probe):
     assert posture["unprotected_tables"] == []
 
 
+def test_null_tenant_rows_are_not_shared(probe, tenants):
+    row_id = uuid.uuid4()
+    with probe.connect() as conn:
+        transaction = conn.begin()
+        try:
+            conn.execute(text("INSERT INTO workspaces (id, org_id, name) VALUES (:id, NULL, 'quarantined')"), {"id": row_id})
+            conn.execute(text(f"SET LOCAL ROLE {PROBE}"))
+            conn.execute(text("SELECT set_config('app.current_org_id', :org, true), set_config('app.rls_bypass', 'off', true)"), {"org": str(tenants["org_a"])})
+            assert conn.scalar(text("SELECT id FROM workspaces WHERE id = :id"), {"id": row_id}) is None
+        finally:
+            transaction.rollback()
+
+
+def test_derived_tables_have_forced_rls(probe):
+    with probe.connect() as conn:
+        for table in ("messages", "product_capabilities", "reference_architecture_products", "organization_memberships", "evaluation_questions"):
+            assert conn.scalar(text("SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = to_regclass(:table)"), {"table": table}) is True
+
+
+def test_tenant_reassignment_is_rejected_even_for_system(probe, tenants):
+    with pytest.raises(DBAPIError):
+        with probe.begin() as conn:
+            conn.execute(text("UPDATE workspaces SET org_id=:other WHERE id=:id"), {"other": tenants["org_b"], "id": tenants["ws_a"]})
+
+
 def test_migration_repairs_a_partially_applied_table(probe):
     from app.db.migrations import _apply_rls_table
 

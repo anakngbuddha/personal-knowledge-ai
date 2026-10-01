@@ -62,7 +62,12 @@ def execute_claimed(db, job) -> None:
         raise LookupError(f"job {job.id} has no document")
     from app.documents.service import process_document
 
-    process_document(job.document_id)
+    from app.db.models import Document, Workspace
+    document = db.get(Document, job.document_id)
+    workspace = db.get(Workspace, document.workspace_id) if document else None
+    if not document or not job.org_id or document.org_id != job.org_id or not workspace or workspace.org_id != job.org_id:
+        raise UnsafeFile("job tenant mismatch")
+    process_document(job.document_id, expected_org_id=job.org_id)
 
 
 def _run_freshness_crawl(db, job) -> None:
@@ -75,7 +80,7 @@ def _run_freshness_crawl(db, job) -> None:
     if not raw:
         raise LookupError("freshness crawl job is missing vendor_source_id")
     source = db.get(VendorSource, uuid.UUID(str(raw)))
-    if source is None:
+    if source is None or not job.org_id or source.org_id != job.org_id:
         raise LookupError(f"vendor source {raw} not found")
     crawl_source(db, source, user_initiated=(job.payload or {}).get("user_initiated") is True)
 

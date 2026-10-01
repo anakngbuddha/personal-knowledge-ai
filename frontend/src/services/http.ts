@@ -17,30 +17,15 @@ function normalizeBase(url: string) {
   return url.trim().replace(/\/$/, "");
 }
 
-function readStoredBase() {
-  if (typeof window === "undefined") return "";
-  const q = new URLSearchParams(window.location.search).get("api")?.trim();
-  if (q) {
-    const c = normalizeBase(q);
-    try {
-      localStorage.setItem("pka_api_base_url", c);
-    } catch {
-      /* ignore private mode */
-    }
-    return c;
-  }
-  try {
-    return normalizeBase(localStorage.getItem("pka_api_base_url") ?? "");
-  } catch {
-    return "";
-  }
-}
-
 function resolveApiBaseUrl() {
-  const s = readStoredBase();
-  if (s) return s;
-  const e = normalizeBase(import.meta.env.VITE_API_BASE_URL ?? "");
-  if (e) return e;
+  const configured = normalizeBase(import.meta.env.VITE_API_BASE_URL ?? "");
+  if (configured) {
+    const url = new URL(configured);
+    if (url.username || url.password || (url.protocol !== "https:" && !(isBrowserLocalHost() && url.protocol === "http:"))) {
+      throw new Error("Invalid configured API URL");
+    }
+    return configured;
+  }
   return isBrowserLocalHost() ? "http://localhost:8000" : "";
 }
 
@@ -64,50 +49,16 @@ export function apiPointsAtLocalhostFromRemote() {
 }
 
 export function getAccessToken() {
-  try {
-    const sessionToken = sessionStorage.getItem(TOKEN_KEY);
-    if (sessionToken) return sessionToken;
-  } catch {
-    /* persistent storage may still be available */
-  }
-  try {
-    const raw = localStorage.getItem(REMEMBERED_SESSION_KEY);
-    if (!raw) return null;
-    const saved: unknown = JSON.parse(raw);
-    if (
-      typeof saved === "object" && saved !== null &&
-      "token" in saved && typeof saved.token === "string" &&
-      "expiresAt" in saved && typeof saved.expiresAt === "number" &&
-      Number.isFinite(saved.expiresAt) && saved.expiresAt > Date.now()
-    ) return saved.token;
-    localStorage.removeItem(REMEMBERED_SESSION_KEY);
-    queueMicrotask(() => expiredListeners.forEach((listener) => listener()));
-  } catch {
-    try { localStorage.removeItem(REMEMBERED_SESSION_KEY); } catch { /* storage unavailable */ }
-    queueMicrotask(() => expiredListeners.forEach((listener) => listener()));
-  }
-  return null;
+  try { localStorage.removeItem(REMEMBERED_SESSION_KEY); } catch { /* storage unavailable */ }
+  try { return sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
 
-export function setAccessToken(
-  token: string | null,
-  options?: { remember?: boolean; expiresInSeconds?: number },
-) {
-  try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage unavailable */ }
+export function setAccessToken(token: string | null, _options?: { remember?: boolean; expiresInSeconds?: number }) {
   try { localStorage.removeItem(REMEMBERED_SESSION_KEY); } catch { /* storage unavailable */ }
-  if (!token) return;
-  if (options?.remember && options.expiresInSeconds && Number.isFinite(options.expiresInSeconds) && options.expiresInSeconds > 0) {
-    try {
-      localStorage.setItem(REMEMBERED_SESSION_KEY, JSON.stringify({
-        token,
-        expiresAt: Date.now() + options.expiresInSeconds * 1000,
-      }));
-      return;
-    } catch {
-      /* fall back to a browser-tab session when persistent storage is disabled */
-    }
-  }
-  try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* storage unavailable */ }
+  try {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch { /* storage unavailable */ }
 }
 
 export function onSessionExpired(listener: () => void) {
@@ -197,6 +148,7 @@ async function fetchOnce(path: string, init?: RequestInit, timeoutMs = FETCH_TIM
   try {
     return await fetch(`${BASE_URL}${path}`, {
       ...init,
+      redirect: "error",
       headers: init?.headers,
       signal: timer.signal,
     });
@@ -229,6 +181,7 @@ export async function fetchResponse(
   init?: RequestInit,
   timeoutMs?: number
 ): Promise<Response> {
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) throw new Error("Invalid API path");
   const effectiveTimeout = timeoutMs ?? defaultTimeoutForPath(path);
   if (apiPointsAtLocalhostFromRemote()) {
     throw new Error("API URL is not set. Add VITE_API_BASE_URL and redeploy.");

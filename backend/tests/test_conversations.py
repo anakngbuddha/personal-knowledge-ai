@@ -1,6 +1,7 @@
 """Conversation and message management tests for Phase 3."""
 
 import uuid
+from datetime import datetime
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
@@ -234,6 +235,7 @@ def test_get_conversation_sources_endpoint_route(sqlite_session: Session):
 
     sources = get_conversation_sources_endpoint(
         conversation_id=str(conv.id),
+        limit=100, offset=0,
         db=sqlite_session,
         principal=principal,
     )
@@ -241,3 +243,20 @@ def test_get_conversation_sources_endpoint_route(sqlite_session: Session):
     assert sources[0].chunk_id == "c10"
     assert sources[0].citation == "Datasheet p. 4"
     assert sources[0].vendor == "Acme"
+
+
+def test_message_pages_are_bounded_and_preserve_order(sqlite_session):
+    from app.api.routes.ask import get_conversation_endpoint
+    conv = create_conversation(sqlite_session, workspace_id=sqlite_session.ws1_id, org_id=sqlite_session.org_id)
+    for number in range(7):
+        add_message(sqlite_session, conversation_id=conv.id, role="user", content=str(number))
+    principal = owner_principal(sqlite_session.org_id)
+    newest = get_conversation_endpoint(str(conv.id), notebook_id=None, limit=3, offset=0, db=sqlite_session, principal=principal)
+    older = get_conversation_endpoint(str(conv.id), notebook_id=None, limit=3, offset=3, db=sqlite_session, principal=principal)
+    assert [row.content for row in newest.messages] == ["4", "5", "6"]
+    assert [row.content for row in older.messages] == ["1", "2", "3"]
+    assert newest.message_total == older.message_total == 7
+    from app.db.pagination import encode_cursor
+    cursor = encode_cursor(datetime.fromisoformat(newest.messages[0].created_at), newest.messages[0].id)
+    sought = get_conversation_endpoint(str(conv.id), notebook_id=None, limit=3, offset=0, cursor=cursor, db=sqlite_session, principal=principal)
+    assert [row.content for row in sought.messages] == ["1", "2", "3"]

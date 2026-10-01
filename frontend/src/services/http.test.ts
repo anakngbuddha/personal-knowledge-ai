@@ -23,18 +23,45 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
+describe("API origin security", () => {
+  it("ignores hostile query and persisted API overrides", async () => {
+    vi.stubGlobal("window", { location: { hostname: "workspace.example", search: "?api=https://attacker.example" } });
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.example");
+    local.setItem("pka_api_base_url", "https://attacker.example");
+    const http = await import("./http");
+    http.setAccessToken("private-token");
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    await http.fetchResponse("/auth/me");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.example/auth/me");
+    expect(fetchMock.mock.calls[0][1].redirect).toBe("error");
+  });
+
+  it("rejects absolute and protocol-relative paths before attaching tokens", async () => {
+    const http = await import("./http");
+    http.setAccessToken("private-token");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    for (const path of ["https://attacker.example", "//attacker.example", "/\\attacker.example"]) {
+      await expect(http.fetchResponse(path)).rejects.toThrow("Invalid API path");
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("authentication session", () => {
-  it("restores a remembered login after browser session storage is cleared", async () => {
+  it("never persists bearer tokens when remembering is requested", async () => {
     const http = await import("./http");
     http.setAccessToken("remembered-token", { remember: true, expiresInSeconds: 3600 });
-    expect(session.length).toBe(0);
+    expect(local.getItem("pka_remembered_session")).toBeNull();
 
     vi.stubGlobal("sessionStorage", new MemoryStorage());
     vi.resetModules();
     const reopened = await import("./http");
-    expect(reopened.getAccessToken()).toBe("remembered-token");
+    expect(reopened.getAccessToken()).toBeNull();
   });
 
   it("does not restore a login when remembering is disabled", async () => {
@@ -52,6 +79,7 @@ describe("authentication session", () => {
     http.setAccessToken("expired-token", { remember: true, expiresInSeconds: 3600 });
     local.setItem("pka_remembered_session", JSON.stringify({ token: "expired-token", expiresAt: Date.now() - 1 }));
 
+    session.clear();
     expect(http.getAccessToken()).toBeNull();
     expect(local.getItem("pka_remembered_session")).toBeNull();
   });

@@ -1,0 +1,4 @@
+-c requirements.lock
+pytest>=8.2
+ruff>=0.5
+pip-audit==2.10.1

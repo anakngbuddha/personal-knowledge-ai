@@ -16,10 +16,13 @@ export const api = {
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(body)
     }),
-  listDocuments: (params?: { metadata_complete?: boolean; status?: string }) => {
+  listDocuments: (params?: { metadata_complete?: boolean; status?: string; limit?: number; offset?: number; cursor?: string }) => {
     const q = new URLSearchParams();
     if(params?.metadata_complete !== undefined) q.set("metadata_complete", String(params.metadata_complete));
     if(params?.status) q.set("status_filter", params.status);
+    q.set("limit", String(params?.limit ?? 100));
+    q.set("offset", String(params?.offset ?? 0));
+    if (params?.cursor) q.set("cursor", params.cursor);
     const s = q.toString();
     return request<KnowledgeDocument[]>(`/documents${s ? `?${s}` : ""}`);
   },
@@ -122,12 +125,13 @@ export const api = {
       clearTimeout(timer);
     }
   },
-  listConversations: (limit=20, offset=0, notebookId?: string) => {
+  listConversations: (limit=20, offset=0, notebookId?: string, cursor?: string) => {
     const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (notebookId) q.set("notebook_id", notebookId);
+    if (cursor) q.set("cursor", cursor);
     return request<ConversationListResponse>(`/conversations?${q}`);
   },
-  getConversation: (id:string) => request<Conversation>(`/conversations/${id}`),
+  getConversation: (id:string, limit=100, offset=0, cursor?: string) => request<Conversation>(`/conversations/${id}?limit=${limit}&offset=${offset}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`),
   deleteConversation: (id:string) => request<void>(`/conversations/${id}`, {method:"DELETE"}),
   getConversationSources: (id:string) => request<SourceMetadata[]>(`/conversations/${id}/sources`),
   confirmAgentAction: (id:string) => request<{id:string; status:string; result?:Record<string,unknown>}>(`/agent/actions/${id}/confirm`, {method:"POST"}),

@@ -43,7 +43,7 @@ export default function App() {
   const authenticated = sessionStatus === "authenticated";
   const [showAuth, setShowAuth] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ask");
-  const { documents, loading, error, refresh, setError } = useDocuments(authenticated);
+  const { documents, loading, error, refresh, setError, page, setPage, hasMore } = useDocuments(authenticated);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [seedQuestion, setSeedQuestion] = useState<string | null>(null);
   const [mapVersion, setMapVersion] = useState(0);
@@ -217,7 +217,7 @@ export default function App() {
             </div>
             <div className="nav-section">
               <div className="index-label">Workspace</div>
-              {tabs.map((tab) => {
+              {tabs.filter((tab) => tab.id !== "connections" || principal?.is_admin || principal?.is_owner).map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
                 return (
@@ -268,7 +268,7 @@ export default function App() {
                 initialQuestion={seedQuestion}
               />
             )}
-            {activeTab === "connections" && <IntegrationsPanel />}
+            {activeTab === "connections" && (principal?.is_admin || principal?.is_owner) && <IntegrationsPanel />}
             {activeTab === "opportunities" && <OpportunitiesWorkspace />}
             {activeTab === "map" && (
               <GraphExplorer
@@ -279,6 +279,12 @@ export default function App() {
             {activeTab === "notes" && <NotesPanel />}
             {activeTab === "settings" && <SettingsPanel principal={principal} onSignOut={signOut} theme={theme} onThemeChange={setTheme} />}
             {activeTab === "sources" && (
+              <>
+              <nav aria-label="Source pages">
+                <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous sources</button>
+                <span> Page {page + 1} </span>
+                <button type="button" disabled={!hasMore} onClick={() => setPage(page + 1)}>Next sources</button>
+              </nav>
               <SourcesWorkspace
                 documents={documents}
                 loading={loading}
@@ -292,6 +298,7 @@ export default function App() {
                   setActiveTab(tab);
                 }}
               />
+              </>
             )}
           </main>
         </div>

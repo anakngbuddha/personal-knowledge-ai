@@ -275,7 +275,7 @@ def _prepare_context(
     # 3.5 The map. Its sentences go in the prompt; its neighbours bring their own best
     # passage so a pairing can be cited instead of asserted.
     mark = time.perf_counter()
-    graph = map_lookup.expand(db, workspace_id=workspace_id, question=question)
+    graph = map_lookup.expand(db, workspace_id=workspace_id, org_id=principal.org_id, question=question)
     timings["graph_lookup_ms"] = round((time.perf_counter() - mark) * 1000.0, 1)
     relationships_block = build_relationships_block(graph.as_lines())
     covered = not hits_are_weak(hits, search_query)

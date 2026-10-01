@@ -115,7 +115,7 @@ _RLS_TABLES = text("""
       AND c.column_name = 'org_id'
       AND t.table_type = 'BASE TABLE'
       AND c.table_name NOT IN
-        ('organizations', 'organization_memberships', 'user_accounts', 'schema_migrations')
+        ('organizations', 'user_accounts', 'schema_migrations')
     ORDER BY c.table_name
 """)
 _RLS_READY = text("""
@@ -130,7 +130,6 @@ _RLS_READY = text("""
 """)
 _RLS_PREDICATE = (
     "current_setting('app.rls_bypass', true) = 'on' "
-    "OR org_id IS NULL "
     "OR CAST(org_id AS text) = current_setting('app.current_org_id', true)"
 )
 _RETRYABLE_DDL_STATES = {"40P01", "55P03"}  # deadlock, lock timeout
@@ -147,8 +146,6 @@ def _apply_rls_table(engine: Engine, schema: str, table_name: str) -> None:
                 # across tables. The old instance does not use this lock, hence
                 # the bounded retry on 40P01/55P03 below.
                 conn.execute(text("SELECT pg_advisory_xact_lock(17291, 22)"))
-                if conn.scalar(_RLS_READY, {"schema": schema, "table_name": table_name}):
-                    return
                 conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
                 conn.execute(text(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY"))
                 conn.execute(text(f"DROP POLICY IF EXISTS tenant_isolation ON {table}"))
@@ -171,6 +168,24 @@ def _apply_rls(engine: Engine) -> None:
         tables = conn.execute(_RLS_TABLES).all()
     for schema, table_name in tables:
         _apply_rls_table(engine, schema, table_name)
+
+def _apply_derived_rls(engine):
+    predicates = {
+        "messages": "EXISTS (SELECT 1 FROM conversations p WHERE p.id = messages.conversation_id AND CAST(p.org_id AS text) = current_setting('app.current_org_id', true))",
+        "evaluation_questions": "false",
+        "product_capabilities": "EXISTS (SELECT 1 FROM products p JOIN capabilities c ON c.id = product_capabilities.capability_id WHERE p.id = product_capabilities.product_id AND p.org_id = c.org_id AND CAST(p.org_id AS text) = current_setting('app.current_org_id', true))",
+        "reference_architecture_products": "EXISTS (SELECT 1 FROM reference_architectures a JOIN products p ON p.id = reference_architecture_products.product_id WHERE a.id = reference_architecture_products.architecture_id AND a.org_id = p.org_id AND a.workspace_id = p.workspace_id AND CAST(a.org_id AS text) = current_setting('app.current_org_id', true))",
+    }
+    for name, predicate in predicates.items():
+        with engine.begin() as conn:
+            table = engine.dialect.identifier_preparer.quote_identifier(name)
+            conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+            conn.execute(text(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY"))
+            conn.execute(text(f"DROP POLICY IF EXISTS tenant_isolation ON {table}"))
+            expression = "current_setting('app.rls_bypass', true) = 'on' OR " + predicate
+            if name == "evaluation_questions":
+                expression = "current_setting('app.rls_bypass', true) = 'on'"
+            conn.execute(text(f"CREATE POLICY tenant_isolation ON {table} USING ({expression}) WITH CHECK ({expression})"))
 
 MIGRATIONS=[
  ("0015_multi_user_rbac",_RBAC),
@@ -325,6 +340,35 @@ MIGRATIONS=[
   "CREATE INDEX IF NOT EXISTS ix_sales_claims_opportunity_status ON sales_claims(opportunity_id,status)",
  ],True),
  ("0036_sales_claims_rls",[],True),
+ ("0037_sso_transactions", ["CREATE TABLE IF NOT EXISTS sso_transactions (state_hash varchar(64) PRIMARY KEY, binding_hash varchar(64) NOT NULL, protocol varchar(16) NOT NULL, nonce varchar(128) NOT NULL, verifier varchar(128) NOT NULL, expires_at double precision NOT NULL)", "CREATE INDEX IF NOT EXISTS ix_sso_transactions_expires_at ON sso_transactions(expires_at)"], True),
+ ("0038_audit_rls_hardening",[],True),
+ ("0040_audit_tenant_parent_guards",[],True),
+ ("0039_audit_query_indexes",[
+  "CREATE INDEX IF NOT EXISTS ix_documents_org_workspace_created ON documents(org_id, workspace_id, uploaded_at, id)",
+  "CREATE INDEX IF NOT EXISTS ix_messages_conversation_created ON messages(conversation_id, created_at DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS ix_notes_org_workspace_updated ON notes(org_id, workspace_id, updated_at, id)",
+  "CREATE INDEX IF NOT EXISTS ix_product_edges_workspace_status ON product_edges(workspace_id, status)",
+ ],True),
+ ("0041_identity_and_offline_rls",[],True),
+ ("0042_audit_access_path_indexes",[
+  "CREATE INDEX IF NOT EXISTS ix_documents_org_uploaded ON documents(org_id, uploaded_at DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS ix_conversations_org_workspace_updated ON conversations(org_id, workspace_id, updated_at DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS ix_ingestion_jobs_claim_order ON ingestion_jobs(status, run_after, created_at)",
+  "CREATE INDEX IF NOT EXISTS ix_task_executions_claim_order ON task_executions(status, run_after, created_at)",
+  "CREATE INDEX IF NOT EXISTS ix_product_edges_workspace_status_created ON product_edges(workspace_id, status, created_at DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS ix_audit_logs_org_created ON audit_logs(org_id, created_at DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS ix_products_name_trgm ON products USING gin(name gin_trgm_ops)",
+  "CREATE INDEX IF NOT EXISTS ix_products_vendor_trgm ON products USING gin(vendor gin_trgm_ops)",
+  "CREATE INDEX IF NOT EXISTS ix_products_category_trgm ON products USING gin(category gin_trgm_ops)",
+ ],True),
+ ("0043_retention_controls",[
+  "CREATE TABLE IF NOT EXISTS retention_policies (org_id uuid PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE, enabled boolean NOT NULL DEFAULT false, legal_hold boolean NOT NULL DEFAULT false, periods json NOT NULL DEFAULT '{}')",
+  "CREATE TABLE IF NOT EXISTS retention_holds (id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, kind varchar(32) NOT NULL, resource_id uuid NOT NULL, UNIQUE(org_id,kind,resource_id))",
+  "CREATE INDEX IF NOT EXISTS ix_retention_holds_org_id ON retention_holds(org_id)",
+  "CREATE TABLE IF NOT EXISTS retention_object_deletions (id uuid PRIMARY KEY, org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, storage_key text NOT NULL, attempts integer NOT NULL DEFAULT 0)",
+  "CREATE INDEX IF NOT EXISTS ix_retention_object_deletions_org_id ON retention_object_deletions(org_id)",
+ ],True),
+ ("0044_retention_rls",[],True),
 ]
 
 def applied_migrations(engine: Engine)->set[str]:
@@ -342,6 +386,25 @@ def run_migrations(engine: Engine)->list[str]:
   if postgres_only and not is_pg:
    with engine.begin() as conn: _record(conn,name)
    logger.info("migration %s skipped on %s; create_all already covers it",name,engine.dialect.name); continue
+  if name == "0040_audit_tenant_parent_guards":
+   from app.db.tenant_constraints import apply_parent_guards
+   apply_parent_guards(engine)
+   with engine.begin() as conn: _record(conn,name)
+   ran.append(name)
+   continue
+  if name in ("0038_audit_rls_hardening", "0041_identity_and_offline_rls"):
+   _apply_rls(engine)
+   _apply_derived_rls(engine)
+   with engine.begin() as conn: _record(conn,name)
+   ran.append(name)
+   continue
+  if name == "0044_retention_rls":
+   _apply_rls(engine)
+   from app.db.tenant_constraints import apply_parent_guards
+   apply_parent_guards(engine)
+   with engine.begin() as conn: _record(conn,name)
+   ran.append(name)
+   continue
   if name in ("0022_row_level_security", "0024_agent_actions_rls", "0026_sales_foundation_rls", "0028_opportunity_participants_rls", "0030_sales_commerce_rls", "0033_sales_quote_exports_rls", "0036_sales_claims_rls"):
    _apply_rls(engine)
    with engine.begin() as conn: _record(conn,name)

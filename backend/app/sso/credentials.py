@@ -18,33 +18,37 @@ def _material() -> str:
     return (
         (settings.sso_credentials_key or "").strip()
         or (settings.mcp_credentials_key or "").strip()
-        or settings.jwt_secret_key
     )
 
 
 def _fernet():
     from cryptography.fernet import Fernet, InvalidToken
-
     key = _material()
-    if not key:
-        raise SsoCredentialError("SSO credentials key is not configured")
     try:
         return Fernet(key.encode("ascii")), InvalidToken
-    except (ValueError, Exception):
-        digest = hashlib.sha256(key.encode("utf-8")).digest()
-        return Fernet(base64.urlsafe_b64encode(digest)), InvalidToken
+    except (ValueError, UnicodeError) as exc:
+        raise SsoCredentialError("credential key must be a valid Fernet key") from exc
 
 
 def encrypt_secret(plaintext: str) -> bytes:
-    fernet, _ = _fernet()
-    return fernet.encrypt(plaintext.encode("utf-8"))
+    from app.security.credential_crypto import encrypt
+    try:
+        return encrypt(_material(), plaintext)
+    except Exception as exc:
+        raise SsoCredentialError("credential encryption failed") from exc
 
 
 def decrypt_secret(ciphertext: bytes) -> str:
-    if not ciphertext:
-        raise SsoCredentialError("missing ciphertext")
-    fernet, invalid = _fernet()
+    from app.security.credential_crypto import decrypt
     try:
-        return fernet.decrypt(bytes(ciphertext)).decode("utf-8")
-    except invalid as exc:
-        raise SsoCredentialError("could not decrypt SSO secret") from exc
+        return decrypt(_material(), ciphertext)
+    except Exception as exc:
+        raise SsoCredentialError("credential decryption failed") from exc
+
+
+def secret_configured() -> bool:
+    try:
+        _fernet()
+        return True
+    except SsoCredentialError:
+        return False

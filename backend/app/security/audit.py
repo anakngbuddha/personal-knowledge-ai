@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import AuditLog
 from app.security.principal import Principal
+from app.security.privacy import audit_details
 
 
 def record_audit(
@@ -28,7 +29,7 @@ def record_audit(
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
-        details=details,
+        details=audit_details(details),
     )
     db.add(entry)
     db.commit()

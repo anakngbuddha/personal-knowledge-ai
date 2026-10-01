@@ -41,8 +41,9 @@ from app.core.logging import get_logger
 from app.db.models import Document, EdgeStatus, Product
 from app.db.session import get_db
 from app.documents.service import get_or_create_default_workspace
-from app.security.deps import resolve_principal
+from app.security.deps import resolve_principal, require_document_write
 from app.security.principal import Principal
+from app.retrieval.access import document_access_clause
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["catalog", "graph"])
@@ -54,6 +55,13 @@ def _get_service(
 ) -> tuple[CatalogService, uuid.UUID, uuid.UUID]:
     workspace = get_or_create_default_workspace(db, principal.org_id)
     return CatalogService(db), principal.org_id, workspace.id
+
+
+def _get_write_service(
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(require_document_write),
+) -> tuple[CatalogService, uuid.UUID, uuid.UUID]:
+    return _get_service(db, principal)
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +77,7 @@ def list_products(
     lifecycle_status: str | None = Query(None),
     search: str | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),
     deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
 ) -> list[ProductOut]:
     service, _, workspace_id = deps
@@ -105,7 +113,7 @@ def list_products(
 @router.post("/catalog/products", response_model=ProductOut, status_code=status.HTTP_201_CREATED)
 def create_product(
     data: ProductIn,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> ProductOut:
     service, org_id, workspace_id = deps
     product = service.create_product(org_id, workspace_id, data)
@@ -117,6 +125,7 @@ def get_product(
     product_id: uuid.UUID,
     deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
     db: Session = Depends(get_db),
+    principal: Principal = Depends(resolve_principal),
 ) -> ProductDetailOut:
     service, _, workspace_id = deps
     product = service.get_product(product_id, workspace_id)
@@ -211,9 +220,12 @@ def get_product(
     ]
 
     # Find collateral documents
-    doc_ids = product.collateral_document_ids or []
+    doc_ids = []
+    for value in product.collateral_document_ids or []:
+        try: doc_ids.append(uuid.UUID(str(value)))
+        except (ValueError, TypeError): continue
     if doc_ids:
-        docs = list(db.scalars(select(Document).where(Document.id.in_(doc_ids))).all())
+        docs = list(db.scalars(select(Document).where(Document.id.in_(doc_ids), document_access_clause(principal), Document.org_id == product.org_id, Document.workspace_id == workspace_id)).all())
         p_out.collateral_documents = [
             {"id": str(d.id), "title": d.title, "filename": d.original_filename, "file_type": d.file_type}
             for d in docs
@@ -226,7 +238,7 @@ def get_product(
 def update_product(
     product_id: uuid.UUID,
     data: ProductUpdate,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> ProductOut:
     service, _, workspace_id = deps
     updated = service.update_product(product_id, workspace_id, data)
@@ -238,7 +250,7 @@ def update_product(
 @router.delete("/catalog/products/{product_id}")
 def delete_product(
     product_id: uuid.UUID,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> dict[str, bool]:
     service, _, workspace_id = deps
     ok = service.delete_product(product_id, workspace_id)
@@ -255,10 +267,12 @@ def delete_product(
 @router.get("/catalog/capabilities", response_model=list[CapabilityOut])
 def list_capabilities(
     category: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=10000),
     deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
 ) -> list[CapabilityOut]:
     service, org_id, _ = deps
-    caps = service.list_capabilities(org_id, category=category)
+    caps = service.list_capabilities(org_id, category=category, limit=limit, offset=offset)
     result: list[CapabilityOut] = []
     for c in caps:
         c_out = CapabilityOut.model_validate(c)
@@ -270,7 +284,7 @@ def list_capabilities(
 @router.post("/catalog/capabilities", response_model=CapabilityOut, status_code=status.HTTP_201_CREATED)
 def create_capability(
     data: CapabilityIn,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> CapabilityOut:
     service, org_id, _ = deps
     cap = service.create_capability(org_id, data)
@@ -283,7 +297,7 @@ def create_capability(
 def assign_capability(
     product_id: uuid.UUID,
     data: ProductCapabilityIn,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> ProductCapabilityOut:
     service, _, workspace_id = deps
     pc = service.assign_capability_to_product(product_id, workspace_id, data)
@@ -302,7 +316,7 @@ def assign_capability(
 def remove_capability(
     product_id: uuid.UUID,
     capability_id: uuid.UUID,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> dict[str, bool]:
     service, _, workspace_id = deps
     ok = service.remove_capability_from_product(product_id, capability_id, workspace_id)
@@ -321,6 +335,8 @@ def list_edges(
     status: str | None = Query(None),
     relation_type: str | None = Query(None),
     product_id: uuid.UUID | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=10000),
     deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
 ) -> list[ProductEdgeOut]:
     service, _, workspace_id = deps
@@ -329,6 +345,7 @@ def list_edges(
         status=status,
         relation_type=relation_type,
         product_id=product_id,
+        limit=limit, offset=offset,
     )
     all_prods = {p.id: p.name for p in service.list_products(workspace_id, limit=500)}
     return [
@@ -356,7 +373,7 @@ def list_edges(
 @router.post("/graph/edges", response_model=ProductEdgeOut, status_code=status.HTTP_201_CREATED)
 def create_edge(
     data: ProductEdgeIn,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> ProductEdgeOut:
     service, org_id, workspace_id = deps
     edge = service.create_edge(org_id, workspace_id, data)
@@ -384,7 +401,7 @@ def create_edge(
 def update_edge(
     edge_id: uuid.UUID,
     data: ProductEdgeUpdate,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> ProductEdgeOut:
     service, _, workspace_id = deps
     edge = service.update_edge(edge_id, workspace_id, data)
@@ -413,7 +430,7 @@ def update_edge(
 @router.delete("/graph/edges/{edge_id}")
 def delete_edge(
     edge_id: uuid.UUID,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> dict[str, bool]:
     service, _, workspace_id = deps
     ok = service.delete_edge(edge_id, workspace_id)
@@ -424,7 +441,7 @@ def delete_edge(
 
 @router.post("/graph/suggest-edges", response_model=list[EdgeSuggestionOut])
 def suggest_edges(
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
     db: Session = Depends(get_db),
 ) -> list[EdgeSuggestionOut]:
     """Scan ingested source documents for implied product relationships."""
@@ -453,7 +470,7 @@ def suggest_edges(
 
 @router.post("/graph/auto-graph", response_model=AutoGraphOut)
 def auto_graph(
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
     db: Session = Depends(get_db),
 ) -> AutoGraphOut:
     """Propose solution-selling relationships from the listed products."""
@@ -508,7 +525,7 @@ def auto_graph(
 @router.post("/graph/edges/{edge_id}/approve", response_model=ProductEdgeOut)
 def approve_edge(
     edge_id: uuid.UUID,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> ProductEdgeOut:
     service, _, workspace_id = deps
     edge = service.approve_edge(edge_id, workspace_id)
@@ -538,7 +555,7 @@ def approve_edge(
 def reject_edge(
     edge_id: uuid.UUID,
     payload: EdgeActionIn | None = None,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> ProductEdgeOut:
     service, _, workspace_id = deps
     reason = payload.reason if payload else "Rejected by solutions engineer"
@@ -572,10 +589,12 @@ def reject_edge(
 
 @router.get("/catalog/reference-architectures", response_model=list[ReferenceArchitectureOut])
 def list_reference_architectures(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=10000),
     deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
 ) -> list[ReferenceArchitectureOut]:
     service, _, workspace_id = deps
-    archs = service.list_reference_architectures(workspace_id)
+    archs = service.list_reference_architectures(workspace_id, limit=limit, offset=offset)
     all_prods = {p.id: p for p in service.list_products(workspace_id, limit=500)}
     return [
         ReferenceArchitectureOut(
@@ -612,7 +631,7 @@ def list_reference_architectures(
 )
 def create_reference_architecture(
     data: ReferenceArchitectureIn,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> ReferenceArchitectureOut:
     service, org_id, workspace_id = deps
     arch = service.create_reference_architecture(org_id, workspace_id, data)
@@ -680,7 +699,7 @@ def get_reference_architecture(
 @router.delete("/catalog/reference-architectures/{arch_id}")
 def delete_reference_architecture(
     arch_id: uuid.UUID,
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
 ) -> dict[str, bool]:
     service, _, workspace_id = deps
     ok = service.delete_reference_architecture(arch_id, workspace_id)
@@ -759,7 +778,7 @@ def sample_catalog_available() -> dict[str, Any]:
 
 @router.post("/catalog/seed")
 def seed_catalog(
-    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_service),
+    deps: tuple[CatalogService, uuid.UUID, uuid.UUID] = Depends(_get_write_service),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     _, org_id, workspace_id = deps

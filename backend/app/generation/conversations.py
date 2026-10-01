@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import Conversation, Message
+from app.db.pagination import seek_before
 
 logger = get_logger(__name__)
 
@@ -61,6 +62,7 @@ def list_conversations(
     limit: int = 20,
     offset: int = 0,
     notebook_id: uuid.UUID | None = None,
+    cursor: str | None = None,
 ) -> tuple[list[Conversation], int]:
     """List conversations in a workspace with pagination."""
     filters = [Conversation.workspace_id == workspace_id]
@@ -70,11 +72,10 @@ def list_conversations(
 
     conversations = list(
         db.scalars(
-            select(Conversation)
-            .where(*filters)
-            .order_by(Conversation.updated_at.desc())
+            seek_before(select(Conversation).where(*filters), Conversation.updated_at, Conversation.id, cursor)
+            .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
             .limit(limit)
-            .offset(offset)
+            .offset(0 if cursor else offset)
         )
     )
     return conversations, total
@@ -120,6 +121,7 @@ def add_message(
         prompt_version=prompt_version,
         refused=refused,
         model_id=model_id,
+        created_at=datetime.now(timezone.utc),
     )
     db.add(msg)
 
@@ -143,19 +145,18 @@ def get_history(
 
     Returns the most recent `max_turns` messages as role/content dicts.
     """
-    max_turns = max_turns or settings.generation_max_history_turns
+    max_turns = max(1, min(max_turns or settings.generation_max_history_turns, 100))
 
     messages = list(
         db.scalars(
             select(Message)
             .where(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at.asc())
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(max_turns * 2)
         )
     )
 
-    # Keep only the last N turns (each user+assistant pair = 2 messages)
-    if len(messages) > max_turns * 2:
-        messages = messages[-(max_turns * 2):]
+    messages.reverse()
 
     return [
         {"role": msg.role, "content": msg.content}

@@ -71,6 +71,8 @@ _HEADER_ALIASES = {
 
 def parse_spreadsheet(data: bytes, filename: str = "") -> list[dict[str, Any]]:
     """Extract requirement rows from CSV or XLSX bytes."""
+    if len(data) > settings.catalog_import_max_bytes:
+        raise AppError("spreadsheet size limit exceeded", status_code=413)
     name = filename.lower()
     if name.endswith(".csv") or _looks_like_csv(data):
         return _parse_csv(data)
@@ -93,6 +95,8 @@ def _parse_csv(data: bytes) -> list[dict[str, Any]]:
     reader = csv.DictReader(io.StringIO(text))
     rows = []
     for i, raw in enumerate(reader, start=1):
+        if i > settings.catalog_import_max_rows or len(raw) > 100 or any(not isinstance(v, str) or len(v) > 20000 for v in raw.values()):
+            raise AppError("spreadsheet row or cell limit exceeded", status_code=413)
         mapped = {_normalize_header(k or ""): (v or "").strip() for k, v in raw.items()}
         requirement = mapped.get("text") or next((v for v in mapped.values() if v), "")
         if not requirement:
@@ -111,6 +115,8 @@ def _parse_csv(data: bytes) -> list[dict[str, Any]]:
 def _parse_xlsx(data: bytes) -> list[dict[str, Any]]:
     import openpyxl
 
+    from app.documents.scanning import scan_or_raise
+    scan_or_raise(data, "xlsx")
     workbook = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     try:
         sheet = workbook.active
@@ -118,9 +124,13 @@ def _parse_xlsx(data: bytes) -> list[dict[str, Any]]:
         header_row = next(rows_iter, None)
         if not header_row:
             return []
+        if len(header_row) > 100:
+            raise AppError("spreadsheet column limit exceeded", status_code=413)
         headers = [_normalize_header(str(h or "")) for h in header_row]
         rows: list[dict[str, Any]] = []
         for i, values in enumerate(rows_iter, start=1):
+            if i > settings.catalog_import_max_rows or len(values) > 100 or any(len(str(v)) > 20000 for v in values if v is not None):
+                raise AppError("spreadsheet row or cell limit exceeded", status_code=413)
             mapped = {
                 headers[idx]: ("" if val is None else str(val).strip())
                 for idx, val in enumerate(values)

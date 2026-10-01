@@ -114,12 +114,28 @@ def resolve_org(db: Session, *, org_id: str | None, org_slug: str | None, fallba
 
 def issue_local_token(
     *,
+    db: Session,
     org_id: uuid.UUID,
     subject: str,
     role: str,
+    verified_email: str | None = None,
 ) -> dict:
-    validated_role = normalize(role, Role, Role.VIEWER)
+    from app.security.accounts import OrganizationMembership, UserAccount
+    from app.db.session import scope_session_to_org
+    scope_session_to_org(db, org_id)
     user_id = _user_id(subject)
+    if verified_email:
+        from app.security.accounts import normalize_email
+        account = db.scalar(select(UserAccount).where(UserAccount.email == normalize_email(verified_email), UserAccount.is_active.is_(True)))
+        if account is None:
+            raise AppError("SSO account has no active membership", status_code=403)
+        user_id = account.id
+    membership = db.scalar(select(OrganizationMembership).join(UserAccount, UserAccount.id == OrganizationMembership.user_id).where(
+        OrganizationMembership.org_id == org_id, OrganizationMembership.user_id == user_id,
+        OrganizationMembership.is_active.is_(True), UserAccount.is_active.is_(True)))
+    if membership is None:
+        raise AppError("SSO account has no active membership", status_code=403)
+    validated_role = membership.role
     token = mint_token(org_id=org_id, user_id=user_id, role=validated_role)
     return {
         "access_token": token,
@@ -154,6 +170,7 @@ def exchange_oidc_token(
         fallback=config.org_id or fallback_org_id,
     )
     return issue_local_token(
+        db=db,
         org_id=org_id,
         subject=str(payload["sub"]),
         role=str(payload.get("role") or Role.VIEWER),
@@ -182,4 +199,4 @@ def exchange_saml_assertion(
         org_slug=parsed.org_slug,
         fallback=config.org_id or fallback_org_id,
     )
-    return issue_local_token(org_id=org_id, subject=parsed.name_id, role=parsed.role)
+    return issue_local_token(db=db, org_id=org_id, subject=parsed.name_id, role=parsed.role)

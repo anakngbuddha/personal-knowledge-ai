@@ -155,7 +155,7 @@ def test_google_sheets_export_is_tenant_scoped_and_idempotent(sales_api, monkeyp
     assert client.post(quote_url + "/issue").status_code == 200
     assert client.post(url).status_code == 409
 
-    monkeypatch.setattr(settings, "mcp_credentials_key", "test-only-sheets-key")
+    monkeypatch.setattr(settings, "mcp_credentials_key", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
     with current["session_factory"]() as db:
         db.add(McpIntegration(org_id=org_a, server_slug="google_sheets", enabled=True,
                               config={}, secret_ciphertext=encrypt_secret("tenant-secret"),
@@ -202,7 +202,7 @@ def test_google_sheets_export_failure_requires_admin_reconciliation(sales_api, m
     current["principal"] = Principal(org_id=org_a, user_id=uuid.uuid4(), role=Role.ADMIN)
     client.post(quote_url + "/approve")
     client.post(quote_url + "/issue")
-    monkeypatch.setattr(settings, "mcp_credentials_key", "test-only-sheets-key")
+    monkeypatch.setattr(settings, "mcp_credentials_key", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
     with current["session_factory"]() as db:
         db.add(McpIntegration(org_id=org_a, server_slug="google_sheets", enabled=True,
                               config={}, secret_ciphertext=encrypt_secret("tenant-secret"),

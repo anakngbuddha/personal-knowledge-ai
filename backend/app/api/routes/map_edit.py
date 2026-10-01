@@ -191,15 +191,17 @@ def relation_words() -> list[RelationWordOut]:
 @router.get("/contexts", response_model=list[ContextOut])
 def list_contexts(
     kind: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> list[ContextOut]:
     workspace_id = _workspace(db, principal)
-    stmt = select(SellingContext).where(SellingContext.workspace_id == workspace_id)
+    stmt = select(SellingContext).where(SellingContext.workspace_id == workspace_id, SellingContext.org_id == principal.org_id)
     if kind:
         stmt = stmt.where(SellingContext.kind == _kind(kind))
     stmt = stmt.order_by(SellingContext.kind.asc(), SellingContext.name.asc())
-    return [_serialize(context) for context in db.scalars(stmt).all()]
+    return [_serialize(context) for context in db.scalars(stmt.limit(limit).offset(offset)).all()]
 
 
 @router.post("/contexts", response_model=ContextOut, status_code=status.HTTP_201_CREATED)
@@ -276,11 +278,13 @@ def list_context_links(
     product_id: uuid.UUID | None = Query(None),
     context_id: uuid.UUID | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> list[ContextLinkOut]:
     workspace_id = _workspace(db, principal)
-    stmt = select(ProductContextLink).where(ProductContextLink.workspace_id == workspace_id)
+    stmt = select(ProductContextLink).where(ProductContextLink.workspace_id == workspace_id, ProductContextLink.org_id == principal.org_id)
     if product_id is not None:
         stmt = stmt.where(ProductContextLink.product_id == product_id)
     if context_id is not None:
@@ -288,7 +292,7 @@ def list_context_links(
     if status_filter:
         stmt = stmt.where(ProductContextLink.status == status_filter)
     stmt = stmt.order_by(ProductContextLink.created_at.desc())
-    return [_serialize_link(link) for link in db.scalars(stmt).all()]
+    return [_serialize_link(link) for link in db.scalars(stmt.limit(limit).offset(offset)).all()]
 
 
 @router.post("/context-links", response_model=ContextLinkOut, status_code=status.HTTP_201_CREATED)

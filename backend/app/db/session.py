@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -99,6 +100,20 @@ def system_session() -> Session:
     db = SessionLocal()
     db.info[BYPASS_KEY] = True
     return db
+
+
+@contextmanager
+def verified_identity_lookup(db: Session):
+    """Trusted pre-tenant lookup, used only after successful password verification."""
+    previous = dict(db.info)
+    mark_system_session(db)
+    try:
+        yield db
+    finally:
+        db.info.clear()
+        db.info.update(previous)
+        if db.in_transaction() and _is_postgres(db):
+            db.execute(_SCOPE_SQL, _scope_params(db.info))
 
 
 def get_db() -> Iterator[Session]:

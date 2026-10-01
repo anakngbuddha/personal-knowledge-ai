@@ -11,6 +11,7 @@ import {
   SendIcon,
 } from "./Icons";
 import { api } from "../services/api";
+import { pageCursor } from "../services/pagination";
 import { askWithConversationRecovery } from "../services/askRecovery";
 import type { Conversation, SourceMetadata, StudioResult } from "../types";
 
@@ -40,6 +41,7 @@ export function GroundedChat({
   initialQuestion,
 }: Props) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationTotal, setConversationTotal] = useState(0);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [currentConv, setCurrentConv] = useState<Conversation | null>(null);
   const [question, setQuestion] = useState(initialQuestion || "");
@@ -95,10 +97,12 @@ export function GroundedChat({
     }
   }, [selectedConvId]);
 
-  async function loadConversations() {
+  async function loadConversations(append = false) {
     try {
-      const res = await api.listConversations(30, 0);
-      setConversations(res.conversations);
+      const last = conversations[conversations.length - 1];
+      const res = await api.listConversations(30, 0, undefined, append && last ? pageCursor(last.updated_at, last.id) : undefined);
+      setConversations(previous => append ? [...previous, ...res.conversations.filter(row => !previous.some(existing => existing.id === row.id))] : res.conversations);
+      setConversationTotal(res.total);
     } catch {
       /* keep the previous list */
     }
@@ -266,6 +270,18 @@ export function GroundedChat({
     }
   }
 
+  async function loadOlderMessages() {
+    if (!currentConv) return;
+    const id = currentConv.id;
+    try {
+      const first = currentConv.messages[0];
+      const older = await api.getConversation(id, 100, 0, first ? pageCursor(first.created_at, first.id) : undefined);
+      if (selectedConversationRef.current === id) setCurrentConv(previous => previous?.id === id ? {...older, messages: [...older.messages.filter(row => !previous.messages.some(existing => existing.id === row.id)), ...previous.messages]} : previous);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load older messages");
+    }
+  }
+
   function startNewSession() {
     selectedConversationRef.current = null;
     setSelectedConvId(null);
@@ -362,7 +378,9 @@ export function GroundedChat({
               </div>
             </div>
           ) : (
-            currentConv?.messages.map((msg) => (
+            <>
+            {currentConv && currentConv.messages.length < (currentConv.message_total ?? 0) && <button type="button" onClick={() => void loadOlderMessages()}>Load earlier messages</button>}
+            {currentConv?.messages.map((msg) => (
               <div key={msg.id} className={`chat-message ${msg.role}`}>
                 <div className="message-header">
                   <span className="role-label">{msg.role === "user" ? "You" : "Assistant"}</span>
@@ -398,7 +416,8 @@ export function GroundedChat({
                   </div>
                 )}
               </div>
-            ))
+            ))}
+            </>
           )}
           {(webNote || webSources.length > 0) && (
             <div className="web-sources">
@@ -556,6 +575,7 @@ export function GroundedChat({
                   </button>
                 </div>
               ))}
+              {conversations.length < conversationTotal && <button type="button" onClick={() => void loadConversations(true)}>Load older conversations</button>}
             </div>
           </aside>
         </div>

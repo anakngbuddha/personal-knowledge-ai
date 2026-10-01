@@ -118,7 +118,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
     "mcp_playwright_browser_snapshot": {
         "type": "object",
         "properties": {},
-        "additionalProperties": True,
+        "additionalProperties": False,
     },
     "mcp_playwright_browser_click": {
         "type": "object",
@@ -126,7 +126,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "ref": {"type": "string"},
             "element": {"type": "string"},
         },
-        "additionalProperties": True,
+        "additionalProperties": False,
     },
     "mcp_playwright_browser_type": {
         "type": "object",
@@ -134,18 +134,18 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "ref": {"type": "string"},
             "text": {"type": "string", "maxLength": 4000},
         },
-        "additionalProperties": True,
+        "additionalProperties": False,
     },
     "mcp_playwright_browser_fill_form": {
         "type": "object",
         "properties": {"fields": {"type": "array"}},
-        "additionalProperties": True,
+        "additionalProperties": False,
     },
     "mcp_playwright_browser_press_key": {
         "type": "object",
         "properties": {"key": {"type": "string", "maxLength": 32}},
         "required": ["key"],
-        "additionalProperties": True,
+        "additionalProperties": False,
     },
     "mcp_playwright_browser_navigate_back": {
         "type": "object",
@@ -158,7 +158,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "text": {"type": "string"},
             "time": {"type": "number"},
         },
-        "additionalProperties": True,
+        "additionalProperties": False,
     },
     "mcp_playwright_browser_tabs": {
         "type": "object",
@@ -276,7 +276,7 @@ def all_static_definitions() -> list[ToolDefinition]:
                         {
                             "type": "object",
                             "properties": {},
-                            "additionalProperties": True,
+                            "additionalProperties": False,
                         },
                     ),
                 )
@@ -375,12 +375,23 @@ def execute_mcp_tool(call: ToolCall, ctx) -> ToolResult:
     if parsed is None:
         return ToolResult(id=call.id, name=call.name, error=f"unknown_tool:{call.name}")
     slug, original = parsed
+    if slug == PLAYWRIGHT and settings.environment.lower() == "production":
+        return ToolResult(id=call.id, name=call.name, error="browser tools require an isolated egress service")
     if not allowed_original(slug, original):
         return ToolResult(id=call.id, name=call.name, error=f"unknown_tool:{call.name}")
     if not server_enabled(ctx, slug):
         return ToolResult(id=call.id, name=call.name, error=f"unknown_tool:{call.name}")
 
     arguments = call.arguments if isinstance(call.arguments, dict) else {}
+    import json
+    from jsonschema import Draft202012Validator
+    schema = _SCHEMAS.get(call.name)
+    try:
+        valid = schema is not None and len(json.dumps(arguments, allow_nan=False).encode()) <= 32768 and Draft202012Validator(schema).is_valid(arguments)
+    except (TypeError, ValueError, RecursionError):
+        valid = False
+    if not valid:
+        return ToolResult(id=call.id, name=call.name, error="invalid tool arguments")
     if slug == GOOGLE_SHEETS:
         from app.mcp.sheets_tools import execute_sheets_tool
         try:
@@ -414,7 +425,7 @@ def execute_mcp_tool(call: ToolCall, ctx) -> ToolResult:
         return ToolResult(
             id=call.id,
             name=call.name,
-            error=f"{type(exc).__name__}: {exc}",
+            error="MCP operation failed",
         )
 
 

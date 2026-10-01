@@ -77,7 +77,7 @@ def _require_writer(principal: Principal) -> None:
 @router.get("", response_model=NotebookListOut)
 def list_notebooks_endpoint(
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> NotebookListOut:
@@ -146,11 +146,13 @@ def delete_notebook_endpoint(
 @router.get("/{notebook_id}/sources", response_model=list[NotebookSourceOut])
 def list_notebook_sources_endpoint(
     notebook_id: uuid.UUID,
+    limit: int = Query(100, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> list[NotebookSourceOut]:
     try:
-        rows = notebooks.source_membership(db, org_id=principal.org_id, notebook_id=notebook_id)
+        rows = notebooks.source_membership(db, org_id=principal.org_id, notebook_id=notebook_id, limit=limit, offset=offset)
     except AppError as exc:
         raise _http(exc) from exc
     return [

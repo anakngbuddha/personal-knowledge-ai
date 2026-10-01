@@ -12,8 +12,8 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import select, func
+from sqlalchemy.orm import Session, selectinload
 
 from app.catalog.graph_ingest import GraphIngestor
 from app.db.models import (
@@ -133,6 +133,7 @@ def read_source(
 def review_queue(
     document_id: uuid.UUID | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> ReviewQueueOut:
@@ -141,21 +142,23 @@ def review_queue(
 
     edge_stmt = (
         select(ProductEdge)
+        .options(selectinload(ProductEdge.source_product), selectinload(ProductEdge.target_product), selectinload(ProductEdge.document))
         .where(
             ProductEdge.workspace_id == workspace.id,
             ProductEdge.status == EdgeStatus.PENDING_REVIEW,
         )
         .order_by(ProductEdge.confidence.desc())
-        .limit(limit)
+        .limit(limit).offset(offset)
     )
     link_stmt = (
         select(ProductContextLink)
+        .options(selectinload(ProductContextLink.product), selectinload(ProductContextLink.context), selectinload(ProductContextLink.document))
         .where(
             ProductContextLink.workspace_id == workspace.id,
             ProductContextLink.status == EdgeStatus.PENDING_REVIEW,
         )
         .order_by(ProductContextLink.confidence.desc())
-        .limit(limit)
+        .limit(limit).offset(offset)
     )
     if document_id is not None:
         edge_stmt = edge_stmt.where(ProductEdge.document_id == document_id)
@@ -200,7 +203,7 @@ def review_queue(
             Product.curation_status == CurationStatus.SUGGESTED,
         )
         .order_by(Product.created_at.desc())
-        .limit(limit)
+        .limit(limit).offset(offset)
     )
     if document_id is not None:
         product_stmt = product_stmt.where(Product.source_document_id == document_id)
@@ -223,7 +226,7 @@ def review_queue(
             SellingContext.curation_status == CurationStatus.SUGGESTED,
         )
         .order_by(SellingContext.created_at.desc())
-        .limit(limit)
+        .limit(limit).offset(offset)
     )
     if document_id is not None:
         context_stmt = context_stmt.where(SellingContext.source_document_id == document_id)
@@ -233,7 +236,8 @@ def review_queue(
     )
 
     return ReviewQueueOut(
-        suggestions=suggestions, new_products=new_products, total=len(suggestions)
+        suggestions=suggestions, new_products=new_products,
+        total=sum(db.scalar(select(func.count()).select_from(stmt.limit(None).offset(None).order_by(None).subquery())) or 0 for stmt in (edge_stmt, link_stmt))
     )
 
 

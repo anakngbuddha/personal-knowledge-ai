@@ -206,6 +206,9 @@ export interface Message {
 }
 
 export interface Conversation {
+  message_total?: number;
+  message_limit?: number;
+  message_offset?: number;
   id: string;
   workspace_id: string;
   notebook_id?: string | null;

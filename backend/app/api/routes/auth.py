@@ -3,7 +3,11 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, Form, status
+from fastapi.responses import RedirectResponse
+from pydantic import ConfigDict
+from app.sso.transactions import begin, consume
+from app.sso.standards import oidc_url, oidc_exchange, saml_client
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,11 +15,12 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.errors import AppError
 from app.db.models import Organization
-from app.db.session import get_db
+from app.db.session import get_db, scope_session_to_org, verified_identity_lookup
 from app.security.accounts import OrganizationMembership, UserAccount, hash_password, normalize_email, verify_password
 from app.security.deps import get_or_create_default_org, resolve_principal
 from app.security.jwt import InvalidTokenError, mint_token
-from app.security.labels import Role, normalize, role_has_access
+from app.security.labels import Role, normalize, role_has_access, role_rank
+from app.security.audit import record_audit
 from app.security.principal import Principal
 from app.sso.oidc import authorization_url
 from app.sso.service import exchange_oidc_token, exchange_saml_assertion
@@ -78,6 +83,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     org = Organization(slug=slug, name=payload.organization_name.strip())
     user = UserAccount(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password))
     db.add_all([org, user]); db.flush()
+    scope_session_to_org(db, org.id)
     membership = OrganizationMembership(org_id=org.id, user_id=user.id, role=Role.OWNER)
     db.add(membership); db.commit()
     return _token(user, membership)
@@ -87,24 +93,20 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.scalar(select(UserAccount).where(UserAccount.email == normalize_email(payload.email), UserAccount.is_active.is_(True)))
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(401, "email or password is incorrect")
-    memberships = list(db.scalars(select(OrganizationMembership).where(OrganizationMembership.user_id == user.id, OrganizationMembership.is_active.is_(True))))
+    # Password verification above is the only entry to this pre-tenant read.
+    with verified_identity_lookup(db):
+        memberships = list(db.scalars(select(OrganizationMembership).where(OrganizationMembership.user_id == user.id, OrganizationMembership.is_active.is_(True)).order_by(OrganizationMembership.id).limit(100)))
     if payload.organization_slug:
         org = db.scalar(select(Organization).where(Organization.slug == _slug(payload.organization_slug)))
         memberships = [m for m in memberships if org and m.org_id == org.id]
     if not memberships:
         raise HTTPException(403, "your account has no active organization membership")
+    scope_session_to_org(db, memberships[0].org_id)
     return _token(user, memberships[0])
 
 @router.post("/token", response_model=TokenResponse)
 def issue_token(payload: TokenRequest, db: Session = Depends(get_db)):
-    if settings.environment.lower() == "production" or not settings.allow_legacy_token_endpoint:
-        raise HTTPException(410, "use /auth/signup or /auth/login")
-    org = get_or_create_default_org(db)
-    target_org_id = uuid.UUID(payload.org_id) if payload.org_id else org.id
-    user_id = uuid.UUID(payload.user_id) if payload.user_id else uuid.uuid4()
-    role = normalize(payload.role, Role, Role.VIEWER)
-    return TokenResponse(access_token=mint_token(target_org_id, user_id, role), expires_in_seconds=settings.jwt_access_token_expire_minutes * 60,
-                         org_id=str(target_org_id), user_id=str(user_id), role=role)
+    raise HTTPException(410, "use /auth/signup or /auth/login")
 
 @router.get("/me")
 def get_current_principal_profile(
@@ -125,16 +127,17 @@ def get_current_principal_profile(
     return info
 
 @router.get("/members")
-def list_members(principal: Principal = Depends(resolve_principal), db: Session = Depends(get_db)):
+def list_members(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000), principal: Principal = Depends(resolve_principal), db: Session = Depends(get_db)):
     if not principal.can_manage_users: raise HTTPException(403, "admin access required")
-    rows = db.execute(select(UserAccount, OrganizationMembership).join(OrganizationMembership, OrganizationMembership.user_id == UserAccount.id).where(OrganizationMembership.org_id == principal.org_id)).all()
+    rows = db.execute(select(UserAccount, OrganizationMembership).join(OrganizationMembership, OrganizationMembership.user_id == UserAccount.id).where(OrganizationMembership.org_id == principal.org_id).order_by(UserAccount.id).limit(limit).offset(offset)).all()
     return [{"id": str(u.id), "email": u.email, "display_name": u.display_name, "role": m.role, "is_active": u.is_active and m.is_active} for u, m in rows]
 
 @router.post("/members", status_code=201)
 def add_member(payload: MemberCreate, principal: Principal = Depends(resolve_principal), db: Session = Depends(get_db)):
     if not principal.can_manage_users: raise HTTPException(403, "admin access required")
     role = normalize(payload.role, Role, Role.VIEWER)
-    if role_has_access(role, Role.ADMIN) and not principal.is_owner: raise HTTPException(403, "only an owner can add admins")
+    if principal.role != Role.OWNER and role_rank(role) >= role_rank(principal.role):
+        raise HTTPException(403, "cannot assign a peer or higher role")
     email = normalize_email(payload.email)
     user = db.scalar(select(UserAccount).where(UserAccount.email == email))
     if not user:
@@ -148,32 +151,109 @@ def add_member(payload: MemberCreate, principal: Principal = Depends(resolve_pri
 def update_member_role(user_id: uuid.UUID, payload: RoleUpdate, principal: Principal = Depends(resolve_principal), db: Session = Depends(get_db)):
     if not principal.can_manage_users: raise HTTPException(403, "admin access required")
     role = normalize(payload.role, Role, Role.VIEWER)
-    if role_has_access(role, Role.OWNER) and not principal.is_owner: raise HTTPException(403, "only an owner can assign owner")
-    membership = db.scalar(select(OrganizationMembership).where(OrganizationMembership.org_id == principal.org_id, OrganizationMembership.user_id == user_id))
-    if not membership: raise HTTPException(404, "member not found")
-    membership.role = role; db.commit(); return {"user_id": str(user_id), "role": role}
+    if role_has_access(role, Role.OWNER) and principal.role != Role.OWNER: raise HTTPException(403, "only an owner can assign owner")
+    # Serialize role changes for this organization to preserve the last-owner invariant.
+    db.scalar(select(Organization).where(Organization.id == principal.org_id).with_for_update())
+    membership = db.scalar(select(OrganizationMembership).where(OrganizationMembership.org_id == principal.org_id, OrganizationMembership.user_id == user_id).with_for_update())
+    if not membership:
+        raise HTTPException(404, "member not found")
+    if principal.role != Role.OWNER and (role_rank(membership.role) >= role_rank(principal.role) or role_rank(role) >= role_rank(principal.role)):
+        raise HTTPException(403, "cannot modify a peer or higher role")
+    if user_id == principal.user_id and principal.role != Role.OWNER:
+        raise HTTPException(403, "cannot change your own role")
+    if membership.role == Role.OWNER and role != Role.OWNER:
+        other_owner = db.scalar(select(OrganizationMembership.id).join(UserAccount, UserAccount.id == OrganizationMembership.user_id).where(
+            OrganizationMembership.org_id == principal.org_id, OrganizationMembership.role == Role.OWNER,
+            OrganizationMembership.is_active.is_(True), UserAccount.is_active.is_(True), OrganizationMembership.user_id != user_id).limit(1))
+        if other_owner is None:
+            raise HTTPException(409, "organization must retain an active owner")
+    previous = membership.role
+    membership.role = role
+    record_audit(db, principal, "role_change", "membership", str(user_id), {"previous_role": previous, "role": role})
+    return {"user_id": str(user_id), "role": role}
 
-class OidcStartOut(BaseModel): authorization_url: str; state: str; nonce: str; redirect_uri: str
-class OidcCallbackIn(BaseModel): id_token: str; nonce: str | None = None
-class SamlAcsIn(BaseModel): SAMLResponse: str; signature: str | None = None
+
+class OidcStartOut(BaseModel):
+    authorization_url: str
+    state: str
+    nonce: str
+    redirect_uri: str
+
+
+def _sso_cookie(response, binding, protocol):
+    secure = settings.environment.lower() == "production"
+    response.set_cookie("pka_sso_" + protocol, binding, max_age=300, httponly=True, secure=secure,
+                        samesite="none" if protocol == "saml" and secure else "lax", path="/auth")
+
 
 @router.get("/oidc/start", response_model=OidcStartOut)
-def start_oidc() -> OidcStartOut:
-    if not (settings.sso_enabled and settings.oidc_issuer and settings.oidc_client_id): raise HTTPException(404, "OIDC is not configured")
-    import secrets
-    state, nonce = secrets.token_urlsafe(16), secrets.token_urlsafe(16)
-    return OidcStartOut(authorization_url=authorization_url(issuer=settings.oidc_issuer, client_id=settings.oidc_client_id, redirect_uri=settings.oidc_redirect_uri, state=state, nonce=nonce), state=state, nonce=nonce, redirect_uri=settings.oidc_redirect_uri)
+def start_oidc(response: Response, db: Session = Depends(get_db)):
+    if not (settings.sso_enabled and settings.oidc_issuer and settings.oidc_client_id):
+        raise HTTPException(404, "OIDC is not configured")
+    try:
+        state, binding, transaction = begin(db, "oidc")
+        url = oidc_url(state, transaction.nonce, transaction.verifier)
+        _sso_cookie(response, binding, "oidc")
+        return OidcStartOut(authorization_url=url, state=state, nonce=transaction.nonce, redirect_uri=settings.oidc_redirect_uri)
+    except Exception as exc:
+        raise HTTPException(503, "SSO unavailable") from exc
+
 
 @router.post("/oidc/callback")
-def oidc_callback(payload: OidcCallbackIn, db: Session = Depends(get_db)):
-    org = get_or_create_default_org(db)
-    try: return exchange_oidc_token(db, id_token=payload.id_token, nonce=payload.nonce, fallback_org_id=org.id)
-    except InvalidTokenError as exc: raise HTTPException(401, str(exc)) from exc
-    except AppError as exc: raise HTTPException(exc.status_code, exc.message) from exc
+def reject_implicit_oidc():
+    raise HTTPException(410, "use authorization code callback")
+
+
+@router.get("/oidc/callback")
+def oidc_callback(request: Request, response: Response, code: str = Query(..., min_length=1, max_length=4096),
+                  state: str = Query(..., min_length=1, max_length=128), db: Session = Depends(get_db)):
+    if not settings.sso_enabled:
+        raise HTTPException(404, "SSO unavailable")
+    try:
+        nonce, verifier = consume(db, state, request.cookies.get("pka_sso_oidc"), "oidc")
+        org = get_or_create_default_org(db)
+        result = oidc_exchange(db, code, nonce, verifier, org.id)
+        response.delete_cookie("pka_sso_oidc", path="/auth")
+        return result
+    except Exception as exc:
+        raise HTTPException(401, "invalid SSO response") from exc
+
+
+@router.get("/saml/start")
+def start_saml(request: Request, db: Session = Depends(get_db)):
+    if not settings.sso_enabled:
+        raise HTTPException(404, "SSO unavailable")
+    try:
+        auth = saml_client(request)
+        # Toolkit generates an unpredictable AuthnRequest ID for InResponseTo validation.
+        auth.login()
+        state, binding, transaction = begin(db, "saml", request_id=auth.get_last_request_id())
+        url = auth.login(return_to=state)
+        # login() generates a fresh ID; persist that exact value.
+        transaction.verifier = auth.get_last_request_id()
+        db.commit()
+        response = RedirectResponse(url)
+        _sso_cookie(response, binding, "saml")
+        return response
+    except Exception as exc:
+        raise HTTPException(503, "SSO unavailable") from exc
+
 
 @router.post("/saml/acs")
-def saml_acs(payload: SamlAcsIn, db: Session = Depends(get_db)):
-    org = get_or_create_default_org(db)
-    try: return exchange_saml_assertion(db, assertion=payload.SAMLResponse, signature=payload.signature, fallback_org_id=org.id)
-    except InvalidTokenError as exc: raise HTTPException(401, str(exc)) from exc
-    except AppError as exc: raise HTTPException(exc.status_code, exc.message) from exc
+def saml_acs(request: Request, response: Response, SAMLResponse: str = Form(..., max_length=262144),
+             RelayState: str = Form(..., max_length=128), db: Session = Depends(get_db)):
+    if not settings.sso_enabled:
+        raise HTTPException(404, "SSO unavailable")
+    try:
+        _, request_id = consume(db, RelayState, request.cookies.get("pka_sso_saml"), "saml")
+        auth = saml_client(request, response=SAMLResponse)
+        auth.process_response(request_id=request_id)
+        if auth.get_errors() or not auth.is_authenticated():
+            raise InvalidTokenError("invalid SAML response")
+        org = get_or_create_default_org(db)
+        from app.sso.service import issue_local_token
+        result = issue_local_token(db=db, org_id=org.id, subject=auth.get_nameid(), role="viewer")
+        response.delete_cookie("pka_sso_saml", path="/auth")
+        return result
+    except Exception as exc:
+        raise HTTPException(401, "invalid SSO response") from exc

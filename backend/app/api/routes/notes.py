@@ -133,9 +133,10 @@ def _serialize(note: Note) -> NoteOut:
 @router.get("", response_model=NoteListOut)
 def list_notes_endpoint(
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),
     search: str | None = Query(None, max_length=200),
     notebook_id: uuid.UUID | None = Query(None),
+    cursor: str | None = None,
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> NoteListOut:
@@ -149,6 +150,7 @@ def list_notes_endpoint(
             offset=offset,
             search=search,
             notebook_id=notebook_id,
+            cursor=cursor,
         )
     except AppError as exc:
         raise _http(exc) from exc
@@ -190,15 +192,17 @@ def create_note_endpoint(
 def notes_linking_to_endpoint(
     kind: str,
     ref: str,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=10000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> NoteListOut:
-    rows = notes.backlinks(db, org_id=principal.org_id, kind=kind, target_ref=ref)
+    rows = notes.backlinks(db, org_id=principal.org_id, kind=kind, target_ref=ref, limit=limit, offset=offset)
     return NoteListOut(
         notes=[_serialize(row) for row in rows],
-        total=len(rows),
-        limit=len(rows),
-        offset=0,
+        total=notes.backlink_count(db, org_id=principal.org_id, kind=kind, target_ref=ref),
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -245,111 +249,33 @@ def link_targets_endpoint(
 
 @router.get("/graph", response_model=GraphOut)
 def graph_endpoint(
+    node_limit: int = Query(200, ge=1, le=500),
+    edge_limit: int = Query(500, ge=1, le=1000),
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> GraphOut:
-    """Return nodes (notes, products) and edges (wikilinks) for a graph view."""
     workspace = get_or_create_default_workspace(db, principal.org_id)
-    nodes: list[GraphNodeOut] = []
-    edges: list[GraphEdgeOut] = []
-    seen_nodes: set[tuple[str, str]] = set()  # (kind, slug)
-
-    # Collect all notes in workspace
-    all_notes = db.scalars(
-        select(Note)
-        .where(
-            Note.org_id == principal.org_id,
-            Note.workspace_id == workspace.id,
-        )
-    ).all()
-
-    for note in all_notes:
-        key = ("note", note.slug)
-        if key not in seen_nodes:
-            seen_nodes.add(key)
-            nodes.append(
-                GraphNodeOut(
-                    id=str(note.id),
-                    kind="note",
-                    title=note.title,
-                    slug=note.slug,
-                )
-            )
-
-    # Collect all products referenced
-    all_products = db.scalars(
-        select(Product)
-        .where(
-            Product.org_id == principal.org_id,
-            Product.workspace_id == workspace.id,
-        )
-    ).all()
-
-    for product in all_products:
-        key = ("product", product.slug)
-        if key not in seen_nodes:
-            seen_nodes.add(key)
-            nodes.append(
-                GraphNodeOut(
-                    id=str(product.id),
-                    kind="product",
-                    title=product.name,
-                    slug=product.slug,
-                )
-            )
-
-    # Collect all edges (wikilinks)
-    all_links = db.scalars(
-        select(NoteLink).where(NoteLink.org_id == principal.org_id)
-    ).all()
-
-    for link in all_links:
-        source_note = db.scalar(select(Note).where(Note.id == link.note_id))
-        if not source_note or source_note.workspace_id != workspace.id:
+    note_rows = list(db.scalars(select(Note).where(Note.org_id == principal.org_id, Note.workspace_id == workspace.id).order_by(Note.id).limit(node_limit)))
+    product_rows = list(db.scalars(select(Product).where(Product.org_id == principal.org_id, Product.workspace_id == workspace.id).order_by(Product.id).limit(node_limit - len(note_rows))))
+    note_map = {n.id: n for n in note_rows}
+    product_map = {p.id: p for p in product_rows}
+    nodes = [GraphNodeOut(id=str(n.id), kind="note", title=n.title, slug=n.slug) for n in note_rows]
+    nodes += [GraphNodeOut(id=str(p.id), kind="product", title=p.name, slug=p.slug) for p in product_rows]
+    links = db.scalars(select(NoteLink).where(NoteLink.org_id == principal.org_id, NoteLink.note_id.in_(note_map)).order_by(NoteLink.id).limit(edge_limit))
+    edges = []
+    account_nodes = set()
+    for link in links:
+        if link.target_kind == NoteLinkKind.ACCOUNT and (principal.sees_all_accounts or link.target_ref in (principal.account_refs or ())):
+            account_id = "account:" + link.target_ref
+            if account_id not in account_nodes and len(nodes) < node_limit:
+                account_nodes.add(account_id)
+                nodes.append(GraphNodeOut(id=account_id, kind="account", title=link.target_ref))
+            if account_id in account_nodes:
+                edges.append(GraphEdgeOut(source_id=str(link.note_id), source_kind="note", target_id=account_id, target_kind="account", target_ref=link.target_ref, display_text=link.display_text, resolved=True))
             continue
-
-        # Determine target node
-        if link.target_kind == NoteLinkKind.PRODUCT and link.resolved_id:
-            target_product = db.scalar(select(Product).where(Product.id == link.resolved_id))
-            if target_product:
-                edges.append(
-                    GraphEdgeOut(
-                        source_id=str(source_note.id),
-                        source_kind="note",
-                        target_id=str(target_product.id),
-                        target_kind="product",
-                        target_ref=link.target_ref,
-                        display_text=link.display_text,
-                        resolved=link.resolved,
-                    )
-                )
-        elif link.target_kind == NoteLinkKind.NOTE and link.resolved_id:
-            target_note = db.scalar(select(Note).where(Note.id == link.resolved_id))
-            if target_note:
-                edges.append(
-                    GraphEdgeOut(
-                        source_id=str(source_note.id),
-                        source_kind="note",
-                        target_id=str(target_note.id),
-                        target_kind="note",
-                        target_ref=link.target_ref,
-                        display_text=link.display_text,
-                        resolved=link.resolved,
-                    )
-                )
-        elif link.target_kind == NoteLinkKind.ACCOUNT:
-            edges.append(
-                GraphEdgeOut(
-                    source_id=str(source_note.id),
-                    source_kind="note",
-                    target_id=link.target_ref,
-                    target_kind="account",
-                    target_ref=link.target_ref,
-                    display_text=link.display_text,
-                    resolved=link.resolved,
-                )
-            )
-
+        target = product_map.get(link.resolved_id) if link.target_kind == NoteLinkKind.PRODUCT else note_map.get(link.resolved_id) if link.target_kind == NoteLinkKind.NOTE else None
+        if target is not None:
+            edges.append(GraphEdgeOut(source_id=str(link.note_id), source_kind="note", target_id=str(target.id), target_kind=link.target_kind, target_ref=link.target_ref, display_text=link.display_text, resolved=link.resolved))
     return GraphOut(nodes=nodes, edges=edges)
 
 

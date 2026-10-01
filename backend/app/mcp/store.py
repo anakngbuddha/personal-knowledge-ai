@@ -76,15 +76,7 @@ def upsert_integration(
 
 
 def process_fallback_enabled(slug: str) -> bool:
-    """Env-level enablement when the org has no row yet."""
-    if not settings.mcp_enabled:
-        return False
-    if slug == BRAVE:
-        return bool(settings.brave_api_key)
-    if slug == PLAYWRIGHT:
-        return bool(settings.mcp_playwright_enabled)
-    if slug == MS365:
-        return bool(settings.mcp_ms365_enabled)
+    """Tenant integrations require an explicit organization row."""
     return False
 
 
