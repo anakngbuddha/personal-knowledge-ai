@@ -103,7 +103,8 @@ def verify_frontend(workspace: Path) -> bool:
         print(tests.stdout.strip())
         if tests.returncode != 0:
             print("[FAIL] Frontend regression tests failed.")
-            print(tests.stderr.strip())
+            if tests.stderr:
+                print(tests.stderr.strip())
             return False
         res = subprocess.run(
             ["npm.cmd" if os.name == "nt" else "npm", "run", "build"],

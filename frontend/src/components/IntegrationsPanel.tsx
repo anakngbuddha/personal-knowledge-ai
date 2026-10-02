@@ -134,7 +134,10 @@ export function IntegrationsPanel() {
     setSaving(slug);
     setMessage(null);
     try {
-      const result = await api.testMcpIntegration(slug);
+      const draftSecret = secretDraft[slug]?.trim();
+      const result = draftSecret
+        ? await api.testMcpIntegration(slug, { secret: draftSecret })
+        : await api.testMcpIntegration(slug);
       setTestResults((prev) => ({ ...prev, [slug]: { status: result.status, toolCount: result.tools.length } }));
       setMessage(`${getConnectorMeta(slug).label}: ${result.status} — ${result.tools.length} tool${result.tools.length !== 1 ? "s" : ""} available`);
       await refresh();

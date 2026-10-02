@@ -15,10 +15,17 @@ class SsoCredentialError(AppError):
 
 
 def _material() -> str:
-    return (
+    key = (
         (settings.sso_credentials_key or "").strip()
         or (settings.mcp_credentials_key or "").strip()
     )
+    if key:
+        return key
+    jwt_key = (settings.jwt_secret_key or "").strip()
+    if jwt_key:
+        digest = hashlib.sha256(f"pka-sso-fernet-key:{jwt_key}".encode("utf-8")).digest()
+        return base64.urlsafe_b64encode(digest).decode("ascii")
+    return ""
 
 
 def _fernet():

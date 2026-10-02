@@ -186,7 +186,12 @@ export const api = {
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(body)
     }),
-  testMcpIntegration: (slug:string) => request<McpPingResult>(`/integrations/mcp/${encodeURIComponent(slug)}/test`, {method:"POST"}),
+  testMcpIntegration: (slug: string, body?: { secret?: string }) =>
+    request<McpPingResult>(`/integrations/mcp/${encodeURIComponent(slug)}/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    }),
   approveTask: (runId:string, slug:string, answers:RfpAnswerEdit[]) =>
     request<WorkflowRun>(`/workflows/runs/${runId}/tasks/${encodeURIComponent(slug)}/approve`, {
       method:"POST",

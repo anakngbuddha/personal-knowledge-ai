@@ -26,6 +26,9 @@ def _resists_deadline(marker):
 def test_sdk_worker_result_and_reaping():
     result = process_calls.call_isolated(_echo, ("fixture",), timeout=10)
     assert result["value"] == "fixture" and result["pid"] != os.getpid()
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and psutil.pid_exists(result["pid"]):
+        time.sleep(0.05)
     assert not psutil.pid_exists(result["pid"])
 
 

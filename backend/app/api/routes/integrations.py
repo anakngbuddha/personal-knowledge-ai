@@ -68,6 +68,12 @@ class McpIntegrationUpsertIn(BaseModel):
     sheet_targets: list[SheetTarget] | None = Field(default=None, max_length=50)
 
 
+class McpTestIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    secret: str | None = Field(default=None, max_length=8192)
+
+
 class McpPingOut(BaseModel):
     server: str
     status: str
@@ -210,27 +216,34 @@ def upsert_mcp_integration(
 @router.post("/integrations/mcp/{server_slug}/test", response_model=McpPingOut)
 def test_mcp_integration(
     server_slug: str,
+    payload: McpTestIn | None = None,
     db: Session = Depends(get_db),
     principal: Principal = Depends(resolve_principal),
 ) -> McpPingOut:
     _require_admin(principal)
     if not known_slug(server_slug):
         raise HTTPException(status_code=404, detail="not found")
+    secret_candidate = payload.secret if payload and payload.secret else None
     if server_slug == GOOGLE_SHEETS:
         row = get_integration(db, principal.org_id, server_slug)
-        if row is None or not row.enabled or not row.secret_ciphertext:
-            raise HTTPException(status_code=409, detail="tenant Google Sheets integration is not configured")
+        secret_to_test = secret_candidate
+        if not secret_to_test:
+            if row is None or not row.enabled or not row.secret_ciphertext:
+                raise HTTPException(status_code=409, detail="tenant Google Sheets integration is not configured")
+            secret_to_test = decrypt_secret(row.secret_ciphertext)
         from app.sales.sheets import SheetExportError, service_account_access_token
         try:
-            service_account_access_token(decrypt_secret(row.secret_ciphertext))
+            service_account_access_token(secret_to_test)
         except (AppError, SheetExportError) as exc:
-            row.status = STATUS_ERROR
-            row.last_error = "Google Sheets authorization failed"
-            db.commit()
+            if row is not None:
+                row.status = STATUS_ERROR
+                row.last_error = "Google Sheets authorization failed"
+                db.commit()
             raise HTTPException(status_code=502, detail="Google Sheets authorization failed") from exc
-        row.status = STATUS_CONNECTED
-        row.last_error = None
-        db.commit()
+        if row is not None:
+            row.status = STATUS_CONNECTED
+            row.last_error = None
+            db.commit()
         record_audit(db, principal, "mcp_test", "mcp_integration", server_slug,
                      {"server": server_slug, "tool_count": 3})
         return McpPingOut(server=server_slug, status=STATUS_CONNECTED,
@@ -238,7 +251,7 @@ def test_mcp_integration(
     workspace_id = uuid.uuid4()
     ctx = ToolContext(db=db, principal=principal, workspace_id=workspace_id)
     try:
-        result = ping_server(ctx, server_slug)
+        result = ping_server(ctx, server_slug, secret_override=secret_candidate)
     except AppError as exc:
         row = get_integration(db, principal.org_id, server_slug)
         if row is not None:

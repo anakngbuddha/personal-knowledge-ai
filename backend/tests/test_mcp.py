@@ -319,3 +319,50 @@ def test_cross_tenant_get_is_404(mcp_api: Session):
     brave = next(item for item in listed.json()["integrations"] if item["server_slug"] == "brave")
     assert brave["id"] is None or brave["id"] != integration_id
     assert brave["has_secret"] is False
+
+
+def test_credentials_fallback_to_jwt_secret_key(monkeypatch):
+    from app.mcp.credentials import secret_configured
+    monkeypatch.setattr(settings, "mcp_credentials_key", "")
+    monkeypatch.setattr(settings, "jwt_secret_key", "a-secure-random-jwt-key-with-over-32-chars")
+    assert secret_configured() is True
+    encrypted = encrypt_secret("my-tenant-key")
+    assert decrypt_secret(encrypted) == "my-tenant-key"
+
+
+def test_upsert_exa_without_mcp_credentials_key_succeeds(mcp_env, mcp_api: Session, monkeypatch):
+    monkeypatch.setattr(settings, "mcp_credentials_key", "")
+    monkeypatch.setattr(settings, "jwt_secret_key", "a-secure-random-jwt-key-with-over-32-chars")
+    admin_a = mint_token(org_id=mcp_api.org_a_id, role=Role.ADMIN)
+    resp = client.put(
+        "/integrations/mcp/exa",
+        headers={"Authorization": f"Bearer {admin_a}"},
+        json={"enabled": True, "secret": "exa-api-key-test", "allowed_hosts": []},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["has_secret"] is True
+    assert body["enabled"] is True
+
+
+def test_mcp_test_with_secret_override(mcp_env, mcp_api: Session):
+    admin_a = mint_token(org_id=mcp_api.org_a_id, role=Role.ADMIN)
+    resp = client.post(
+        "/integrations/mcp/exa/test",
+        headers={"Authorization": f"Bearer {admin_a}"},
+        json={"secret": "in-flight-exa-key"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "connected"
+
+
+def test_mcp_test_unconfigured_gives_helpful_message(mcp_env, mcp_api: Session):
+    admin_a = mint_token(org_id=mcp_api.org_a_id, role=Role.ADMIN)
+    resp = client.post(
+        "/integrations/mcp/exa/test",
+        headers={"Authorization": f"Bearer {admin_a}"},
+        json={},
+    )
+    assert resp.status_code == 400
+    assert "Exa requires an API key" in resp.json()["detail"]

@@ -9,6 +9,13 @@ class RedactingFormatter(logging.Formatter):
         return redact_text(super().format(record))
 
 
+class HealthCheckFilter(logging.Filter):
+    """Filter out frequent health check probes from uvicorn access logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return "GET /health " not in msg and "GET /health HTTP" not in msg
+
 
 def setup_logging() -> None:
     logging.basicConfig(
@@ -18,6 +25,8 @@ def setup_logging() -> None:
 
     for handler in logging.getLogger().handlers:
         handler.setFormatter(RedactingFormatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+
+    logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
 
 def get_logger(name: str) -> logging.Logger:

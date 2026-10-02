@@ -338,17 +338,17 @@ def _secret_for(ctx, slug: str, row) -> str | None:
     return None
 
 
-def build_spec(ctx, slug: str) -> ServerSpec | None:
+def build_spec(ctx, slug: str, *, secret_override: str | None = None) -> ServerSpec | None:
     from app.mcp.store import get_integration
 
     row = get_integration(ctx.db, ctx.principal.org_id, slug)
-    if not server_enabled(ctx, slug):
+    if not secret_override and not server_enabled(ctx, slug):
         return None
     config = (row.config if row is not None else None) or {}
     http_url = config.get("http_url") or None
     hosts = tuple(config.get("allowed_hosts") or ())
     env: dict[str, str] = {}
-    secret = _secret_for(ctx, slug, row)
+    secret = secret_override if secret_override is not None else _secret_for(ctx, slug, row)
     if slug in (EXA, FIRECRAWL):
         if not secret:
             return None
@@ -429,9 +429,15 @@ def execute_mcp_tool(call: ToolCall, ctx) -> ToolResult:
         )
 
 
-def ping_server(ctx, slug: str) -> dict[str, Any]:
-    spec = build_spec(ctx, slug)
+def ping_server(ctx, slug: str, *, secret_override: str | None = None) -> dict[str, Any]:
+    spec = build_spec(ctx, slug, secret_override=secret_override)
     if spec is None:
+        if slug in (EXA, FIRECRAWL, GOOGLE_SHEETS):
+            raise AppError(
+                f"{slug.capitalize()} requires an API key. Please enter your secret and click 'Save & Enable' before testing.",
+                status_code=400,
+                code="mcp_credentials_required",
+            )
         raise AppError("MCP server is not enabled", status_code=400, code="mcp_disabled")
     tools = get_client().list_tools(spec)
     names = [t.name for t in tools]

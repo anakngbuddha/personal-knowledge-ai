@@ -59,6 +59,10 @@ services:
         value: "768"
       - key: GEMINI_GENERATION_MODEL
         value: gemini-2.5-flash
+      - key: MCP_ENABLED
+        value: "true"
+      - key: MCP_CREDENTIALS_KEY
+        sync: false
       - key: WORKER_ENABLED
         value: "true"
       - key: FRESHNESS_WORKER_ENABLED
