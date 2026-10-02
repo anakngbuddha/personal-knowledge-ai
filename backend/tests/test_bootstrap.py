@@ -1,5 +1,7 @@
 """Schema bootstrap on API boot (Render / production)."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from app.core.config import settings
@@ -33,6 +35,41 @@ def test_required_rls_posture_blocks_bypass_role(monkeypatch):
     engine = SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
     with pytest.raises(RuntimeError, match="BYPASSRLS"):
         check_rls_posture(engine, required=True)
+
+
+@pytest.mark.parametrize("repair_fails", [False, True])
+def test_admin_bootstrap_reconciles_recorded_migrations_before_seed_and_grants(monkeypatch, repair_fails):
+    from sqlalchemy.dialects.postgresql import dialect
+    from app.db import bootstrap, migrate_cli
+
+    engine = MagicMock()
+    engine.dialect = dialect()
+    steps = MagicMock()
+    steps.migrate.return_value = []  # Every migration is already recorded.
+    if repair_fails:
+        steps.repair.side_effect = RuntimeError("RLS reconciliation failed")
+    monkeypatch.setattr(bootstrap, "engine", engine)
+    monkeypatch.setattr(bootstrap.Base.metadata, "create_all", steps.create)
+    monkeypatch.setattr(bootstrap, "run_migrations", steps.migrate)
+    monkeypatch.setattr(bootstrap, "reconcile_rls", steps.repair)
+    monkeypatch.setattr(bootstrap, "system_session", steps.session)
+    monkeypatch.setattr("app.security.deps.get_or_create_default_org", steps.org)
+    monkeypatch.setattr("app.documents.service.get_or_create_default_workspace", steps.workspace)
+    monkeypatch.setattr(migrate_cli, "grant_runtime_access", steps.grant)
+
+    if repair_fails:
+        with pytest.raises(RuntimeError, match="RLS reconciliation failed"):
+            migrate_cli.main(["--grant-runtime-role", "pka_app"])
+        steps.session.assert_not_called()
+        steps.org.assert_not_called()
+        steps.grant.assert_not_called()
+    else:
+        migrate_cli.main(["--grant-runtime-role", "pka_app"])
+        names = [c[0] for c in steps.mock_calls]
+        assert names.index("migrate") < names.index("repair") < names.index("session")
+        assert names.index("workspace") < names.index("grant")
+        steps.session.return_value.close.assert_called_once()
+    steps.repair.assert_called_once_with(engine)
 
 
 @pytest.mark.requires_db

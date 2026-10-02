@@ -1,7 +1,7 @@
-"""Create extensions, tables, migrations, and the default org on process start.
+"""Create extensions, tables, migrations, RLS, and the default organization.
 
-Render (and any fresh Aiven database) has no schema until this runs. The workflow
-worker otherwise UPDATE-s `task_executions` on a table that does not exist.
+Production runs this with the administrator migration CLI before deployment.
+The restricted web process leaves AUTO_MIGRATE=false and only checks RLS posture.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.migrations import run_migrations
+from app.db.migrations import reconcile_rls, run_migrations
 from app.db.models import Base
 from app.db.session import engine, system_session
 
@@ -22,7 +22,7 @@ def should_bootstrap() -> bool:
 
 
 def ensure_schema() -> list[str]:
-    """Idempotent. Safe to call on every boot."""
+    """Idempotent administrator bootstrap, including repair of recorded RLS drift."""
     if engine.dialect.name == "postgresql":
         try:
             with engine.begin() as conn:
@@ -36,6 +36,8 @@ def ensure_schema() -> list[str]:
 
     Base.metadata.create_all(bind=engine)
     ran = run_migrations(engine)
+    # Migration history cannot prove the current policies or FORCE flags are intact.
+    reconcile_rls(engine)
 
     db = system_session()
     try:

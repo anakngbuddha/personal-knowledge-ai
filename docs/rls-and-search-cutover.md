@@ -48,7 +48,8 @@ environment (never commit it):
 python -m app.db.migrate_cli --grant-runtime-role pka_app
 ```
 
-The command applies migrations first, rejects missing users, superusers,
+The command applies migrations and reconciles table RLS first, even when every
+migration is already recorded. It then rejects missing users, superusers,
 `BYPASSRLS` roles and roles that cannot log in, then grants access to the current
 database and schema. It grants only `CONNECT`, schema `USAGE`, table
 `SELECT/INSERT/UPDATE/DELETE`, and sequence `USAGE/SELECT`. Default privileges apply
@@ -67,6 +68,59 @@ Expected values are `pka_app`, `false`, `false`, `true`. Set `DATABASE_URL` to t
 user's connection in Render, keep `AUTO_MIGRATE=false` and `RLS_REQUIRED=true`,
 save the environment and redeploy. Confirm `/health` responds and the logs show
 `Application startup complete` before considering the recovery complete.
+
+## Recovering missing RLS flags and unexpected tenant policies
+
+If Render reports `tables without ENABLE+FORCE RLS` or `tables with unexpected
+tenant policies`, the database does not match the deployed application's security
+requirements. Older policies allowed `org_id IS NULL`, and older versions left
+`organization_memberships`, `messages`, `product_capabilities`,
+`reference_architecture_products`, and `evaluation_questions` unprotected.
+Replacing the runtime username alone cannot repair these tables. The subsequent
+port-scan message is a consequence of the startup failure.
+
+1. Use the fixed application's checkout and the administrator `DATABASE_URL`
+   targeting the same database and schema as Render. From `backend/`, run:
+
+   ```sh
+   python -m app.db.migrate_cli --grant-runtime-role pka_app
+   ```
+
+   This always restores ENABLE and FORCE flags and recreates the current
+   `tenant_isolation` policies, without deleting data or migration history.
+   Derived tables use parent ownership checks; evaluation questions remain
+   accessible only to trusted system sessions. Repair uses one transaction per
+   table, with bounded retries for lock conflicts. If interrupted, rerun the same
+   command. Validation must succeed before default data or runtime grants proceed.
+
+2. If reconciliation reports an unexpected policy, it names the table and its
+   policies. Additional policies are preserved. Have the database administrator
+   review them before rerunning; do not disable the startup check or automatically
+   delete custom policies. Resolve permission or schema errors with the admin
+   connection. An admin role's BYPASSRLS is expected during migration and does not
+   prove that the application's runtime connection is safe.
+
+3. Verify the restricted connection before deployment. Set
+   `RLS_RUNTIME_DATABASE_URL` to the complete `pka_app` connection URI, set
+   `PYTHONPATH=.` in the shell environment, and run from `backend/`:
+
+   ```sh
+   python ../scripts/check_ci_rls.py
+   ```
+
+   Require `Restricted runtime RLS posture verified`: `enforced` must be true and
+   the unprotected-table and invalid-policy lists must be empty. Do not print or
+   commit connection credentials.
+
+4. Set Render's `DATABASE_URL` to that verified restricted URI, preserving SSL
+   options. Keep `AUTO_MIGRATE=false` and `RLS_REQUIRED=true`, then redeploy the
+   tested application revision. Require `Application startup complete`, HTTP 200
+   from `/health`, and successful authenticated login, ingestion, and answer flows.
+
+Run migrations separately before deploying schema changes. This repository uses
+Render's free plan; [pre-deploy commands require paid services](https://render.com/docs/deploys).
+The web service's startup command remains `uvicorn`; it does not repair security
+or use administrator credentials.
 
 Aiven's service-user creation instructions are available in its
 [official documentation](https://aiven.io/docs/products/postgresql/howto/manage-service-users).

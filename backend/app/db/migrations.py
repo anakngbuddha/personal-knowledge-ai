@@ -118,16 +118,6 @@ _RLS_TABLES = text("""
         ('organizations', 'user_accounts', 'schema_migrations')
     ORDER BY c.table_name
 """)
-_RLS_READY = text("""
-    SELECT c.relrowsecurity AND c.relforcerowsecurity
-           AND EXISTS (
-               SELECT 1 FROM pg_policy p
-               WHERE p.polrelid = c.oid AND p.polname = 'tenant_isolation'
-           )
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = :schema AND c.relname = :table_name
-""")
 _RLS_PREDICATE = (
     "current_setting('app.rls_bypass', true) = 'on' "
     "OR CAST(org_id AS text) = current_setting('app.current_org_id', true)"
@@ -135,7 +125,9 @@ _RLS_PREDICATE = (
 _RETRYABLE_DDL_STATES = {"40P01", "55P03"}  # deadlock, lock timeout
 
 
-def _apply_rls_table(engine: Engine, schema: str, table_name: str) -> None:
+def _apply_rls_table(
+    engine: Engine, schema: str, table_name: str, *, predicate: str = _RLS_PREDICATE,
+) -> None:
     quote = engine.dialect.identifier_preparer.quote_identifier
     table = f"{quote(schema)}.{quote(table_name)}"
     for attempt in range(5):
@@ -151,7 +143,7 @@ def _apply_rls_table(engine: Engine, schema: str, table_name: str) -> None:
                 conn.execute(text(f"DROP POLICY IF EXISTS tenant_isolation ON {table}"))
                 conn.execute(text(
                     f"CREATE POLICY tenant_isolation ON {table} "
-                    f"USING ({_RLS_PREDICATE}) WITH CHECK ({_RLS_PREDICATE})"
+                    f"USING ({predicate}) WITH CHECK ({predicate})"
                 ))
             return
         except DBAPIError as exc:
@@ -169,23 +161,54 @@ def _apply_rls(engine: Engine) -> None:
     for schema, table_name in tables:
         _apply_rls_table(engine, schema, table_name)
 
-def _apply_derived_rls(engine):
+def _apply_derived_rls(engine: Engine) -> None:
     predicates = {
         "messages": "EXISTS (SELECT 1 FROM conversations p WHERE p.id = messages.conversation_id AND CAST(p.org_id AS text) = current_setting('app.current_org_id', true))",
         "evaluation_questions": "false",
         "product_capabilities": "EXISTS (SELECT 1 FROM products p JOIN capabilities c ON c.id = product_capabilities.capability_id WHERE p.id = product_capabilities.product_id AND p.org_id = c.org_id AND CAST(p.org_id AS text) = current_setting('app.current_org_id', true))",
         "reference_architecture_products": "EXISTS (SELECT 1 FROM reference_architectures a JOIN products p ON p.id = reference_architecture_products.product_id WHERE a.id = reference_architecture_products.architecture_id AND a.org_id = p.org_id AND a.workspace_id = p.workspace_id AND CAST(a.org_id AS text) = current_setting('app.current_org_id', true))",
     }
+    with engine.connect() as conn:
+        schema = conn.scalar(text("SELECT current_schema()"))
+    if not schema:
+        raise RuntimeError("RLS migration connection has no current schema")
     for name, predicate in predicates.items():
-        with engine.begin() as conn:
-            table = engine.dialect.identifier_preparer.quote_identifier(name)
-            conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
-            conn.execute(text(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY"))
-            conn.execute(text(f"DROP POLICY IF EXISTS tenant_isolation ON {table}"))
-            expression = "current_setting('app.rls_bypass', true) = 'on' OR " + predicate
-            if name == "evaluation_questions":
-                expression = "current_setting('app.rls_bypass', true) = 'on'"
-            conn.execute(text(f"CREATE POLICY tenant_isolation ON {table} USING ({expression}) WITH CHECK ({expression})"))
+        expression = "current_setting('app.rls_bypass', true) = 'on' OR " + predicate
+        if name == "evaluation_questions":
+            expression = "current_setting('app.rls_bypass', true) = 'on'"
+        _apply_rls_table(engine, schema, name, predicate=expression)
+
+
+def reconcile_rls(engine: Engine) -> None:
+    """Restore and validate table RLS independently of migration history.
+
+    Only the administrator migration path calls this. Its connecting role may
+    bypass RLS; the web process must separately verify its restricted login.
+    Per-table transactions allow a failed repair to be safely resumed.
+    """
+    if engine.dialect.name != "postgresql":
+        return
+    from app.db.rls import rls_posture
+
+    _apply_rls(engine)
+    _apply_derived_rls(engine)
+    posture = rls_posture(engine)
+    problems = []
+    if posture["unprotected_tables"]:
+        problems.append("tables without ENABLE+FORCE RLS: " + ", ".join(posture["unprotected_tables"]))
+    if posture["invalid_policy_tables"]:
+        policies = posture["invalid_policy_names"]
+        problems.append("unexpected tenant policies: " + "; ".join(
+            f"{name} ({', '.join(policies[name]) or 'missing tenant_isolation'})"
+            for name in posture["invalid_policy_tables"]
+        ))
+    if problems:
+        raise RuntimeError(
+            "RLS reconciliation failed: " + "; ".join(problems) + ". "
+            "Unexpected policies were preserved; review them with the database administrator "
+            "and rerun the migration command. Keep RLS_REQUIRED=true."
+        )
+    logger.info("table RLS reconciled and verified; verify the restricted runtime login before deployment")
 
 MIGRATIONS=[
  ("0015_multi_user_rbac",_RBAC),

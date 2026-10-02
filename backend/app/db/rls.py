@@ -70,6 +70,10 @@ def rls_posture(engine: Engine) -> dict:
         "bypassrls": bypassrls,
         "unprotected_tables": unprotected,
         "invalid_policy_tables": sorted(set(invalid_policies)),
+        "invalid_policy_names": {
+            name: sorted(str(row[1]) for row in policies if row[0] == name)
+            for name in sorted(set(invalid_policies))
+        },
         "enforced": not superuser and not bypassrls and not unprotected and not invalid_policies,
     }
 

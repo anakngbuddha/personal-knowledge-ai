@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.exc import DBAPIError
 
 pytestmark = pytest.mark.requires_db
@@ -194,3 +194,149 @@ def test_unscoped_app_session_is_default_deny(probe, tenants):
     finally:
         session.rollback()
         gen.close()
+
+
+@pytest.fixture
+def runtime_probe(probe):
+    # information_schema must expose every tenant table to the posture checker.
+    with probe.begin() as conn:
+        conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO pka_rls_probe"))
+    runtime = create_engine(probe.url)
+
+    @event.listens_for(runtime, "connect")
+    def restrict_connection(connection, _record):
+        with connection.cursor() as cursor:
+            cursor.execute("SET ROLE pka_rls_probe")
+        connection.commit()
+
+    try:
+        yield runtime
+    finally:
+        runtime.dispose()
+
+
+def test_admin_bootstrap_repairs_render_failure_with_completed_history(probe, runtime_probe, tenants):
+    from app.db.bootstrap import ensure_schema
+    from app.db.migrations import applied_migrations
+    from app.db.rls import check_rls_posture
+
+    ensure_schema()
+    recorded = applied_migrations(probe)
+    legacy = (
+        "current_setting('app.rls_bypass', true) = 'on' OR org_id IS NULL "
+        "OR CAST(org_id AS text) = current_setting('app.current_org_id', true)"
+    )
+    try:
+        with probe.begin() as conn:
+            conn.execute(text("DROP POLICY tenant_isolation ON workspaces"))
+            conn.execute(text(f"CREATE POLICY tenant_isolation ON workspaces USING ({legacy}) WITH CHECK ({legacy})"))
+            for table in ("messages", "product_capabilities", "reference_architecture_products", "evaluation_questions", "organization_memberships"):
+                conn.execute(text(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY"))
+                conn.execute(text(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY"))
+            conn.execute(text("DROP POLICY tenant_isolation ON messages"))
+
+        with pytest.raises(RuntimeError, match="row-level security is NOT enforced"):
+            check_rls_posture(runtime_probe, required=True)
+
+        assert ensure_schema() == []
+        assert ensure_schema() == []
+        assert applied_migrations(probe) == recorded
+        posture = check_rls_posture(runtime_probe, required=True)
+        assert posture["enforced"] is True
+        assert posture["unprotected_tables"] == []
+        assert posture["invalid_policy_tables"] == []
+        assert _visible(probe, tenants, org=str(tenants["org_a"])) == {tenants["org_a"]}
+        assert _visible(probe, tenants, org="") == set()
+
+        # Exercise the repaired derived policy with real parent and message rows.
+        conversation_a, conversation_b = uuid.uuid4(), uuid.uuid4()
+        message_a, message_b = uuid.uuid4(), uuid.uuid4()
+        with probe.begin() as conn:
+            for conversation, message, org, workspace in (
+                (conversation_a, message_a, tenants["org_a"], tenants["ws_a"]),
+                (conversation_b, message_b, tenants["org_b"], tenants["ws_b"]),
+            ):
+                conn.execute(text("INSERT INTO conversations (id, org_id, workspace_id) VALUES (:id, :org, :workspace)"),
+                             {"id": conversation, "org": org, "workspace": workspace})
+                conn.execute(text("INSERT INTO messages (id, conversation_id, role, content, refused) VALUES (:id, :conversation, 'user', 'test', false)"),
+                             {"id": message, "conversation": conversation})
+        with runtime_probe.begin() as conn:
+            conn.execute(text("SELECT set_config('app.current_org_id', :org, true), set_config('app.rls_bypass', 'off', true)"),
+                         {"org": str(tenants["org_a"])})
+            visible = conn.execute(text("SELECT id FROM messages WHERE id IN (:a, :b)"), {"a": message_a, "b": message_b}).scalars().all()
+            assert {uuid.UUID(str(value)) for value in visible} == {message_a}
+        with pytest.raises(DBAPIError):
+            with runtime_probe.begin() as conn:
+                conn.execute(text("SELECT set_config('app.current_org_id', :org, true), set_config('app.rls_bypass', 'off', true)"),
+                             {"org": str(tenants["org_a"])})
+                conn.execute(text("INSERT INTO messages (id, conversation_id, role, content, refused) VALUES (:id, :conversation, 'user', 'forbidden', false)"),
+                             {"id": uuid.uuid4(), "conversation": conversation_b})
+    finally:
+        ensure_schema()
+
+
+def test_interrupted_reconciliation_can_resume(probe, runtime_probe, monkeypatch):
+    from app.db import migrations
+    from app.db.rls import check_rls_posture
+
+    repair_table = migrations._apply_rls_table
+
+    def interrupt(engine, schema, name, **kwargs):
+        if name == "evaluation_questions":
+            raise RuntimeError("interrupted derived repair")
+        return repair_table(engine, schema, name, **kwargs)
+
+    try:
+        with probe.begin() as conn:
+            conn.execute(text("ALTER TABLE workspaces NO FORCE ROW LEVEL SECURITY"))
+            conn.execute(text("ALTER TABLE messages DISABLE ROW LEVEL SECURITY"))
+        with monkeypatch.context() as patch:
+            patch.setattr(migrations, "_apply_rls_table", interrupt)
+            with pytest.raises(RuntimeError, match="interrupted derived repair"):
+                migrations.reconcile_rls(probe)
+        with probe.connect() as conn:
+            assert conn.scalar(text("SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid='public.workspaces'::regclass")) is True
+            assert conn.scalar(text("SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid='public.messages'::regclass")) is True
+        migrations.reconcile_rls(probe)
+        assert check_rls_posture(runtime_probe, required=True)["enforced"] is True
+    finally:
+        migrations.reconcile_rls(probe)
+
+
+def test_reconciliation_preserves_and_reports_custom_policies(probe):
+    from app.db.migrations import reconcile_rls
+
+    try:
+        with probe.begin() as conn:
+            conn.execute(text("CREATE POLICY custom_share ON workspaces USING (true) WITH CHECK (true)"))
+        with pytest.raises(RuntimeError, match=r"workspaces \(custom_share, tenant_isolation\)"):
+            reconcile_rls(probe)
+        with probe.connect() as conn:
+            assert conn.scalar(text("SELECT count(*) FROM pg_policy WHERE polrelid='public.workspaces'::regclass AND polname='custom_share'")) == 1
+    finally:
+        with probe.begin() as conn:
+            conn.execute(text("DROP POLICY IF EXISTS custom_share ON workspaces"))
+        reconcile_rls(probe)
+
+
+def test_reconciled_offline_questions_require_system_scope(probe, runtime_probe, tenants):
+    from app.db.migrations import reconcile_rls
+
+    question = uuid.uuid4()
+    reconcile_rls(probe)
+    try:
+        with probe.begin() as conn:
+            conn.execute(text("INSERT INTO evaluation_questions (id, question) VALUES (:id, 'offline test')"), {"id": question})
+        for bypass in ("off", "on"):
+            with runtime_probe.begin() as conn:
+                conn.execute(text("SELECT set_config('app.current_org_id', :org, true), set_config('app.rls_bypass', :bypass, true)"),
+                             {"org": str(tenants["org_a"]), "bypass": bypass})
+                visible = conn.scalar(text("SELECT id FROM evaluation_questions WHERE id=:id"), {"id": question})
+                assert (visible is not None) == (bypass == "on")
+        with pytest.raises(DBAPIError):
+            with runtime_probe.begin() as conn:
+                conn.execute(text("SELECT set_config('app.rls_bypass', 'off', true)"))
+                conn.execute(text("INSERT INTO evaluation_questions (id, question) VALUES (:id, 'forbidden')"), {"id": uuid.uuid4()})
+    finally:
+        with probe.begin() as conn:
+            conn.execute(text("DELETE FROM evaluation_questions WHERE id=:id"), {"id": question})
