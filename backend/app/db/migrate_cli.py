@@ -8,8 +8,11 @@ import argparse
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from app.core.logging import get_logger, setup_logging
 from app.db.bootstrap import ensure_schema
 from app.db.session import engine
+
+logger = get_logger(__name__)
 
 
 def grant_runtime_access(db_engine: Engine, role_name: str) -> None:
@@ -56,8 +59,11 @@ def main(argv: list[str] | None = None) -> None:
         help="After migrations, grant access to an existing restricted Aiven service user",
     )
     args = parser.parse_args(argv)
+    setup_logging()
+    logger.info("starting administrator schema migration")
     ensure_schema()
     if args.grant_runtime_role:
+        logger.info("granting access to the restricted runtime role")
         grant_runtime_access(engine, args.grant_runtime_role)
         print("Runtime grants ready. Set Render DATABASE_URL to the restricted user's connection.")
 

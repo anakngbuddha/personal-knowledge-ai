@@ -130,6 +130,7 @@ def _apply_rls_table(
 ) -> None:
     quote = engine.dialect.identifier_preparer.quote_identifier
     table = f"{quote(schema)}.{quote(table_name)}"
+    logger.info("reconciling RLS for %s", table)
     for attempt in range(5):
         try:
             with engine.begin() as conn:
@@ -141,6 +142,9 @@ def _apply_rls_table(
                 conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
                 conn.execute(text(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY"))
                 conn.execute(text(f"DROP POLICY IF EXISTS tenant_isolation ON {table}"))
+                # App migrations before the RBAC rewrite used this policy name.
+                # Retire only that owned alias; unrelated policies remain for review.
+                conn.execute(text(f"DROP POLICY IF EXISTS tenant_isolation_policy ON {table}"))
                 conn.execute(text(
                     f"CREATE POLICY tenant_isolation ON {table} "
                     f"USING ({predicate}) WITH CHECK ({predicate})"
@@ -406,6 +410,7 @@ def run_migrations(engine: Engine)->list[str]:
  for entry in MIGRATIONS:
   name=entry[0]; statements=entry[1]; postgres_only=bool(entry[2]) if len(entry)>2 else False
   if name in done: continue
+  logger.info("applying migration %s", name)
   if postgres_only and not is_pg:
    with engine.begin() as conn: _record(conn,name)
    logger.info("migration %s skipped on %s; create_all already covers it",name,engine.dialect.name); continue

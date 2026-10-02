@@ -138,13 +138,26 @@ def test_derived_repairs_reject_missing_schema():
     engine.begin.assert_not_called()
 
 
+def test_policy_replacement_retires_only_the_historical_app_policy():
+    engine = _engine()
+    migrations._apply_rls_table(engine, 'private"schema', "documents")
+    statements = [str(c.args[0]) for c in engine.begin.return_value.__enter__.return_value.execute.call_args_list]
+    drops = [sql for sql in statements if sql.startswith("DROP POLICY")]
+    assert drops == [
+        'DROP POLICY IF EXISTS tenant_isolation ON "private""schema"."documents"',
+        'DROP POLICY IF EXISTS tenant_isolation_policy ON "private""schema"."documents"',
+    ]
+    assert engine.begin.call_count == 1
+    assert statements[-1].startswith("CREATE POLICY tenant_isolation ")
+
+
 @pytest.mark.parametrize("state,failures", [("40P01", 1), ("55P03", 2), ("55P03", 5), ("42501", 1)])
 def test_policy_repair_rolls_back_and_bounds_retries(monkeypatch, state, failures):
     engine = _engine()
     transactions = [MagicMock() for _ in range(failures + 1)]
     error = DBAPIError("CREATE POLICY", {}, SimpleNamespace(sqlstate=state))
     for transaction in transactions[:failures]:
-        transaction.__enter__.return_value.execute.side_effect = [None] * 5 + [error]
+        transaction.__enter__.return_value.execute.side_effect = [None] * 6 + [error]
     engine.begin.side_effect = transactions
     sleep = MagicMock()
     monkeypatch.setattr(migrations.time, "sleep", sleep)

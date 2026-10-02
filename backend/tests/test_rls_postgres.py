@@ -340,3 +340,75 @@ def test_reconciled_offline_questions_require_system_scope(probe, runtime_probe,
     finally:
         with probe.begin() as conn:
             conn.execute(text("DELETE FROM evaluation_questions WHERE id=:id"), {"id": question})
+
+
+def test_tenant_guard_migration_fails_promptly_on_a_locked_table(probe, monkeypatch):
+    from app.db import tenant_constraints as guards
+
+    monkeypatch.setattr(guards, "_LOCK_TIMEOUT", "100ms")
+    monkeypatch.setattr(guards, "_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(guards.time, "sleep", lambda _: None)
+    with probe.connect() as blocker:
+        transaction = blocker.begin()
+        try:
+            blocker.execute(text("LOCK TABLE workspaces IN ACCESS EXCLUSIVE MODE"))
+            with pytest.raises(RuntimeError, match="blocked for workspaces after 2 attempts"):
+                guards._apply_guard_statements(probe, [
+                    "DROP TRIGGER IF EXISTS tenant_immutable ON workspaces",
+                ], "workspaces")
+        finally:
+            transaction.rollback()
+    with probe.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM pg_trigger WHERE tgrelid='public.workspaces'::regclass AND tgname='tenant_immutable'")) == 1
+
+
+def test_tenant_guard_replacement_keeps_previous_trigger_on_server_error(probe):
+    from app.db.tenant_constraints import _apply_guard_statements
+
+    with pytest.raises(DBAPIError):
+        _apply_guard_statements(probe, [
+            "DROP TRIGGER tenant_immutable ON workspaces",
+            "CREATE TRIGGER tenant_immutable invalid syntax",
+        ], "workspaces")
+    with probe.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM pg_trigger WHERE tgrelid='public.workspaces'::regclass AND tgname='tenant_immutable'")) == 1
+
+
+def test_reconciliation_retires_legacy_app_policy_with_completed_history(probe, runtime_probe):
+    from app.db.bootstrap import ensure_schema
+    from app.db.migrations import applied_migrations
+    from app.db.rls import check_rls_posture
+
+    ensure_schema()
+    recorded = applied_migrations(probe)
+    legacy = "org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid"
+    try:
+        with probe.begin() as conn:
+            conn.execute(text(f"CREATE POLICY tenant_isolation_policy ON workspaces AS PERMISSIVE FOR ALL USING ({legacy}) WITH CHECK ({legacy})"))
+        with pytest.raises(RuntimeError, match="unexpected tenant policies"):
+            check_rls_posture(runtime_probe, required=True)
+        assert ensure_schema() == []
+        assert ensure_schema() == []
+        assert applied_migrations(probe) == recorded
+        with probe.connect() as conn:
+            assert conn.execute(text("SELECT polname FROM pg_policy WHERE polrelid='public.workspaces'::regclass")).scalars().all() == ["tenant_isolation"]
+        assert check_rls_posture(runtime_probe, required=True)["enforced"] is True
+    finally:
+        with probe.begin() as conn:
+            conn.execute(text("DROP POLICY IF EXISTS tenant_isolation_policy ON workspaces"))
+        ensure_schema()
+
+
+def test_failed_policy_replacement_rolls_back_legacy_policy_removal(probe):
+    from app.db.migrations import _apply_rls_table, reconcile_rls
+
+    try:
+        with probe.begin() as conn:
+            conn.execute(text("CREATE POLICY tenant_isolation_policy ON workspaces USING (false) WITH CHECK (false)"))
+        with pytest.raises(DBAPIError):
+            _apply_rls_table(probe, "public", "workspaces", predicate="nonexistent_policy_column")
+        with probe.connect() as conn:
+            names = conn.execute(text("SELECT polname FROM pg_policy WHERE polrelid='public.workspaces'::regclass")).scalars().all()
+            assert set(names) == {"tenant_isolation", "tenant_isolation_policy"}
+    finally:
+        reconcile_rls(probe)

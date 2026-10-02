@@ -24,6 +24,7 @@ def should_bootstrap() -> bool:
 def ensure_schema() -> list[str]:
     """Idempotent administrator bootstrap, including repair of recorded RLS drift."""
     if engine.dialect.name == "postgresql":
+        logger.info("schema bootstrap: enabling PostgreSQL extensions")
         try:
             with engine.begin() as conn:
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
@@ -34,11 +35,15 @@ def ensure_schema() -> list[str]:
                 "On Aiven: Overview → Extensions, enable pgvector, then restart Render."
             ) from exc
 
+    logger.info("schema bootstrap: creating missing tables")
     Base.metadata.create_all(bind=engine)
+    logger.info("schema bootstrap: applying recorded migrations")
     ran = run_migrations(engine)
     # Migration history cannot prove the current policies or FORCE flags are intact.
+    logger.info("schema bootstrap: reconciling table RLS")
     reconcile_rls(engine)
 
+    logger.info("schema bootstrap: creating default organization and workspace")
     db = system_session()
     try:
         from app.documents.service import get_or_create_default_workspace

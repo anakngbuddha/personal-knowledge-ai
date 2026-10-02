@@ -87,14 +87,17 @@ port-scan message is a consequence of the startup failure.
    ```
 
    This always restores ENABLE and FORCE flags and recreates the current
-   `tenant_isolation` policies, without deleting data or migration history.
+   `tenant_isolation` policies, without deleting data or migration history. It
+   retires the app's former `tenant_isolation_policy` name in the same transaction
+   as creating the current policy. If replacement fails, both prior policies are
+   restored by rollback. No unrelated policy names are deleted.
    Derived tables use parent ownership checks; evaluation questions remain
    accessible only to trusted system sessions. Repair uses one transaction per
    table, with bounded retries for lock conflicts. If interrupted, rerun the same
    command. Validation must succeed before default data or runtime grants proceed.
 
 2. If reconciliation reports an unexpected policy, it names the table and its
-   policies. Additional policies are preserved. Have the database administrator
+   policies. Additional custom policies are preserved. Have the database administrator
    review them before rerunning; do not disable the startup check or automatically
    delete custom policies. Resolve permission or schema errors with the admin
    connection. An admin role's BYPASSRLS is expected during migration and does not
@@ -124,3 +127,55 @@ or use administrator credentials.
 
 Aiven's service-user creation instructions are available in its
 [official documentation](https://aiven.io/docs/products/postgresql/howto/manage-service-users).
+
+If the earlier repair failed with `(tenant_isolation, tenant_isolation_policy)`
+on otherwise protected tables, rerun the updated administrator migration command.
+The second name is from this repository's older migrations, before the RBAC
+rewrite in commit `0c3b70b`. Reconciliation now retires that alias while preserving
+other policies. Do not change `RLS_REQUIRED` to bypass the failure.
+
+## Migration appears to hang while replacing triggers
+
+The migration CLI now logs its bootstrap stage, migration name, and the table whose
+tenant guards it is installing. Trigger replacement uses transaction-local
+`lock_timeout=5s` and `statement_timeout=30s`. Deadlocks and lock timeouts retry at
+most five times, then fail with the table name. All guards for one table are
+replaced in one transaction, so failure preserves the previous triggers.
+
+If the command reports a blocked tenant guard migration, use your administrator
+database query tool to identify the blocker:
+
+```sql
+SELECT pid, state, wait_event_type, wait_event,
+       pg_blocking_pids(pid) AS blocking_pids
+FROM pg_stat_activity
+WHERE datname = current_database()
+  AND pid <> pg_backend_pid()
+  AND cardinality(pg_blocking_pids(pid)) > 0;
+```
+
+Have the owner of the blocking transaction finish or roll back that transaction,
+then rerun the migration. Identify the affected application or worker before
+stopping it; this command does not terminate database sessions automatically.
+The earlier `query cancellation failed: cancellation timeout expired` message
+does not establish which session held the lock; the blocking-PID query provides
+that evidence. Do not redeploy until the migration and restricted-role checks
+succeed.
+
+For a local retry after Ctrl+C, the prior PowerShell `finally` block removes
+`DATABASE_URL`. Set it again from the existing secure variable before rerunning:
+
+```powershell
+$env:DATABASE_URL = [System.Net.NetworkCredential]::new('', $adminUri).Password
+try {
+    python -u -m app.db.migrate_cli --grant-runtime-role pka_app
+} finally {
+    Remove-Item Env:DATABASE_URL
+}
+```
+
+If that shell was closed, enter the administrator URI again using `Read-Host
+-AsSecureString`. Never print the URI or include it in an error report.
+
+See PostgreSQL's documentation for [transaction-local timeouts](https://www.postgresql.org/docs/current/runtime-config-client.html)
+and [blocking-session identification](https://www.postgresql.org/docs/current/functions-info.html).
