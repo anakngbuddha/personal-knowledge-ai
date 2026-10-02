@@ -7,6 +7,19 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+def body_budget(headers: dict) -> int:
+    """Largest body this request may send.
+
+    Only multipart uploads get the upload budget (the file plus form overhead). JSON
+    and every other content type are capped far lower, so an unauthenticated client
+    cannot make the server buffer ~100 MB into a JSON parser.
+    """
+    content_type = headers.get(b"content-type", b"").split(b";", 1)[0].strip().lower()
+    if content_type == b"multipart/form-data":
+        return settings.max_upload_bytes * 4 + 1024 * 1024
+    return settings.max_json_body_bytes
+
+
 class SecurityMiddleware:
     def __init__(self, app):
         self.app = app
@@ -15,7 +28,8 @@ class SecurityMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         request_id = uuid.uuid4().hex
-        budget = settings.max_upload_bytes * 4 + 1024 * 1024
+        headers = dict(scope.get("headers", []))
+        budget = body_budget(headers)
         total = 0
         started = False
         async def limited_receive():
@@ -38,7 +52,6 @@ class SecurityMiddleware:
                     headers.append((b"strict-transport-security", b"max-age=31536000; includeSubDomains"))
                 message["headers"] = headers
             await send(message)
-        headers = dict(scope.get("headers", []))
         try:
             declared_size = int(headers.get(b"content-length", b"0"))
         except ValueError:
