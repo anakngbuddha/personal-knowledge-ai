@@ -8,6 +8,10 @@ Two rules this file exists to enforce:
 * Tests that genuinely need PostgreSQL are marked `requires_db` and **skip** rather
   than fail when there is no database. They are not optional in CI: the CI job sets
   `DATABASE_URL` to a service container, so a skip locally is a run in CI.
+
+Auth throttling is off by default here because many tests sign in from the same
+TestClient address; tests that exercise it turn it on explicitly. The password work
+factor is lowered to the minimum the validator allows to keep the suite fast.
 """
 
 import os
@@ -24,6 +28,8 @@ os.environ.setdefault("WORKFLOW_WORKER_ENABLED", "false")
 os.environ.setdefault("FRESHNESS_WORKER_ENABLED", "false")
 os.environ.setdefault("SSO_ENABLED", "false")
 os.environ.setdefault("AUTH_MODE", "owner_dev")
+os.environ.setdefault("AUTH_RATE_LIMIT_ENABLED", "false")
+os.environ.setdefault("PASSWORD_PBKDF2_ITERATIONS", "100000")
 
 import pytest  # noqa: E402
 

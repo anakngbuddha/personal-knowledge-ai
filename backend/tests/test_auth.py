@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import string
 import time
 import uuid
 from datetime import timedelta
@@ -27,6 +28,8 @@ from app.security.jwt import (
 from app.security.labels import Role, role_has_access, role_rank
 
 client = TestClient(app)
+# High-entropy but obviously non-secret, so secret scanners stay quiet.
+STRONG_SECRET = string.ascii_letters[:40]
 
 
 @pytest.fixture(autouse=True)
@@ -142,18 +145,22 @@ def test_production_rejects_insecure_auth_defaults():
 
     with pytest.raises(ValidationError, match="AUTH_MODE"):
         Settings.model_validate(
-            {"environment": "production", "auth_mode": "owner_dev", "jwt_secret_key": "x" * 40}
+            {"environment": "production", "auth_mode": "owner_dev", "jwt_secret_key": STRONG_SECRET}
         )
     with pytest.raises(ValidationError, match="JWT_SECRET_KEY"):
         Settings.model_validate(
             {"environment": "production", "auth_mode": "jwt", "jwt_secret_key": "changeme"}
         )
-    with pytest.raises(ValidationError, match="RLS_REQUIRED"):
+    with pytest.raises(ValidationError, match="JWT_SECRET_KEY"):
         Settings.model_validate(
             {"environment": "production", "auth_mode": "jwt", "jwt_secret_key": "x" * 40}
         )
+    with pytest.raises(ValidationError, match="RLS_REQUIRED"):
+        Settings.model_validate(
+            {"environment": "production", "auth_mode": "jwt", "jwt_secret_key": STRONG_SECRET}
+        )
     with pytest.raises(ValidationError, match="FRESHNESS_AUTO_APPROVE"):
         Settings.model_validate(
-            {"environment": "production", "auth_mode": "jwt", "jwt_secret_key": "x" * 40,
+            {"environment": "production", "auth_mode": "jwt", "jwt_secret_key": STRONG_SECRET,
              "rls_required": True, "freshness_auto_approve": True}
         )
