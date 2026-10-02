@@ -23,9 +23,25 @@ services:
         sync: false
       - key: AUTH_MODE
         value: jwt
+      # Must be random, 32+ characters. Startup refuses empty, placeholder or
+      # low-entropy values: python -c "import secrets; print(secrets.token_urlsafe(48))"
       - key: JWT_SECRET_KEY
         sync: false
       - key: ALLOW_LEGACY_TOKEN_ENDPOINT
+        value: "false"
+      # Self-service signup creates a new organization for anyone on the internet.
+      # Set to "false" once your organization exists; invite people from the admin page.
+      - key: SIGNUP_ENABLED
+        value: "true"
+      - key: AUTH_RATE_LIMIT_ENABLED
+        value: "true"
+      - key: PASSWORD_PBKDF2_ITERATIONS
+        value: "600000"
+      # Render's proxy appends the client address to X-Forwarded-For; trust one hop
+      # so per-IP auth throttling sees real clients instead of the proxy.
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+      - key: API_DOCS_ENABLED
         value: "false"
       - key: RLS_DEFAULT_DENY
         value: "true"
