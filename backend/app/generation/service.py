@@ -52,6 +52,7 @@ from app.generation.conversations import (
     create_conversation,
     get_conversation,
     get_history,
+    get_active_goal,
 )
 from app.generation.rate_limit import (
     check_rate_limit,
@@ -94,6 +95,8 @@ class PreparedContext:
     web_note: str | None = None
     web_sources: list[SourceMetadata] = field(default_factory=list)
     timings_ms: dict[str, float] = field(default_factory=dict)
+    prioritized_connectors: list[str] = field(default_factory=list)
+    target_web_urls: list[str] = field(default_factory=list)
 
 
 def hits_are_weak(hits: list, query: str) -> bool:
@@ -348,6 +351,21 @@ def _prepare_context(
             )
         )
 
+    # Mentions resolution (@note:, @product:, @connector:, @web:)
+    from app.generation.handlers import resolve_mentions
+    resolved = resolve_mentions(db, workspace_id, principal.org_id, question)
+    if resolved.note_chunks or resolved.product_chunks:
+        added_chunks = resolved.note_chunks + resolved.product_chunks
+        context_chunks = added_chunks + context_chunks
+        for idx, chunk in enumerate(context_chunks, start=1):
+            chunk["index"] = idx
+        source_metadata = resolved.note_sources + resolved.product_sources + source_metadata
+
+    if resolved.relationships_lines:
+        extra_map = build_relationships_block(resolved.relationships_lines)
+        if extra_map:
+            relationships_block = f"{relationships_block}\n\n{extra_map}" if relationships_block else extra_map
+
     timings["prepare_total_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
     logger.info("prepare_context timings %s", timings)
 
@@ -358,6 +376,8 @@ def _prepare_context(
         needs_web=hits_are_weak(hits, search_query),
         search_query=search_query,
         timings_ms=timings,
+        prioritized_connectors=resolved.prioritized_connectors,
+        target_web_urls=resolved.target_web_urls,
     )
 
 
@@ -368,10 +388,17 @@ def _attach_web(prepared: PreparedContext, web_search: bool | None = None) -> Pr
     If web_search is True, web search is forced.
     If web_search is None (default), web search runs automatically when context needs web.
     """
-    should_search = (web_search is True) or (web_search is None and prepared.needs_web)
+    should_search = web_search is not False and (web_search is True or prepared.needs_web or bool(prepared.target_web_urls))
     if not should_search:
         return prepared
-    fallback = gather_web_fallback(prepared.search_query)
+    if prepared.target_web_urls:
+        # Reuse the SSRF-safe reader with explicit targets, without a search API call.
+        targets = prepared.target_web_urls[:settings.web_fallback_max_results]
+        fallback = gather_web_fallback(prepared.search_query, search_fn=lambda _: [
+            {"url": url, "title": url} for url in targets
+        ])
+    else:
+        fallback = gather_web_fallback(prepared.search_query)
     prepared.web_note = fallback.note
     start = len(prepared.chunks)
     for offset, passage in enumerate(fallback.passages, start=1):
@@ -432,6 +459,7 @@ def ask(
     notebook_id: uuid.UUID | None = None,
     web_search: bool | None = None,
     attachment_document_ids: list[uuid.UUID] | None = None,
+    goal: str | None = None,
 ) -> GroundedAnswer:
     """Generate a grounded answer (synchronous).
 
@@ -444,6 +472,9 @@ def ask(
     6. Score citation support, record usage, persist message
     """
     strict_mode = resolve_strict_mode(strict_mode)
+    from app.generation.handlers import resolve_mentions
+    if resolve_mentions(None, None, principal.org_id, question).prioritized_connectors:
+        enable_tools = True
 
     # Cost controls
     check_rate_limit(principal.user_id)
@@ -472,6 +503,45 @@ def ask(
         )
         conv_uuid = conv.id
 
+    original_question = question
+    if goal is None and conv_uuid:
+        goal = get_active_goal(db, conversation_id=conv_uuid)
+    goal = goal or None
+    from app.generation.handlers import handle_slash_command
+    cmd_res = handle_slash_command(db, workspace_id, principal, question, goal=goal)
+
+    if cmd_res and cmd_res.handled:
+        answer = GroundedAnswer(
+            text=cmd_res.text or "",
+            citations=[],
+            model_id="command_handler",
+            prompt_version=PROMPT_VERSION,
+            connections_result=cmd_res.connections_result,
+            active_goal=cmd_res.active_goal if question.strip().split()[0].lower() in ("/goal", "/set-goal") else goal,
+        )
+        if conv_uuid:
+            answer.conversation_id = str(conv_uuid)
+            if persist:
+                add_message(db, conversation_id=conv_uuid, role="user", content=question)
+                assistant_msg = add_message(
+                    db,
+                    conversation_id=conv_uuid,
+                    role="assistant",
+                    content=answer.text,
+                    citations=[],
+                    sources=[],
+                    usage=_usage_with_tools(answer),
+                    prompt_version=PROMPT_VERSION,
+                    model_id="command_handler",
+                )
+                answer.message_id = str(assistant_msg.id)
+        return answer
+
+    if cmd_res and not cmd_res.handled and cmd_res.rewritten_question:
+        question = cmd_res.rewritten_question
+        if cmd_res.active_goal:
+            goal = cmd_res.active_goal
+
     # Retrieve and prepare context
     prepared = _attach_web(
         _prepare_context(
@@ -492,7 +562,7 @@ def ask(
     # Build the full prompt
     context_block = build_context_block(context_chunks, strict_mode=strict_mode)
     user_message = build_user_message(question, context_block, relationships_block)
-    prompt = system_prompt_for(enable_tools=enable_tools, strict_mode=strict_mode)
+    prompt = system_prompt_for(enable_tools=enable_tools, strict_mode=strict_mode, goal=goal)
 
     # Generate
     provider = get_llm_provider()
@@ -511,9 +581,22 @@ def ask(
             return execute_tool(call, ctx)
 
         definitions = default_definitions(ctx)
+        if prepared.prioritized_connectors:
+            from app.mcp.registry_bridge import parse_exposed_name
+            requested = set(prepared.prioritized_connectors)
+            definitions = [tool for tool in definitions if not tool.name.startswith("mcp_") or
+                           ((parsed := parse_exposed_name(tool.name)) and parsed[0] in requested)]
+            available = {parsed[0] for tool in definitions if (parsed := parse_exposed_name(tool.name))}
+            if "custom_mcp" in requested and any(tool.name.startswith("tool_") for tool in definitions):
+                available.add("custom_mcp")
+            requested_tools = ", ".join(prepared.prioritized_connectors)
+            unavailable = ", ".join(sorted(requested - available))
+            user_message += f"\n\nRequested connectors: {requested_tools}. Use their available tools when relevant."
+            if unavailable:
+                user_message += f"\nUnavailable connectors: {unavailable}. Explain that they must be configured in Connections; do not claim to have queried them."
         # Automatic web fallback already searched this question. Do not spend
         # another free-tier credit on duplicate model tool calls.
-        if web_search is not None or prepared.needs_web:
+        if web_search is not None or prepared.needs_web or prepared.target_web_urls:
             definitions = [tool for tool in definitions if tool.name != "tool_web_search"]
         answer = run_tool_loop(
             provider,
@@ -545,11 +628,12 @@ def ask(
             answer.usage.completion_tokens,
         )
 
+    answer.active_goal = goal
     # Persist messages
     if conv_uuid:
         answer.conversation_id = str(conv_uuid)
         if persist:
-            add_message(db, conversation_id=conv_uuid, role="user", content=question)
+            add_message(db, conversation_id=conv_uuid, role="user", content=original_question)
             assistant_msg = add_message(
                 db,
                 conversation_id=conv_uuid,
@@ -596,6 +680,7 @@ def ask_stream(
     notebook_id: uuid.UUID | None = None,
     web_search: bool | None = None,
     attachment_document_ids: list[uuid.UUID] | None = None,
+    goal: str | None = None,
 ) -> Iterator[GroundedAnswerChunk]:
     """Generate a grounded answer with streaming.
 
@@ -604,8 +689,11 @@ def ask_stream(
     sends the answer in one piece instead of replaying it word by word.
     """
     strict_mode = resolve_strict_mode(strict_mode)
-    if enable_tools:
-        yield GroundedAnswerChunk(delta="", status="running tools; this answer is not streamed")
+    from app.generation.handlers import resolve_mentions
+    if resolve_mentions(None, None, principal.org_id, question).prioritized_connectors:
+        enable_tools = True
+    if enable_tools or question.lstrip().startswith("/"):
+        yield GroundedAnswerChunk(delta="", status="running tools; this answer is not streamed" if enable_tools else "running command")
         answer = ask(
             db,
             principal=principal,
@@ -614,12 +702,13 @@ def ask_stream(
             filters=filters,
             exclude_document_ids=exclude_document_ids,
             workspace_id=workspace_id,
-            enable_tools=True,
+            enable_tools=enable_tools,
             strict_mode=strict_mode,
             persist=False,
             notebook_id=notebook_id,
             web_search=web_search,
             attachment_document_ids=attachment_document_ids,
+            goal=goal,
         )
         if answer.text:
             yield GroundedAnswerChunk(delta=answer.text)
@@ -635,6 +724,8 @@ def ask_stream(
             web_sources=list(answer.web_sources),
             tool_calls=list(answer.tool_calls),
             tool_results=list(answer.tool_results),
+            active_goal=answer.active_goal,
+            connections_result=answer.connections_result,
         )
         conv_uuid = uuid.UUID(answer.conversation_id) if answer.conversation_id else None
         if conv_uuid:
@@ -684,6 +775,9 @@ def ask_stream(
         )
         conv_uuid = conv.id
 
+    if goal is None and conv_uuid:
+        goal = get_active_goal(db, conversation_id=conv_uuid)
+    goal = goal or None
     prepared = _prepare_context(
         db,
         principal,
@@ -693,7 +787,7 @@ def ask_stream(
         history,
         workspace_id=workspace_id,
     )
-    should_search = (web_search is True) or (web_search is None and prepared.needs_web)
+    should_search = web_search is not False and (web_search is True or prepared.needs_web or bool(prepared.target_web_urls))
     if should_search:
         yield GroundedAnswerChunk(delta="", status="searching the web")
         prepared = _attach_web(prepared, web_search=web_search)
@@ -704,7 +798,7 @@ def ask_stream(
     # Build the full prompt
     context_block = build_context_block(context_chunks, strict_mode=strict_mode)
     user_message = build_user_message(question, context_block, relationships_block)
-    prompt = system_prompt_for(enable_tools=False, strict_mode=strict_mode)
+    prompt = system_prompt_for(enable_tools=False, strict_mode=strict_mode, goal=goal)
 
     # Stream generation
     provider = get_llm_provider()
@@ -722,6 +816,7 @@ def ask_stream(
             chunk.citations = annotate_citations(persisted_text, list(chunk.citations), context_chunks)
             chunk.web_note = prepared.web_note
             chunk.web_sources = list(prepared.web_sources)
+            chunk.active_goal = goal
             if chunk.usage:
                 record_token_usage(
                     db,
@@ -738,7 +833,7 @@ def ask_stream(
                     content=persisted_text,
                     citations=[c.as_dict() for c in chunk.citations],
                     sources=[s.as_dict() for s in all_sources],
-                    usage=chunk.usage.as_dict() if chunk.usage else None,
+                    usage={**(chunk.usage.as_dict() if chunk.usage else {}), "ask_state": {"active_goal": goal}},
                     prompt_version=PROMPT_VERSION,
                     refused=chunk.refused,
                     model_id=provider.model_id,
@@ -760,6 +855,10 @@ def ask_stream(
 
 def _usage_with_tools(answer: GroundedAnswer) -> dict | None:
     usage = answer.usage.as_dict() if answer.usage else {}
+    usage["ask_state"] = {
+        "active_goal": answer.active_goal,
+        "connections_result": answer.connections_result.model_dump() if answer.connections_result else None,
+    }
     if answer.tool_results or answer.tool_calls:
         usage["tool_trace"] = {
             "calls": [c.as_dict() for c in answer.tool_calls],

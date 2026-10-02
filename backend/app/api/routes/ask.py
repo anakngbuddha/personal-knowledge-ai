@@ -151,6 +151,7 @@ def ask_endpoint(
             notebook_id=notebook_id,
             web_search=payload.web_search,
             attachment_document_ids=payload.attachment_document_ids,
+            goal=payload.goal,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -235,6 +236,41 @@ def save_web_source(
     )
 
 
+@router.get("/ask/mention-targets", response_model=list[schemas.MentionTargetOut])
+def get_mention_targets_endpoint(
+    q: str = Query("", min_length=0, max_length=100),
+    category: schemas.MentionCategory | None = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(resolve_principal),
+) -> list[schemas.MentionTargetOut]:
+    """Autocomplete targets for @ mentions (notes, products, connectors, websites)."""
+    from app.generation.handlers import get_mention_targets
+
+    workspace_id = _workspace_id_from_principal(db, principal)
+    return get_mention_targets(
+        db, workspace_id, principal.org_id, q=q, category=category, limit=limit, principal=principal
+    )
+
+
+@router.get("/ask/product-connections", response_model=schemas.ProductConnectionsOut)
+def get_product_connections_endpoint(
+    product: str = Query(..., min_length=1, max_length=255),
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(resolve_principal),
+) -> schemas.ProductConnectionsOut:
+    """Inspect product connections, prerequisites, conflicts, and integrations."""
+    from app.generation.handlers import get_product_connections_data
+
+    workspace_id = _workspace_id_from_principal(db, principal)
+    data = get_product_connections_data(db, workspace_id, product)
+    if not data:
+        raise HTTPException(
+            status_code=404, detail=f"Product '{product}' not found in workspace catalog."
+        )
+    return data
+
+
 def _stream_response(
     db: Session,
     principal: Principal,
@@ -260,6 +296,7 @@ def _stream_response(
                 notebook_id=notebook_id,
                 web_search=payload.web_search,
                 attachment_document_ids=payload.attachment_document_ids,
+                goal=payload.goal,
             ):
                 event_data = {
                     "delta": chunk.delta,
@@ -286,6 +323,10 @@ def _stream_response(
                     event_data["refusal_reason"] = chunk.refusal_reason
                     event_data["conversation_id"] = chunk.conversation_id
                     event_data["message_id"] = chunk.message_id
+                    event_data["active_goal"] = getattr(chunk, "active_goal", None)
+                    conn = getattr(chunk, "connections_result", None)
+                    if conn:
+                        event_data["connections_result"] = conn.model_dump() if hasattr(conn, "model_dump") else conn
 
                 yield f"data: {json.dumps(event_data)}\n\n"
 
@@ -401,6 +442,8 @@ def get_conversation_endpoint(
     result.message_total = db.scalar(select(func.count()).select_from(Message).where(Message.conversation_id == conv.id)) or 0
     result.message_limit = limit
     result.message_offset = offset
+    from app.generation.conversations import get_active_goal
+    result.goal = get_active_goal(db, conversation_id=conv.id)
     return result
 
 
@@ -463,6 +506,7 @@ def ask_in_conversation_endpoint(
             notebook_id=notebook_uuid,
             web_search=payload.web_search,
             attachment_document_ids=payload.attachment_document_ids,
+            goal=payload.goal,
         )
     except GenerationRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -555,6 +599,8 @@ def _answer_to_out(answer, *, fallback_conversation_id: str | None) -> schemas.A
         web_sources=[
             schemas.SourceMetadataOut(**s.as_dict()) for s in getattr(answer, "web_sources", [])
         ],
+        active_goal=getattr(answer, "active_goal", None),
+        connections_result=getattr(answer, "connections_result", None),
     )
 
 
@@ -582,7 +628,7 @@ def _conv_to_out(
                     ],
                     usage=(
                         schemas.TokenUsageOut(**msg.usage)
-                        if msg.usage
+                        if msg.usage and "prompt_tokens" in msg.usage
                         else None
                     ),
                     tool_calls=[schemas.ToolCallOut(id=call["id"], name=call["name"],
@@ -594,6 +640,8 @@ def _conv_to_out(
                     refused=msg.refused,
                     model_id=msg.model_id,
                     created_at=msg.created_at.isoformat(),
+                    active_goal=(msg.usage or {}).get("ask_state", {}).get("active_goal"),
+                    connections_result=(msg.usage or {}).get("ask_state", {}).get("connections_result"),
                 )
             )
 

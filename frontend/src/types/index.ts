@@ -168,6 +168,36 @@ export interface TokenUsage {
   total_tokens: number;
 }
 
+export type MentionCategory = "note" | "website" | "connector" | "product";
+
+export interface MentionTarget {
+  id: string;
+  ref: string;
+  name: string;
+  category: MentionCategory;
+  subtitle?: string;
+  icon?: string;
+}
+
+export interface ConnectionNode {
+  id: string;
+  name: string;
+  relation_type: string;
+  evidence?: string;
+}
+
+export interface ProductConnections {
+  product_id: string;
+  product_name: string;
+  vendor?: string;
+  category?: string;
+  prerequisites: ConnectionNode[];
+  conflicts: ConnectionNode[];
+  integrations: ConnectionNode[];
+  alternatives: ConnectionNode[];
+  collateral_count: number;
+}
+
 export interface ToolCallInfo {
   id: string;
   name: string;
@@ -189,6 +219,8 @@ export interface AskResponse {
   tool_calls?: ToolCallInfo[];
   web_note?: string | null;
   web_sources?: SourceMetadata[];
+  active_goal?: string | null;
+  connections_result?: ProductConnections | null;
 }
 
 export interface Message {
@@ -203,9 +235,12 @@ export interface Message {
   refused: boolean;
   model_id?: string | null;
   created_at: string;
+  active_goal?: string | null;
+  connections_result?: ProductConnections | null;
 }
 
 export interface Conversation {
+  goal?: string | null;
   message_total?: number;
   message_limit?: number;
   message_offset?: number;
@@ -599,5 +634,4 @@ export interface McpExecuteResult {
   result: Record<string, unknown>;
   is_error: boolean;
 }
-
 

@@ -8,6 +8,7 @@ frontend can render freshness, approval state, and vendor inline.
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -87,6 +88,45 @@ class AskIn(BaseModel):
     strict_mode: bool = True
     # Web search mode: None = auto (search when documents weak), True = force web search, False = disabled
     web_search: bool | None = None
+    # Optional active session goal
+    goal: str | None = Field(default=None, max_length=1000)
+
+
+MentionCategory = Literal["note", "website", "connector", "product"]
+
+
+class MentionTargetOut(BaseModel):
+    """Autocomplete target for @ mentions (notes, products, connectors, websites)."""
+
+    id: str
+    ref: str
+    name: str
+    category: MentionCategory
+    subtitle: str | None = None
+    icon: str | None = None
+
+
+class ConnectionNodeOut(BaseModel):
+    """Related product node in a connections lookup."""
+
+    id: str
+    name: str
+    relation_type: str
+    evidence: str | None = None
+
+
+class ProductConnectionsOut(BaseModel):
+    """Detailed connections and dependencies for a product (/connections command)."""
+
+    product_id: str
+    product_name: str
+    vendor: str | None = None
+    category: str | None = None
+    prerequisites: list[ConnectionNodeOut] = Field(default_factory=list)
+    conflicts: list[ConnectionNodeOut] = Field(default_factory=list)
+    integrations: list[ConnectionNodeOut] = Field(default_factory=list)
+    alternatives: list[ConnectionNodeOut] = Field(default_factory=list)
+    collateral_count: int = 0
 
 
 class AskOut(BaseModel):
@@ -104,6 +144,8 @@ class AskOut(BaseModel):
     tool_calls: list[ToolCallOut] = Field(default_factory=list)
     web_note: str | None = None
     web_sources: list[SourceMetadataOut] = Field(default_factory=list)
+    active_goal: str | None = None
+    connections_result: ProductConnectionsOut | None = None
 
 
 class WebSourceSaveIn(BaseModel):
@@ -133,6 +175,8 @@ class MessageOut(BaseModel):
     refused: bool = False
     model_id: str | None = None
     created_at: str
+    active_goal: str | None = None
+    connections_result: ProductConnectionsOut | None = None
 
 
 class ConversationOut(BaseModel):
@@ -142,6 +186,7 @@ class ConversationOut(BaseModel):
     workspace_id: str
     notebook_id: str | None = None
     title: str | None = None
+    goal: str | None = None
     messages: list[MessageOut] = Field(default_factory=list)
     message_total: int = 0
     message_limit: int = 100
@@ -173,3 +218,5 @@ class StreamChunkOut(BaseModel):
     status: str | None = None
     web_note: str | None = None
     web_sources: list[SourceMetadataOut] = Field(default_factory=list)
+    active_goal: str | None = None
+    connections_result: ProductConnectionsOut | None = None

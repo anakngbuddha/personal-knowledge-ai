@@ -16,6 +16,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.tools.schema import ToolCall, ToolDefinition, ToolResult
 
@@ -102,6 +103,8 @@ class GroundedAnswer:
     tool_results: list[ToolResult] = field(default_factory=list)
     web_note: str | None = None
     web_sources: list[SourceMetadata] = field(default_factory=list)
+    active_goal: str | None = None
+    connections_result: Any | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -118,6 +121,8 @@ class GroundedAnswer:
             "tool_results": [r.as_dict() for r in self.tool_results],
             "web_note": self.web_note,
             "web_sources": [s.as_dict() for s in self.web_sources],
+            "active_goal": self.active_goal,
+            "connections_result": self.connections_result.model_dump() if self.connections_result else None,
         }
 
 
@@ -139,6 +144,8 @@ class GroundedAnswerChunk:
     web_sources: list[SourceMetadata] = field(default_factory=list)
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_results: list[ToolResult] = field(default_factory=list)
+    active_goal: str | None = None
+    connections_result: Any | None = None
 
 
 class LLMProvider(ABC):

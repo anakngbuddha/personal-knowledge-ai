@@ -50,6 +50,19 @@ Open **Ask**. Sources are on the left, the conversation is in the middle, and ci
 
 Answers say what came from your documents, from general product knowledge, or from the web when a connection was used.
 
+Type **@** or click **Mention** to select a note, product, connector, or website. Use the category tabs to narrow results, arrow keys to move, Enter to select, and Escape to close. You can also type references directly: `@note:deployment-plan`, `@product:atlas-core`, `@connector:ms365`, or `@web:https://docs.example/API`. Put titles containing spaces in quotes, such as `@note:"Deployment Plan"`. Mentions add the selected note or product details to the cited context. Connector mentions use the tools available to your account; configure connections under **Connections**. Website mentions read the specified public page when web access is enabled.
+
+Type **/** or click **Commands** for these shortcuts:
+
+| Command | Result |
+|---|---|
+| `/goal <objective>` | Set a goal that steers subsequent answers and is restored with the conversation. Use the banner to edit, clear, or mark it achieved; `/goal clear` and `/goal done` also work. |
+| `/connections <product>` | Show prerequisites, conflicts, integrations, and alternatives, with **Explore in Map** navigation. |
+| `/plan <task>` | Request a structured execution plan grounded in workspace sources. |
+| `/briefing`, `/faq`, `/compare <items>` | Request an executive briefing, FAQ, or comparison. |
+| `/graphify-sync` | Refresh catalog integrity and curation status. Administrators can also refresh the code knowledge graph when the server runs from a checkout with Graphify installed. |
+| `/help` | Show the command and mention reference. |
+
 ---
 
 ## Map

@@ -174,6 +174,14 @@ def get_history(
     ]
 
 
+def get_active_goal(db: Session, *, conversation_id: uuid.UUID) -> str | None:
+    """Read the most recent persisted session state, including an explicit clear."""
+    usage = db.scalar(select(Message.usage).where(
+        Message.conversation_id == conversation_id, Message.role == "assistant"
+    ).order_by(Message.created_at.desc(), Message.id.desc()).limit(1))
+    return (usage or {}).get("ask_state", {}).get("active_goal")
+
+
 def auto_title(
     db: Session,
     *,

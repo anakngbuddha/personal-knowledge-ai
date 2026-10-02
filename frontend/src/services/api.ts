@@ -1,4 +1,4 @@
-import type { AskResponse, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, LinkTargetOut, McpExecuteResult, McpIntegration, McpIntegrationList, McpPingResult, McpServerConfig, McpServerStatus, NoteGraphOut, NoteList, NoteRecord, NotebookList, NotebookRecord, NotebookSource, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, StudioResult, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
+import type { AskResponse, MentionTarget, ProductConnections, BulkUploadOut, Conversation, ConversationListResponse, DocumentChunk, DocumentStatusReport, FreshnessAlert, FreshnessAlertList, FreshnessCheck, GraphEdge, KnowledgeDocument, LinkTargetOut, McpExecuteResult, McpIntegration, McpIntegrationList, McpPingResult, McpServerConfig, McpServerStatus, NoteGraphOut, NoteList, NoteRecord, NotebookList, NotebookRecord, NotebookSource, PlaybookListResponse, PrincipalProfile, RestoreDrill, RestoreDrillList, RfpAnswerEdit, SearchResponse, SourceMetadata, SsoStatus, StudioResult, VendorSource, VendorSourceList, WorkflowRun, WorkflowRunListResponse } from "../types";
 import { ApiError, fetchResponse, request, requestBlob } from "./http";
 
 type AuthTokenResponse = { access_token: string; role: string; expires_in_seconds: number };
@@ -56,7 +56,7 @@ export const api = {
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({query, mode:options?.mode??"hybrid", top_k:options?.top_k??8, filters:options?.filters?? {}})
     }),
-  ask: (payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean; web_search?:boolean}) =>
+  ask: (payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean; web_search?:boolean; goal?:string|null}) =>
     request<AskResponse>("/ask", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
@@ -69,7 +69,7 @@ export const api = {
       body: JSON.stringify(body)
     }),
   askStream: async (
-    payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; attachment_document_ids?:string[]; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean; web_search?:boolean},
+    payload: {question:string; conversation_id?:string|null; notebook_id?:string|null; attachment_document_ids?:string[]; exclude_document_ids?:string[]; filters?:Record<string,unknown>; enable_tools?:boolean; strict_mode?:boolean; web_search?:boolean; goal?:string|null},
     onDelta: (text: string) => void,
     onStatus?: (status: string) => void
   ): Promise<Partial<AskResponse>> => {
@@ -99,7 +99,7 @@ export const api = {
           if (!line) continue;
           const data = line.slice(6).trim();
           if (data === "[DONE]") continue;
-          const event = JSON.parse(data) as {delta?: string; done?: boolean; error?: string; status_code?: number; status?: string; citations?: SourceMetadata[]; conversation_id?: string; message_id?: string; refused?: boolean; web_note?: string | null; web_sources?: SourceMetadata[]; tool_calls?: AskResponse["tool_calls"]};
+          const event = JSON.parse(data) as {delta?: string; done?: boolean; error?: string; status_code?: number; status?: string; citations?: SourceMetadata[]; conversation_id?: string; message_id?: string; refused?: boolean; web_note?: string | null; web_sources?: SourceMetadata[]; tool_calls?: AskResponse["tool_calls"]; active_goal?: string | null; connections_result?: ProductConnections | null};
           if (event.error) throw event.status_code ? new ApiError(event.status_code, event.error) : new Error(event.error);
           if (event.status) onStatus?.(event.status);
           if (event.delta) {
@@ -115,7 +115,9 @@ export const api = {
               refused: Boolean(event.refused),
               web_note: event.web_note,
               web_sources: event.web_sources || [],
-              tool_calls: event.tool_calls || []
+              tool_calls: event.tool_calls || [],
+              active_goal: event.active_goal,
+              connections_result: event.connections_result,
             };
           }
         }
@@ -302,4 +304,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, arguments: args }),
     }),
+  getMentionTargets: (q = "", category?: string, limit = 20) => {
+    const p = new URLSearchParams({ q, limit: String(limit) });
+    if (category && category !== "all") p.set("category", category);
+    return request<MentionTarget[]>(`/ask/mention-targets?${p}`);
+  },
+  getProductConnections: (product: string) => {
+    return request<ProductConnections>(`/ask/product-connections?product=${encodeURIComponent(product)}`);
+  },
 };
