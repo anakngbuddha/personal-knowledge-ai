@@ -1,21 +1,27 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import text
 
 from app.core.config import settings
 from app.db.session import engine
+from app.security.deps import require_admin
+from app.security.principal import Principal
 
 router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
 def health() -> dict:
+    # Liveness only. Deployment details stay behind the authenticated check below.
     return {"status": "ok", "environment": settings.environment}
 
 
 @router.get("/health/dependencies")
-def dependencies() -> dict:
+def dependencies(_: Principal = Depends(require_admin)) -> dict:
     """Can the backend reach PostgreSQL, pgvector, object storage, and the embedding
-    provider, and are the ingestion safety controls actually on?"""
+    provider, and are the ingestion safety controls actually on?
+
+    Admin only: every call does a storage write and a paid embedding request, and the
+    answer describes the deployment's providers and queue depth."""
     checks: dict[str, dict] = {}
 
     try:

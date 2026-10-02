@@ -4,6 +4,10 @@
 the web API (`resolve_principal`) and the MCP transport use it, so a revoked or
 downgraded member loses access on the next request instead of at token expiry, and
 no transport trusts a role claim over the membership table.
+
+Token audiences are kept apart: MCP tokens (`typ: mcp`) are for the MCP transport
+only and are refused by the web API, so a token pasted into a desktop client config
+cannot drive the full REST surface.
 """
 
 from __future__ import annotations
@@ -25,6 +29,9 @@ from app.security.accounts import OrganizationMembership, UserAccount
 from app.security.jwt import JWTError, decode_jwt
 from app.security.labels import Role, Sensitivity, normalize
 from app.security.principal import Principal, owner_principal
+
+# Token types reserved for other transports and refused by the web API.
+_NON_WEB_TOKEN_TYPES = frozenset({"mcp"})
 
 
 def get_or_create_default_org(db: Session) -> Organization:
@@ -177,6 +184,8 @@ def resolve_principal(db: Session = Depends(get_db), authorization: str | None =
         payload = decode_jwt(authorization[7:].strip())
     except JWTError as exc:
         raise HTTPException(401, "invalid or expired session", headers={"WWW-Authenticate": "Bearer"}) from exc
+    if payload.get("typ") in _NON_WEB_TOKEN_TYPES:
+        raise HTTPException(401, "this token is for MCP clients only; sign in to use the web API", headers={"WWW-Authenticate": "Bearer"})
     principal = principal_from_claims(db, payload, label="jwt", default_org=org)
     # The route's Depends(get_db) is this same session, so everything the route does
     # from here on runs under the tenant's RLS scope.
@@ -202,6 +211,12 @@ def require_document_write(principal: Principal = Depends(resolve_principal)) ->
 
 
 def require_document_approval(principal: Principal = Depends(resolve_principal)) -> Principal:
+    if not principal.is_admin:
+        raise HTTPException(403, "admin access required")
+    return principal
+
+
+def require_admin(principal: Principal = Depends(resolve_principal)) -> Principal:
     if not principal.is_admin:
         raise HTTPException(403, "admin access required")
     return principal

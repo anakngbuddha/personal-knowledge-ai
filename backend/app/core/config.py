@@ -1,6 +1,35 @@
+import math
+import secrets
+from collections import Counter
 from functools import lru_cache
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Values that have appeared in docs or examples. Anyone can sign tokens with them.
+_PLACEHOLDER_JWT_SECRETS = frozenset({
+    "replace-with-a-random-32-plus-character-secret",
+    "changeme", "change-me", "secret", "jwt-secret", "jwt_secret", "your-secret-key",
+    "your_secret_key", "supersecret", "super-secret", "development", "dev-secret",
+})
+_PLACEHOLDER_MARKERS = ("replace-with", "replace_with", "changeme", "change-me", "your-secret", "example")
+JWT_SECRET_MIN_LENGTH = 32
+JWT_SECRET_MIN_BITS = 128
+
+
+def jwt_secret_problem(value: str) -> str | None:
+    """Why `value` is unsafe as an HS256 key, or None. Estimates entropy from the
+    character distribution, which rejects repeated or dictionary-like strings."""
+    lowered = value.strip().lower()
+    if lowered in _PLACEHOLDER_JWT_SECRETS or any(marker in lowered for marker in _PLACEHOLDER_MARKERS):
+        return "a published placeholder"
+    if len(value) < JWT_SECRET_MIN_LENGTH:
+        return f"shorter than {JWT_SECRET_MIN_LENGTH} characters"
+    counts = Counter(value)
+    per_char = -sum((n / len(value)) * math.log2(n / len(value)) for n in counts.values())
+    if len(counts) < 8 or per_char * len(value) < JWT_SECRET_MIN_BITS:
+        return "too low in entropy (generate it with `python -c \"import secrets; print(secrets.token_urlsafe(48))\"`)"
+    return None
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
@@ -78,6 +107,12 @@ class Settings(BaseSettings):
     mcp_token_default_minutes: int = 480
     mcp_token_max_minutes: int = 1440
     mcp_max_sse_sessions: int = 500
+    # Generated client configs pin this exact mcp-remote release instead of @latest,
+    # so a compromised or breaking npm publish is not pulled in automatically.
+    mcp_remote_npm_version: str = "0.1.38"
+    # Public base URL used in generated MCP client configs. Empty derives it from the
+    # request, which is only correct when the proxy forwards the original host.
+    public_api_url: str = ""
     # Audit finding 12: child MCP servers get a minimal environment and a private
     # working directory. Optional OS sandbox wrapper, e.g. "bwrap --unshare-all ..."
     # or "firejail --quiet --private"; empty means no wrapper.
@@ -122,6 +157,8 @@ class Settings(BaseSettings):
     chunk_overlap: int = 150
     embedding_batch_size: int = 16
     max_upload_mb: int = 25
+    # Non-multipart bodies (JSON, forms) never need the upload budget.
+    max_json_body_mb: int = 8
     fts_config: str = "english"
 
     # 2.3 structure-aware chunking. Retrieve the narrow child, prompt with the parent
@@ -171,8 +208,40 @@ class Settings(BaseSettings):
     default_org_name: str = "Default Organization"
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 1440
+    # Session tokens are re-checked against membership on every request; a shorter
+    # lifetime bounds how long a stolen token stays useful.
+    jwt_access_token_expire_minutes: int = 480
     allow_legacy_token_endpoint: bool = False
+    # PBKDF2-HMAC-SHA256 work factor (OWASP 2023+ guidance: 600k). Older hashes are
+    # upgraded transparently on the next successful login.
+    password_pbkdf2_iterations: int = 600_000
+
+    # Self-service signup creates a new organization for anyone who can reach the API.
+    # Turn it off once your organization exists and add people with /auth/members.
+    signup_enabled: bool = True
+    # Adding an email that already has an account would attach an account whose
+    # password someone else chose (pre-account hijack). Off: admins can only invite
+    # brand-new accounts unless the operator opts in.
+    members_attach_existing_accounts: bool = False
+
+    # Unauthenticated auth endpoints are throttled per client IP, and failed logins
+    # per account. In-process counters; see app/security/auth_throttle.py.
+    auth_rate_limit_enabled: bool = True
+    auth_login_ip_per_minute: int = 10
+    auth_signup_ip_per_hour: int = 5
+    auth_sso_start_ip_per_minute: int = 10
+    auth_login_failures_per_account: int = 8
+    auth_login_failure_window_seconds: int = 900
+    # Alert (WARNING security_alert log line) thresholds within the failure window.
+    auth_alert_failed_logins_per_ip: int = 20
+    auth_alert_failed_logins_global: int = 200
+    auth_alert_signups_per_hour: int = 50
+    # Number of reverse proxies in front of the app that append to X-Forwarded-For.
+    # 0 uses the socket address. Render's edge adds one hop.
+    trusted_proxy_hops: int = 0
+
+    # Interactive OpenAPI docs. None means on outside production, off in production.
+    api_docs_enabled: bool | None = None
 
     parse_timeout_seconds: float = 120.0
     max_archive_entries: int = 2000
@@ -223,9 +292,17 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def production_security(self):
-        if self.environment.lower() == "production":
-            if self.auth_mode != "jwt": raise ValueError("AUTH_MODE must be jwt in production")
-            if not self.jwt_secret_key or len(self.jwt_secret_key) < 32: raise ValueError("JWT_SECRET_KEY must be at least 32 characters in production")
+        production = self.environment.lower() == "production"
+        if production and self.auth_mode != "jwt": raise ValueError("AUTH_MODE must be jwt in production")
+        # A published or empty signing key lets anyone mint tokens. Placeholders are
+        # refused in every environment; production also needs real entropy.
+        if self.jwt_secret_key:
+            problem = jwt_secret_problem(self.jwt_secret_key)
+            if problem and (production or problem == "a published placeholder"):
+                raise ValueError(f"JWT_SECRET_KEY is {problem}; set a random secret of at least {JWT_SECRET_MIN_LENGTH} characters")
+        elif production:
+            raise ValueError("JWT_SECRET_KEY must be set in production")
+        if production:
             if not self.rls_required: raise ValueError("RLS_REQUIRED must be true in production")
             if self.freshness_auto_approve: raise ValueError("FRESHNESS_AUTO_APPROVE must be false in production")
             if self.auto_approve_uploads: raise ValueError("AUTO_APPROVE_UPLOADS must be false in production")
@@ -233,12 +310,27 @@ class Settings(BaseSettings):
             if self.malware_scanner != "clamav": raise ValueError("production ingestion requires ClamAV")
             if self.saml_allow_unsigned: raise ValueError("unsigned SAML is prohibited")
             if "*" in self.cors_origin_list: raise ValueError("CORS must use explicit origins")
+            if not self.auth_rate_limit_enabled: raise ValueError("AUTH_RATE_LIMIT_ENABLED must be true in production")
+            if self.password_pbkdf2_iterations < 600_000: raise ValueError("PASSWORD_PBKDF2_ITERATIONS must be at least 600000 in production")
+        if self.password_pbkdf2_iterations < 100_000:
+            raise ValueError("PASSWORD_PBKDF2_ITERATIONS must be at least 100000")
+        if not self.jwt_secret_key:
+            # Fail closed outside production: an empty HMAC key would make every
+            # token forgeable. A per-process random key means sessions do not survive
+            # a restart, which is the right trade-off for local development.
+            self.jwt_secret_key = secrets.token_urlsafe(48)
         for key in (self.mcp_credentials_key, self.sso_credentials_key, *self.credentials_previous_keys.values()):
             if key:
                 from cryptography.fernet import Fernet
                 try: Fernet(key.encode("ascii"))
                 except (ValueError, UnicodeError) as exc: raise ValueError("credential keys must be valid Fernet keys") from exc
         return self
+
+    @property
+    def docs_enabled(self) -> bool:
+        if self.api_docs_enabled is None:
+            return self.environment.lower() != "production"
+        return bool(self.api_docs_enabled)
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -251,6 +343,10 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def max_json_body_bytes(self) -> int:
+        return self.max_json_body_mb * 1024 * 1024
 
     @property
     def max_uncompressed_bytes(self) -> int:

@@ -71,8 +71,8 @@ async def lifespan(_: FastAPI):
             job_queue.reap_stale(db)
         finally:
             db.close()
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - startup continues; stale leases also expire on their own
+        logger.warning("could not reclaim stale jobs at startup", exc_info=True)
     start_background_workers()
     start_workflow_workers()
     start_freshness_workers()
@@ -88,6 +88,9 @@ async def lifespan(_: FastAPI):
         stop_background_workers()
 
 
+# The interactive docs publish the whole API surface; off by default in production.
+_docs = settings.docs_enabled
+
 app = FastAPI(
     title="Solution Engineering Knowledge Workspace",
     version="1.1.0",
@@ -98,6 +101,9 @@ app = FastAPI(
         "capability inventory (implemented / partial / proposed)."
     ),
     lifespan=lifespan,
+    docs_url="/docs" if _docs else None,
+    redoc_url="/redoc" if _docs else None,
+    openapi_url="/openapi.json" if _docs else None,
 )
 
 app.add_middleware(
@@ -140,9 +146,11 @@ app.include_router(runtime.router)
 
 @app.get("/", tags=["health"])
 def root() -> dict:
-    return {
+    info = {
         "name": "Solution Engineering Knowledge Workspace",
         "version": "1.1.0",
         "capabilities": "files/STATUS.md",
-        "docs": "/docs",
     }
+    if _docs:
+        info["docs"] = "/docs"
+    return info

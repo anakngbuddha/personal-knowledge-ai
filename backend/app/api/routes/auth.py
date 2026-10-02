@@ -14,22 +14,39 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.errors import AppError
+from app.core.logging import get_logger
 from app.db.models import Organization
 from app.db.session import get_db, scope_session_to_org, verified_identity_lookup
-from app.security.accounts import OrganizationMembership, UserAccount, hash_password, normalize_email, verify_password
+from app.security import auth_events, auth_throttle
+from app.security.accounts import (
+    OrganizationMembership,
+    UserAccount,
+    burn_password_check,
+    hash_password,
+    needs_rehash,
+    normalize_email,
+    verify_password,
+)
 from app.security.deps import get_or_create_default_org, resolve_principal
 from app.security.jwt import InvalidTokenError, mint_token
 from app.security.labels import Role, normalize, role_has_access, role_rank
 from app.security.audit import record_audit
+from app.security.passwords import MAX_LENGTH as PASSWORD_MAX_LENGTH, password_problem
 from app.security.principal import Principal
 from app.sso.oidc import authorization_url
 from app.sso.service import exchange_oidc_token, exchange_saml_assertion
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = get_logger(__name__)
+
+# One message for every way signup can collide, so the endpoint does not confirm
+# whether a given email already has an account.
+_SIGNUP_CONFLICT = "could not create an account with those details; sign in instead, or use a different organization name"
+
 
 class AuthCredentials(BaseModel):
-    email: str
-    password: str = Field(min_length=10)
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=10, max_length=PASSWORD_MAX_LENGTH)
 
 class SignupRequest(AuthCredentials):
     display_name: str = Field(min_length=1, max_length=255)
@@ -37,7 +54,9 @@ class SignupRequest(AuthCredentials):
     organization_slug: str | None = Field(default=None, max_length=64)
 
 class LoginRequest(AuthCredentials):
-    organization_slug: str | None = None
+    # Login must accept existing passwords that predate the current policy.
+    password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
+    organization_slug: str | None = Field(default=None, max_length=64)
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -53,9 +72,9 @@ class TokenRequest(BaseModel):
     role: str = Role.SOLUTIONS_ENGINEER
 
 class MemberCreate(BaseModel):
-    email: str
+    email: str = Field(min_length=3, max_length=320)
     display_name: str = Field(min_length=1, max_length=255)
-    password: str = Field(min_length=10)
+    password: str = Field(min_length=10, max_length=PASSWORD_MAX_LENGTH)
     role: str = Role.VIEWER
 
 class RoleUpdate(BaseModel):
@@ -72,27 +91,97 @@ def _slug(value: str) -> str:
     result = "".join(ch.lower() if ch.isalnum() else "-" for ch in value).strip("-")
     return result[:64] or "workspace"
 
+
+def _valid_email(email: str) -> bool:
+    local, sep, domain = email.partition("@")
+    return bool(sep and local and "." in domain and " " not in email and not domain.startswith(".") and not domain.endswith("."))
+
+
+def _check_password(password: str, email: str) -> None:
+    problem = password_problem(password, email)
+    if problem:
+        raise HTTPException(422, problem)
+
+
+def _audit_auth_event(db: Session, membership: OrganizationMembership, user: UserAccount, action: str, ip: str) -> None:
+    """Best effort: an audit write failure must not turn a valid login into a 500."""
+    try:
+        principal = Principal(org_id=membership.org_id, user_id=user.id, role=membership.role)
+        record_audit(db, principal, action, "user_account", str(user.id), {"ip": ip})
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.warning("could not record %s audit entry", action, exc_info=True)
+
+
 @router.post("/signup", response_model=TokenResponse, status_code=201)
-def signup(payload: SignupRequest, db: Session = Depends(get_db)):
+def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_db)):
+    ip = auth_throttle.client_ip(request)
     email = normalize_email(payload.email)
+    if not settings.signup_enabled:
+        auth_events.signup_attempt(ip, email, "disabled")
+        raise HTTPException(403, "self-service signup is disabled; ask an administrator to add you")
+    try:
+        auth_throttle.enforce("signup:ip", ip, settings.auth_signup_ip_per_hour, 3600)
+    except HTTPException:
+        auth_events.signup_attempt(ip, email, "throttled")
+        raise
+    if not _valid_email(email):
+        raise HTTPException(422, "enter a valid email address")
+    _check_password(payload.password, email)
+    # Hash before any lookup so an existing email costs the same time as a new one.
+    password_hash = hash_password(payload.password)
     if db.scalar(select(UserAccount).where(UserAccount.email == email)):
-        raise HTTPException(409, "an account with that email already exists")
+        auth_events.signup_attempt(ip, email, "conflict")
+        raise HTTPException(409, _SIGNUP_CONFLICT)
     slug = _slug(payload.organization_slug or payload.organization_name)
     if db.scalar(select(Organization).where(Organization.slug == slug)):
-        raise HTTPException(409, "that organization name is already in use")
+        auth_events.signup_attempt(ip, email, "conflict")
+        raise HTTPException(409, _SIGNUP_CONFLICT)
     org = Organization(slug=slug, name=payload.organization_name.strip())
-    user = UserAccount(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password))
+    user = UserAccount(email=email, display_name=payload.display_name.strip(), password_hash=password_hash)
     db.add_all([org, user]); db.flush()
     scope_session_to_org(db, org.id)
     membership = OrganizationMembership(org_id=org.id, user_id=user.id, role=Role.OWNER)
     db.add(membership); db.commit()
+    auth_events.signup_attempt(ip, email, "created")
+    _audit_auth_event(db, membership, user, "signup", ip)
     return _token(user, membership)
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    user = db.scalar(select(UserAccount).where(UserAccount.email == normalize_email(payload.email), UserAccount.is_active.is_(True)))
-    if not user or not verify_password(payload.password, user.password_hash):
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    ip = auth_throttle.client_ip(request)
+    email = normalize_email(payload.email)
+    try:
+        auth_throttle.enforce("login:ip", ip, settings.auth_login_ip_per_minute, 60)
+    except HTTPException:
+        auth_events.login_throttled(ip, email, "ip")
+        raise
+    window = float(settings.auth_login_failure_window_seconds)
+    retry = auth_throttle.blocked("login:fail:acct", email, settings.auth_login_failures_per_account, window)
+    if retry is not None:
+        # Same work as a real check, so a throttled account is not distinguishable by timing.
+        burn_password_check(payload.password)
+        auth_events.login_throttled(ip, email, "account")
+        auth_throttle.raise_blocked(retry)
+    user = db.scalar(select(UserAccount).where(UserAccount.email == email, UserAccount.is_active.is_(True)))
+    if user is None:
+        burn_password_check(payload.password)
+        verified = False
+    else:
+        verified = verify_password(payload.password, user.password_hash)
+    if not verified:
+        if auth_throttle.enabled():
+            auth_throttle.record("login:fail:acct", email, window)
+        auth_events.login_failed(ip, email, "unknown_account" if user is None else "bad_password")
         raise HTTPException(401, "email or password is incorrect")
+    auth_throttle.clear("login:fail:acct", email)
+    if needs_rehash(user.password_hash):
+        try:
+            user.password_hash = hash_password(payload.password)
+            db.commit()
+        except Exception:  # noqa: BLE001 - the login itself is still valid
+            db.rollback()
+            logger.warning("could not upgrade password hash", exc_info=True)
     # Password verification above is the only entry to this pre-tenant read.
     with verified_identity_lookup(db):
         memberships = list(db.scalars(select(OrganizationMembership).where(OrganizationMembership.user_id == user.id, OrganizationMembership.is_active.is_(True)).order_by(OrganizationMembership.id).limit(100)))
@@ -100,8 +189,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         org = db.scalar(select(Organization).where(Organization.slug == _slug(payload.organization_slug)))
         memberships = [m for m in memberships if org and m.org_id == org.id]
     if not memberships:
+        auth_events.login_failed(ip, email, "no_membership")
         raise HTTPException(403, "your account has no active organization membership")
     scope_session_to_org(db, memberships[0].org_id)
+    auth_events.login_succeeded(ip, email, memberships[0].org_id, user.id)
+    _audit_auth_event(db, memberships[0], user, "login", ip)
     return _token(user, memberships[0])
 
 @router.post("/token", response_model=TokenResponse)
@@ -139,13 +231,33 @@ def add_member(payload: MemberCreate, principal: Principal = Depends(resolve_pri
     if principal.role != Role.OWNER and role_rank(role) >= role_rank(principal.role):
         raise HTTPException(403, "cannot assign a peer or higher role")
     email = normalize_email(payload.email)
+    if not _valid_email(email):
+        raise HTTPException(422, "enter a valid email address")
+    _check_password(payload.password, email)
+    password_hash = hash_password(payload.password)
     user = db.scalar(select(UserAccount).where(UserAccount.email == email))
-    if not user:
-        user = UserAccount(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password)); db.add(user); db.flush()
-    if db.scalar(select(OrganizationMembership).where(OrganizationMembership.org_id == principal.org_id, OrganizationMembership.user_id == user.id)):
-        raise HTTPException(409, "user is already a member")
+    if user is None:
+        user = UserAccount(email=email, display_name=payload.display_name.strip(), password_hash=password_hash); db.add(user); db.flush()
+        outcome = "created"
+    else:
+        if db.scalar(select(OrganizationMembership).where(OrganizationMembership.org_id == principal.org_id, OrganizationMembership.user_id == user.id)):
+            raise HTTPException(409, "user is already a member")
+        if not settings.members_attach_existing_accounts:
+            # Attaching an account whose password someone else set would hand this
+            # organization to whoever registered the email first.
+            auth_events.member_added(principal.user_id, principal.org_id, email, "refused_existing_account")
+            raise HTTPException(409, "this email cannot be added directly; ask the person to sign in and contact an owner")
+        outcome = "attached_existing"
     membership = OrganizationMembership(org_id=principal.org_id, user_id=user.id, role=role); db.add(membership); db.commit()
-    return {"id": str(user.id), "email": user.email, "display_name": user.display_name, "role": role}
+    auth_events.member_added(principal.user_id, principal.org_id, email, outcome)
+    try:
+        record_audit(db, principal, "member_add", "membership", str(user.id), {"role": role, "outcome": outcome})
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.warning("could not record member_add audit entry", exc_info=True)
+    # Only echo what the caller supplied: an existing account's profile belongs to
+    # other tenants and must not leak through this response.
+    return {"id": str(user.id), "email": email, "display_name": payload.display_name.strip(), "role": role}
 
 @router.patch("/members/{user_id}")
 def update_member_role(user_id: uuid.UUID, payload: RoleUpdate, principal: Principal = Depends(resolve_principal), db: Session = Depends(get_db)):
@@ -186,10 +298,22 @@ def _sso_cookie(response, binding, protocol):
                         samesite="none" if protocol == "saml" and secure else "lax", path="/auth")
 
 
+def _throttle_sso_start(request: Request) -> None:
+    # Each start writes a pending-transaction row; the table is capped, so unthrottled
+    # starts would let one client lock everyone out of SSO.
+    ip = auth_throttle.client_ip(request)
+    try:
+        auth_throttle.enforce("sso_start:ip", ip, settings.auth_sso_start_ip_per_minute, 60)
+    except HTTPException:
+        auth_events.login_throttled(ip, None, "sso_start")
+        raise
+
+
 @router.get("/oidc/start", response_model=OidcStartOut)
-def start_oidc(response: Response, db: Session = Depends(get_db)):
+def start_oidc(request: Request, response: Response, db: Session = Depends(get_db)):
     if not (settings.sso_enabled and settings.oidc_issuer and settings.oidc_client_id):
         raise HTTPException(404, "OIDC is not configured")
+    _throttle_sso_start(request)
     try:
         state, binding, transaction = begin(db, "oidc")
         url = oidc_url(state, transaction.nonce, transaction.verifier)
@@ -216,6 +340,7 @@ def oidc_callback(request: Request, response: Response, code: str = Query(..., m
         response.delete_cookie("pka_sso_oidc", path="/auth")
         return result
     except Exception as exc:
+        auth_events.sso_failed(auth_throttle.client_ip(request), "oidc")
         raise HTTPException(401, "invalid SSO response") from exc
 
 
@@ -223,6 +348,7 @@ def oidc_callback(request: Request, response: Response, code: str = Query(..., m
 def start_saml(request: Request, db: Session = Depends(get_db)):
     if not settings.sso_enabled:
         raise HTTPException(404, "SSO unavailable")
+    _throttle_sso_start(request)
     try:
         auth = saml_client(request)
         # Toolkit generates an unpredictable AuthnRequest ID for InResponseTo validation.
@@ -256,4 +382,5 @@ def saml_acs(request: Request, response: Response, SAMLResponse: str = Form(...,
         response.delete_cookie("pka_sso_saml", path="/auth")
         return result
     except Exception as exc:
+        auth_events.sso_failed(auth_throttle.client_ip(request), "saml")
         raise HTTPException(401, "invalid SSO response") from exc

@@ -18,12 +18,17 @@ Security model (audit findings 1 and 3):
   effect on the next call, not at token expiry.
 * A /message must name a live session, and the caller must be the session's owner.
   There is no direct-HTTP fallback for unknown or disconnected sessions.
-* MCP tokens are short-lived and scoped (`mcp:read`, plus `mcp:write` for SE+).
+* MCP tokens are short-lived and scoped (`mcp:read`, plus `mcp:write` for SE+), and
+  the web API refuses them (see app.security.deps).
+* Generated client configs never run unverified remote code: the Python bootstrap
+  checks the bridge script against a SHA-256 pinned into the config, and the npx
+  option pins an exact mcp-remote version.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import secrets
@@ -33,6 +38,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
@@ -182,6 +188,7 @@ class McpConfigOut(BaseModel):
     server_script_path: str
     api_url: str
     script_url: str = ""
+    script_sha256: str = ""
     sse_url: str = ""
     token_expires_minutes: int = 0
     claude_desktop_config: dict[str, Any]
@@ -219,6 +226,40 @@ class McpExecuteOut(BaseModel):
     is_error: bool
 
 
+def _bridge_script_file() -> Path | None:
+    workspace_root = Path(__file__).resolve().parent.parent.parent.parent.parent
+    for candidate in (workspace_root / "scripts" / "mcp_server.py", Path("scripts/mcp_server.py")):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _bridge_script_bytes() -> bytes | None:
+    script_file = _bridge_script_file()
+    return script_file.read_bytes() if script_file else None
+
+
+def _is_local(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").lower()
+    return host in ("localhost", "127.0.0.1", "::1")
+
+
+def python_bootstrap(script_url: str, sha256: str) -> str:
+    """One-liner that downloads the bridge and runs it only if it matches `sha256`.
+
+    The hash is fixed into the client config when it is generated, so a later change
+    to what the URL serves (a compromised host, a proxy, a DNS hijack) is refused
+    instead of executed.
+    """
+    return (
+        "import hashlib,sys,urllib.request as u;"
+        f"b=u.urlopen({script_url!r},timeout=30).read();"
+        f"h=hashlib.sha256(b).hexdigest();"
+        f"(h=={sha256!r}) or sys.exit('mcp bridge integrity check failed: '+h);"
+        "exec(compile(b,'mcp_server.py','exec'))"
+    )
+
+
 @router.get("/status", response_model=McpStatusOut)
 def get_custom_mcp_status(
     principal: Principal = Depends(resolve_principal),
@@ -242,20 +283,16 @@ def get_custom_mcp_status(
 @router.get("/script")
 def download_mcp_script() -> Response:
     """Download the stdio MCP bridge script for clients that want a local copy."""
-    workspace_root = Path(__file__).resolve().parent.parent.parent.parent.parent
-    script_file = workspace_root / "scripts" / "mcp_server.py"
-    if not script_file.exists():
-        # Fallback to current working directory
-        script_file = Path("scripts/mcp_server.py")
-    if not script_file.exists():
+    content = _bridge_script_bytes()
+    if content is None:
         raise HTTPException(status_code=404, detail="Bridge script not found")
-    content = script_file.read_text(encoding="utf-8")
     return Response(
         content=content,
         media_type="text/x-python",
         headers={
             "Content-Disposition": 'attachment; filename="mcp_server.py"',
             "Content-Type": "text/x-python; charset=utf-8",
+            "X-Content-SHA256": hashlib.sha256(content).hexdigest(),
         },
     )
 
@@ -266,45 +303,64 @@ def get_custom_mcp_config(
     principal: Principal = Depends(resolve_principal),
 ) -> McpConfigOut:
     """Return configuration snippets for Claude Desktop, Cursor, and other tools."""
+    script_file = _bridge_script_file()
     workspace_root = Path(__file__).resolve().parent.parent.parent.parent.parent
-    script_path = str(workspace_root / "scripts" / "mcp_server.py").replace("\\", "/")
+    script_path = str(script_file or (workspace_root / "scripts" / "mcp_server.py")).replace("\\", "/")
+    script_bytes = script_file.read_bytes() if script_file else b""
+    script_sha256 = hashlib.sha256(script_bytes).hexdigest() if script_bytes else ""
 
-    # Detect base URL
-    base_url = str(request.base_url).rstrip("/")
-    if "localhost" in base_url or "127.0.0.1" in base_url:
-        api_url = f"http://localhost:{settings.port}"
+    # Prefer the configured public URL; the request's Host header is client-supplied.
+    if settings.public_api_url:
+        api_url = settings.public_api_url.rstrip("/")
     else:
-        api_url = base_url
+        base_url = str(request.base_url).rstrip("/")
+        api_url = f"http://localhost:{settings.port}" if _is_local(base_url) else base_url
+    if not _is_local(api_url) and api_url.startswith("http://"):
+        # Tokens and code must not travel in clear text to a remote host.
+        api_url = "https://" + api_url[len("http://"):]
 
     script_url = f"{api_url}/api/mcp/custom-server/script"
     sse_url = f"{api_url}/api/mcp/custom-server/sse"
 
     expires = _clamp_minutes(None)
     sample_token = _mint_mcp_jwt(principal=principal, expires_minutes=expires)
+    env = {"PERSONAL_KNOWLEDGE_API_URL": api_url, "PERSONAL_KNOWLEDGE_API_KEY": sample_token}
 
-    # Option 1 (Zero-Install Remote via Python): Executes in memory via URL, ZERO local files needed
-    python_bootstrap = f"import urllib.request; exec(urllib.request.urlopen('{script_url}').read().decode('utf-8'))"
-    remote_python_snippet = {
+    # Local copy: the user downloads mcp_server.py (and can review it) and runs that.
+    # The path is the user's own, so the snippet names the file, not a server path.
+    local_script_snippet = {
         "mcpServers": {
             SERVER_NAME: {
                 "command": "python",
-                "args": ["-c", python_bootstrap],
-                "env": {
-                    "PERSONAL_KNOWLEDGE_API_URL": api_url,
-                    "PERSONAL_KNOWLEDGE_API_KEY": sample_token,
-                },
+                "args": [script_path if _is_local(api_url) and os.path.exists(script_path) else "mcp_server.py"],
+                "env": env,
             }
         }
     }
 
-    # Option 2 (Zero-Install Remote via NPX): Uses standard mcp-remote package over SSE
+    # Remote Python (default): fetches the bridge each start, but runs it only when it
+    # matches the SHA-256 pinned here. Without a script there is nothing to pin.
+    if script_sha256:
+        remote_python_snippet = {
+            "mcpServers": {
+                SERVER_NAME: {
+                    "command": "python",
+                    "args": ["-c", python_bootstrap(script_url, script_sha256)],
+                    "env": env,
+                }
+            }
+        }
+    else:
+        remote_python_snippet = local_script_snippet
+
+    # NPX: an exact mcp-remote release, never @latest.
     remote_npx_snippet = {
         "mcpServers": {
             SERVER_NAME: {
                 "command": "npx",
                 "args": [
                     "-y",
-                    "mcp-remote@latest",
+                    f"mcp-remote@{settings.mcp_remote_npm_version}",
                     sse_url,
                     "--header",
                     f"Authorization: Bearer {sample_token}",
@@ -313,46 +369,24 @@ def get_custom_mcp_config(
         }
     }
 
-    # Option 3 (Local File): If user explicitly downloads mcp_server.py
-    local_script_snippet = {
-        "mcpServers": {
-            SERVER_NAME: {
-                "command": "python",
-                "args": [script_path if os.path.exists(script_path) else "mcp_server.py"],
-                "env": {
-                    "PERSONAL_KNOWLEDGE_API_URL": api_url,
-                    "PERSONAL_KNOWLEDGE_API_KEY": sample_token,
-                },
-            }
-        }
-    }
-    del local_script_snippet  # kept for parity with the docs; the UI shows the remote options
-
-    cursor_snippet = {
-        "mcpServers": {
-            SERVER_NAME: {
-                "command": "python",
-                "args": ["-c", python_bootstrap],
-                "env": {
-                    "PERSONAL_KNOWLEDGE_API_URL": api_url,
-                    "PERSONAL_KNOWLEDGE_API_KEY": sample_token,
-                },
-            }
-        }
-    }
-
     instructions = {
         "token_lifetime": (
             f"The embedded token expires in {expires} minutes and is re-checked against your "
-            "membership on every call. Mint a fresh one from this page when it expires."
+            "membership on every call. It only works with the MCP endpoints, not the web API. "
+            "Mint a fresh one from this page when it expires."
         ),
         "zero_download_python": (
-            "Recommended: Paste the Python zero-download snippet into claude_desktop_config.json. "
-            "It runs the bridge in memory directly from your server without requiring any downloaded files."
+            "Recommended: the Python snippet downloads the bridge on each start and refuses to "
+            f"run it unless its SHA-256 is {script_sha256 or 'available'}. Regenerate the config "
+            "after upgrading the server."
+        ),
+        "local_script": (
+            "Most locked-down: download mcp_server.py from this page, review it, and point "
+            "the config's args at your local copy."
         ),
         "zero_download_npx": (
-            "Alternative: Paste the npx snippet into claude_desktop_config.json. "
-            "Requires Node.js and connects over remote SSE without any local files."
+            f"Alternative: the npx snippet uses mcp-remote {settings.mcp_remote_npm_version} "
+            "(pinned) over SSE. Requires Node.js."
         ),
         "claude_desktop_windows": (
             "Paste the configuration snippet into %APPDATA%\\Claude\\claude_desktop_config.json, "
@@ -372,12 +406,13 @@ def get_custom_mcp_config(
         server_script_path=script_path,
         api_url=api_url,
         script_url=script_url,
+        script_sha256=script_sha256,
         sse_url=sse_url,
         token_expires_minutes=expires,
         claude_desktop_config=remote_python_snippet,
         remote_python_config=remote_python_snippet,
         remote_npx_config=remote_npx_snippet,
-        cursor_config=cursor_snippet,
+        cursor_config=remote_python_snippet,
         instructions=instructions,
     )
 
