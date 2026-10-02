@@ -8,7 +8,7 @@ citations and token usage for provenance tracking.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -111,6 +111,16 @@ def add_message(
     model_id: str | None = None,
 ) -> Message:
     """Add a message to a conversation."""
+    created_at = datetime.now(timezone.utc)
+    latest_created_at = db.scalar(
+        select(func.max(Message.created_at)).where(Message.conversation_id == conversation_id)
+    )
+    if latest_created_at is not None:
+        if latest_created_at.tzinfo is None:
+            latest_created_at = latest_created_at.replace(tzinfo=timezone.utc)
+        if created_at <= latest_created_at:
+            created_at = latest_created_at + timedelta(microseconds=1)
+
     msg = Message(
         conversation_id=conversation_id,
         role=role,
@@ -121,7 +131,7 @@ def add_message(
         prompt_version=prompt_version,
         refused=refused,
         model_id=model_id,
-        created_at=datetime.now(timezone.utc),
+        created_at=created_at,
     )
     db.add(msg)
 

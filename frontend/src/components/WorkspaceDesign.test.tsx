@@ -80,17 +80,16 @@ describe("Connectors redesign", () => {
     expect(screen.getByText("Custom MCP setup")).toBeTruthy();
   });
 
-  it("expands connector settings and keeps save and test actions available", async () => {
+  it("shows connector settings with save and test actions without expanding", async () => {
     listMcpIntegrations.mockResolvedValue(connectorData);
     upsertMcpIntegration.mockResolvedValue(undefined);
     testMcpIntegration.mockResolvedValue({ status: "healthy", tools: [{ name: "search" }] });
     render(<IntegrationsPanel />);
 
-    const settings = await screen.findByRole("button", { name: "Brave Search settings" });
-    fireEvent.click(settings);
-    expect(settings.getAttribute("aria-expanded")).toBe("true");
-    const connector = within(settings.closest("article") as HTMLElement);
+    const heading = await screen.findByRole("heading", { name: "Brave Search" });
+    const connector = within(heading.closest("article") as HTMLElement);
     expect(connector.getByPlaceholderText("Stored securely — paste to rotate")).toBeTruthy();
+    expect(connector.queryByRole("button", { name: "Brave Search settings" })).toBeNull();
 
     fireEvent.click(connector.getByRole("button", { name: "Save & Enable" }));
     await waitFor(() => expect(upsertMcpIntegration).toHaveBeenCalledWith("brave", expect.objectContaining({ enabled: true })));
