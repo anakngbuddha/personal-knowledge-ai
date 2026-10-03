@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
 import { opportunityApi } from "../services/opportunities";
 import type { Coverage, Opportunity, Requirement } from "../services/opportunities";
-import { QuotePanel } from "./QuotePanel";
-import { ClaimsPanel } from "./ClaimsPanel";
 import "../styles/opportunities.css";
 
 const coverageStates: Requirement["coverage_state"][] = [
   "unreviewed", "covered", "partial", "gap", "excluded",
 ];
 
-export function OpportunitiesWorkspace() {
+export function OpportunitiesWorkspace({ opportunityId, onBattleQuote }: { opportunityId?: string | null; onBattleQuote?: (id: string) => void }) {
   const [items, setItems] = useState<Opportunity[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(opportunityId ?? null);
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [offset, setOffset] = useState(0);
   const [title, setTitle] = useState("");
@@ -24,8 +22,11 @@ export function OpportunitiesWorkspace() {
 
   useEffect(() => {
     let active = true;
-    opportunityApi.list().then((result) => {
-      if (active) setItems(result.items);
+    Promise.all([opportunityApi.list(), opportunityId ? opportunityApi.get(opportunityId) : Promise.resolve(null)]).then(([result, chosen]) => {
+      if (active) setItems((current) => {
+        const loaded = chosen && !result.items.some((item) => item.id === chosen.id) ? [chosen, ...result.items] : result.items;
+        return [...current, ...loaded.filter((item) => !current.some((existing) => existing.id === item.id))];
+      });
     }).catch((err: unknown) => {
       if (active) setError(err instanceof Error ? err.message : "Could not load opportunities");
     });
@@ -106,8 +107,8 @@ export function OpportunitiesWorkspace() {
 
   return <div className="opportunities-workspace">
     <header className="opportunities-heading">
-      <div><span className="eyebrow">Sales workspace</span><h1>Opportunities</h1>
-        <p>Turn customer needs into a reviewed solution and quote.</p></div>
+      <div><h1>Opportunities</h1>
+        <p>Review customer requirements and coverage, then prepare quotations and battle cards in Battle Quote.</p></div>
     </header>
     {error && <div className="banner error" role="alert">{error}</div>}
     <div className="opportunities-grid">
@@ -170,8 +171,7 @@ export function OpportunitiesWorkspace() {
             <span>{offset + 1}–{Math.min(offset + coverage.limit, coverage.total)} of {coverage.total}</span>
             <button type="button" disabled={offset + coverage.limit >= coverage.total} onClick={() => setOffset(offset + coverage.limit)}>Next</button>
           </div>}
-          <QuotePanel key={active.id} opportunityId={active.id} currency={active.currency} coverageReady={coverage?.ready_for_quote ?? false} />
-          <ClaimsPanel key={`claims-${active.id}`} opportunityId={active.id} />
+          {onBattleQuote && <button type="button" className="battle-secondary" onClick={() => onBattleQuote(active.id)}>Open in Battle Quote</button>}
         </>}
       </section>
     </div>

@@ -18,6 +18,20 @@ If the server has been idle, Ask may say it is waking up and will retry for abou
 
 ---
 
+## Battle Quote
+
+Open **Battle Quote** in the workspace navigation. Sales users, solutions engineers, and tenant administrators can use this page.
+
+- **Quotes:** choose an opportunity, select a saved list-price policy and captured cloud prices, and enter quantities, usage, and assumptions. **Review requirements** opens the same deal in Opportunities. All mandatory requirements must be covered before creating a priced draft. Submit the draft, have a separate administrator approve it, then issue and export it.
+- **Battle cards:** create claims with a vendor, source document, page or section, and validity date. A separate solutions engineer reviewer supplies a rationale and approves the claim against an approved source. The customer-safe preview includes only current claims supported by eligible public evidence.
+- **Tenant setup:** administrators configure AWS access keys, Google Cloud service-account JSON, or Huawei IAM tokens. Azure public retail prices need no credentials. Saved secrets are encrypted and cannot be viewed here; saving a credential does not prove live access. Use **Disable pricing access** to suspend a provider without deleting its saved credential.
+
+In **Tenant setup**, select a provider and add an exact SKU mapping to an eligible catalog product. Review the mapping under **Pending approval**, then approve it. Under **Approved mappings**, use **Capture price** to fetch its public pay-per-use rate. Huawei also requires reviewed project, usage, and unit dimensions. Create a list-price policy in the same currency as the opportunity and price; return to **Quotes** to use the saved inputs. Capture failures are displayed without inventing a price.
+
+SKU mappings require a confirmed, generally available catalog product. Cloud resource discovery, automatic equivalence comparison across providers, and scheduled price refresh are not supplied by this page. Google Sheets quote export also requires its existing integration setup in Connectors.
+
+---
+
 ## Sources
 
 Open **Sources**.

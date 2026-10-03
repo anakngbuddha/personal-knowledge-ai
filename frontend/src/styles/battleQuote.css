@@ -1,0 +1,41 @@
+.battle-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.opportunities-workspace .battle-secondary, .battle-pagination button { border: 1px solid var(--rule-strong); border-radius: 8px; padding: 10px 14px; background: var(--bg-card); color: var(--text-primary); font: inherit; }
+.battle-heading > button { flex-shrink: 0; }
+.battle-section-nav, .battle-switcher { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--rule); padding-bottom: 12px; margin-bottom: 24px; }
+.battle-section-nav button, .battle-switcher button { border: 1px solid transparent; border-radius: 8px; padding: 10px 16px; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 600; }
+.battle-section-nav button[aria-current], .battle-switcher button[aria-pressed="true"] { background: var(--primary-soft); color: var(--text-primary); border-color: var(--primary); }
+.battle-quote-workspace button:hover:not(:disabled) { border-color: var(--primary); }
+.battle-quote-workspace :is(button, input, textarea, select, summary):focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.battle-quote-workspace input, .battle-quote-workspace textarea { caret-color: var(--primary); }
+.battle-quote-workspace ::selection { background: var(--primary-soft); color: var(--text-primary); }
+.battle-deal-picker { max-width: 680px; display: grid; gap: 10px; }
+.battle-deal-picker > label { font-weight: 600; }
+.battle-pagination { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 16px; }
+.battle-coverage { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.battle-feedback { border: 1px solid var(--rule); background: var(--bg-surface); border-radius: 10px; padding: 14px 18px; }
+.battle-intro { max-width: 72ch; color: var(--text-secondary); line-height: 1.6; }
+.battle-setup-section { padding: 24px 0; border-bottom: 1px solid var(--rule); }
+.battle-setup-section h2 { margin: 0 0 10px; font-size: 22px; }
+.battle-setup-section h3 { margin: 0 0 10px; }
+.battle-setup-section p { max-width: 72ch; line-height: 1.6; overflow-wrap: anywhere; }
+.battle-provider-list { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
+.battle-provider-list button { min-width: 150px; display: flex; flex-direction: column; gap: 5px; padding: 12px 16px; border: 1px solid var(--rule-strong); border-radius: 10px; text-align: left; background: var(--bg-card); color: var(--text-primary); font: inherit; }
+.battle-provider-list button[aria-pressed="true"] { border-color: var(--primary); background: var(--primary-soft); }
+.battle-provider-list span { font-size: 12px; }
+.pricing-access-form, .battle-setup-section .opportunities-form { max-width: 680px; }
+.pricing-access-form .battle-secondary { margin-top: 12px; }
+.battle-details { margin: 18px 0 28px; }
+.battle-details summary { width: fit-content; cursor: pointer; font-weight: 600; padding: 10px 0; }
+.battle-details form { margin-top: 12px; }
+.battle-field { display: grid; gap: 6px; }
+.battle-mapping { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--rule); }
+.battle-mapping > div { min-width: 0; overflow-wrap: anywhere; }
+.battle-mapping p { margin: 6px 0 0; color: var(--text-secondary); }
+.battle-mapping > button { flex-shrink: 0; padding: 10px 14px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); font: inherit; font-weight: 600; }
+.battle-huawei-capture { margin-top: 24px; }
+.battle-policy-list { padding-left: 20px; line-height: 1.8; }
+@media (max-width: 620px) {
+  .battle-heading, .battle-mapping { flex-direction: column; align-items: flex-start; }
+  .battle-provider-list button { flex: 1 1 140px; min-width: 0; }
+  .battle-section-nav button { padding: 10px 12px; }
+}

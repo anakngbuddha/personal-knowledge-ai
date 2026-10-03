@@ -47,7 +47,7 @@ export interface DealSignal { kind: string; message: string; quote_version_id?: 
 
 export const salesQuotesApi = {
   signals: (opportunityId: string) => request<{ items: DealSignal[] }>(`/api/sales/opportunities/${opportunityId}/signals?limit=100`),
-  policies: () => request<{ items: SalesPolicy[] }>("/api/sales/policies?limit=100"),
+  policies: (offset = 0) => request<{ items: SalesPolicy[] }>(`/api/sales/policies?limit=100&offset=${offset}`),
   observations: () => request<{ items: PriceObservationSummary[] }>("/api/sales/price-observations?limit=100"),
   quotes: (opportunityId: string) => request<{ items: QuoteVersion[] }>(
     `/api/sales/opportunities/${opportunityId}/quotes?limit=100`

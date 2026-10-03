@@ -5,7 +5,7 @@ import type { DealSignal, PriceObservationSummary, QuoteVersion, SalesPolicy } f
 type DraftLine = { observation_id: string; resource_quantity: string; usage_per_resource: string; discount_percent: string; assumption: string };
 const emptyLine = (): DraftLine => ({ observation_id: "", resource_quantity: "1", usage_per_resource: "1", discount_percent: "0", assumption: "" });
 
-export function QuotePanel({ opportunityId, currency, coverageReady }: { opportunityId: string; currency: string; coverageReady: boolean }) {
+export function QuotePanel({ opportunityId, currency, coverageReady, canApprove = false, onSetup }: { opportunityId: string; currency: string; coverageReady: boolean; canApprove?: boolean; onSetup?: () => void }) {
   const [policies, setPolicies] = useState<SalesPolicy[]>([]);
   const [observations, setObservations] = useState<PriceObservationSummary[]>([]);
   const [versions, setVersions] = useState<QuoteVersion[]>([]);
@@ -91,6 +91,7 @@ export function QuotePanel({ opportunityId, currency, coverageReady }: { opportu
   return <section className="quote-panel" aria-label="Sales quotations">
     <h3>Quotation</h3>
     <p className="muted">Use approved SKU mappings, saved price observations, and a commercial policy. An administrator reviews each quote before issue.</p>
+    {onSetup && <button type="button" className="battle-secondary" onClick={onSetup}>Open tenant setup</button>}
     {error && <div className="banner error" role="alert">{error}</div>}
     {!coverageReady && <p className="muted">Review all mandatory requirements before creating a new quote. Existing versions remain available below.</p>}
     {coverageReady && <form className="opportunities-form quote-form" onSubmit={create}>
@@ -130,7 +131,7 @@ export function QuotePanel({ opportunityId, currency, coverageReady }: { opportu
         {version.result.blockers.length > 0 && <ul>{version.result.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>}
         <div className="quote-actions">
           {version.status === "draft" && <button type="button" disabled={busy || !version.result.issueable} onClick={() => transition(version, "submit")}>Submit for approval</button>}
-          {version.status === "review" && <button type="button" disabled={busy} onClick={() => transition(version, "approve")}>Approve (admin)</button>}
+          {version.status === "review" && (canApprove ? <button type="button" disabled={busy} onClick={() => transition(version, "approve")}>Approve (admin)</button> : <p className="muted">A separate tenant administrator must approve this quote.</p>)}
           {version.status === "approved" && <button type="button" disabled={busy} onClick={() => transition(version, "issue")}>Issue quote</button>}
           {version.status === "issued" && <button type="button" disabled={busy} onClick={() => download(version)}>Download customer quote</button>}
           {version.status === "issued" && <button type="button" disabled={busy} onClick={() => exportSheet(version)}>Export to Google Sheets</button>}

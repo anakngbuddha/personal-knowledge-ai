@@ -38,6 +38,7 @@ export interface Coverage {
 const jsonHeaders = { "Content-Type": "application/json" };
 
 export const opportunityApi = {
+  get: (id: string) => request<Opportunity>(`/api/opportunities/${id}`),
   list: (offset = 0) => request<{ items: Opportunity[]; limit: number; offset: number }>(
     `/api/opportunities?limit=50&offset=${offset}`
   ),

@@ -34,7 +34,7 @@ describe("ClaimsPanel", () => {
   it("requires a review rationale and reports approval denial", async () => {
     setup(); list.mockResolvedValue({ items: [{ id: "claim-1", statement: "A draft", status: "draft", version: 1, source_anchor: "Section 3", source_version: 1, valid_until: "2026-12-31" }] });
     decide.mockRejectedValue(new Error("A separate reviewer is required"));
-    render(<ClaimsPanel opportunityId="deal-1" />);
+    render(<ClaimsPanel opportunityId="deal-1" canReview />);
     await waitFor(() => expect(screen.getByText("A draft")).toBeTruthy());
     expect((screen.getByRole("button", { name: "Approve claim (reviewer)" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Review rationale"), { target: { value: "Checked source" } });

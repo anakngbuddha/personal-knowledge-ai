@@ -19,6 +19,7 @@ import {
 import { IntegrationsPanel } from "./components/IntegrationsPanel";
 import { NotesPanel } from "./components/NotesPanel";
 import { OpportunitiesWorkspace } from "./components/OpportunitiesWorkspace";
+import { BattleQuoteWorkspace } from "./components/BattleQuoteWorkspace";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SourcesWorkspace } from "./components/SourcesWorkspace";
 import { useDocuments } from "./hooks/useDocuments";
@@ -27,7 +28,7 @@ import { api } from "./services/api";
 import { apiPointsAtLocalhostFromRemote, getAccessToken, onServerWake, onSessionExpired, setAccessToken } from "./services/http";
 import { SERVER_WAKING } from "./services/errors";
 
-type Tab = "sources" | "ask" | "notes" | "map" | "opportunities" | "connections" | "settings";
+type Tab = "sources" | "ask" | "notes" | "map" | "opportunities" | "battle-quote" | "connections" | "settings";
 
 interface TabItem {
   id: Tab;
@@ -43,6 +44,7 @@ export default function App() {
   const authenticated = sessionStatus === "authenticated";
   const [showAuth, setShowAuth] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ask");
+  const [salesOpportunityId, setSalesOpportunityId] = useState<string | null>(null);
   const { documents, loading, error, refresh, setError, page, setPage, hasMore } = useDocuments(authenticated);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [seedQuestion, setSeedQuestion] = useState<string | null>(null);
@@ -146,6 +148,7 @@ export default function App() {
   const tabs: TabItem[] = [
     { id: "ask", name: "Ask Intelligence", icon: StarIcon },
     { id: "opportunities", name: "Opportunities", icon: ZapIcon },
+    { id: "battle-quote", name: "Battle Quote", icon: FileTextIcon },
     { id: "notes", name: "Notes", icon: BookOpenIcon },
     { id: "sources", name: "Sources", icon: FileTextIcon, badge: documents.length > 0 ? String(documents.length) : undefined },
     { id: "connections", name: "Connectors", icon: ZapIcon },
@@ -269,7 +272,8 @@ export default function App() {
               />
             )}
             {activeTab === "connections" && (principal?.is_admin || principal?.is_owner) && <IntegrationsPanel />}
-            {activeTab === "opportunities" && <OpportunitiesWorkspace />}
+            {activeTab === "opportunities" && <OpportunitiesWorkspace opportunityId={salesOpportunityId} onBattleQuote={(id) => { setSalesOpportunityId(id); setActiveTab("battle-quote"); }} />}
+            {activeTab === "battle-quote" && <BattleQuoteWorkspace principal={principal} opportunityId={salesOpportunityId} onSelectOpportunity={setSalesOpportunityId} onOpenOpportunity={(id) => { setSalesOpportunityId(id ?? null); setActiveTab("opportunities"); }} />}
             {activeTab === "map" && (
               <GraphExplorer
                 key={mapVersion}

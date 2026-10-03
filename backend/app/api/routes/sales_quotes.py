@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import re
 import uuid
+from typing import Literal
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -128,14 +129,30 @@ def create_sku_map(payload: SkuMapIn, db: Session = Depends(get_db), principal: 
 
 @router.get("/sku-maps")
 def list_sku_maps(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
+                  status: Literal["approved", "draft"] = Query("approved"),
                   db: Session = Depends(get_db), principal: Principal = Depends(resolve_principal)):
     _write(principal)
+    if status == "draft":
+        _admin(principal)
     rows = db.scalars(select(ProviderSkuMap).where(
         ProviderSkuMap.org_id == principal.org_id,
-        ProviderSkuMap.status == "approved",
+        ProviderSkuMap.status == status,
     ).order_by(ProviderSkuMap.created_at.desc(), ProviderSkuMap.id).limit(limit).offset(offset)).all()
     return {"items": [SkuMapOut.model_validate({field: getattr(row, field)
                                                  for field in SkuMapOut.model_fields}) for row in rows],
+            "limit": limit, "offset": offset}
+
+
+@router.get("/pricing-products")
+def list_pricing_products(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
+                          db: Session = Depends(get_db), principal: Principal = Depends(resolve_principal)):
+    """Approved tenant products eligible for a reviewed pricing mapping."""
+    _admin(principal)
+    rows = db.scalars(select(Product).where(
+        Product.org_id == principal.org_id, Product.curation_status == "confirmed",
+        func.lower(Product.lifecycle_status).in_(["ga", "general availability"]),
+    ).order_by(Product.name, Product.id).limit(limit).offset(offset)).all()
+    return {"items": [{"id": str(row.id), "name": row.name, "vendor": row.vendor} for row in rows],
             "limit": limit, "offset": offset}
 
 
@@ -226,6 +243,18 @@ class PricingCredentialIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool = True
     secret: str | None = Field(default=None, min_length=1, max_length=16384)
+
+
+@router.get("/pricing-credentials")
+def pricing_credential_status(db: Session = Depends(get_db), principal: Principal = Depends(resolve_principal)):
+    """Configuration presence only; saving credentials does not establish live access."""
+    _admin(principal)
+    items = [{"provider": "azure", "enabled": True, "has_secret": False, "requires_credentials": False}]
+    for provider in ("aws", "gcp", "huawei"):
+        row = get_integration(db, principal.org_id, f"pricing_{provider}")
+        items.append({"provider": provider, "enabled": bool(row and row.enabled),
+                      "has_secret": bool(row and row.secret_ciphertext), "requires_credentials": True})
+    return {"items": items}
 
 
 @router.put("/pricing-credentials/{provider}")

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { salesClaimsApi } from "../services/salesClaims";
 import type { BattleCardClaim, ClaimSource, SalesClaim } from "../services/salesClaims";
 
-export function ClaimsPanel({ opportunityId }: { opportunityId: string }) {
+export function ClaimsPanel({ opportunityId, canReview = false }: { opportunityId: string; canReview?: boolean }) {
   const [claims, setClaims] = useState<SalesClaim[]>([]);
   const [sources, setSources] = useState<ClaimSource[]>([]);
   const [statement, setStatement] = useState("");
@@ -67,9 +67,10 @@ export function ClaimsPanel({ opportunityId }: { opportunityId: string }) {
     </form>
     {claims.map((claim) => <article key={claim.id} className="quote-version"><strong>{claim.status}</strong><p>{claim.statement}</p><p>{claim.source_anchor} · source v{claim.source_version} · valid until {claim.valid_until}</p>
       {claim.review_reason && <p>{claim.review_reason}</p>}
-      {claim.status !== "revoked" && <><label htmlFor={`reason-${claim.id}`}>Review rationale</label><input id={`reason-${claim.id}`} maxLength={2000} value={reasons[claim.id] || ""} onChange={(e) => setReasons((r) => ({ ...r, [claim.id]: e.target.value }))} />
+      {canReview && claim.status !== "revoked" && <><label htmlFor={`reason-${claim.id}`}>Review rationale</label><input id={`reason-${claim.id}`} maxLength={2000} value={reasons[claim.id] || ""} onChange={(e) => setReasons((r) => ({ ...r, [claim.id]: e.target.value }))} />
         {claim.status === "draft" && <button disabled={busy || !reasons[claim.id]?.trim()} onClick={() => decide(claim, "approve")}>Approve claim (reviewer)</button>}<button disabled={busy || !reasons[claim.id]?.trim()} onClick={() => decide(claim, "revoke")}>Revoke claim</button></>}
     </article>)}
+    {!canReview && <p className="muted">A separate solutions engineer reviewer approves claims before they appear in customer battle cards.</p>}
     <div><button disabled={busy || offset === 0} onClick={() => { setOffset(Math.max(0, offset - 50)); setCard(null); }}>Previous claims</button><button disabled={busy || claims.length < 50} onClick={() => { setOffset(offset + 50); setCard(null); }}>More claims</button></div>
     <button disabled={busy} onClick={preview}>Preview customer-safe battle card</button>
     {card && <div aria-label="Battle card preview">{card.length === 0 ? <p>No current public claims approved for this page.</p> : card.map((claim) => <article key={claim.id}><p>{claim.statement}</p><p>{claim.source.anchor} · source v{claim.source.version}</p>{claim.source.url && /^https?:\/\//i.test(claim.source.url) && <a href={claim.source.url} target="_blank" rel="noopener noreferrer">Read cited source</a>}</article>)}</div>}
